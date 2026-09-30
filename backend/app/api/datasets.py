@@ -20,6 +20,7 @@ from app.currencies import CURRENCIES, is_valid_currency
 from app.errors import ApiError
 from app.importer import dataset_path
 from app.ingest import CreatedDataset, ingest_csv, new_upload_path
+from app.logging_config import log_exception
 from app.schema import open_dataset_readonly
 
 router = APIRouter(prefix="/api")
@@ -268,7 +269,8 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
         )
     except ApiError:
         raise
-    except Exception:
+    except Exception as exc:
+        log_exception(logger, "dataset creation failed", exc)
         raise _internal_error() from None
     finally:
         # ingest_csv deletes the file itself; this covers every earlier exit.
@@ -276,6 +278,7 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
             upload.path.unlink(missing_ok=True)
 
     if isinstance(outcome, CreatedDataset):
+        request.state.created_dataset_id = outcome.dataset_id
         return JSONResponse(
             _created_body(outcome, summary),
             status_code=201,
@@ -304,18 +307,21 @@ def _ingest_sample(settings: Settings) -> CreatedDataset | None:
 
 
 @router.post("/datasets/sample", status_code=201)
-async def create_sample_dataset(settings: Settings = Depends(get_settings)):
+async def create_sample_dataset(request: Request, settings: Settings = Depends(get_settings)):
     # The request body and any form fields are deliberately never read.
     try:
         outcome = await run_in_threadpool(_ingest_sample, settings)
-    except Exception:
+    except Exception as exc:
+        log_exception(logger, "sample dataset import failed", exc)
         outcome = None
     if outcome is None:
         raise ApiError(500, "sample_unavailable", "The sample dataset is not available right now.")
     try:
         summary = await run_in_threadpool(_full_range_summary, settings, outcome)
-    except Exception:
+    except Exception as exc:
+        log_exception(logger, "sample dataset summary failed", exc)
         raise _internal_error() from None
+    request.state.created_dataset_id = outcome.dataset_id
     return JSONResponse(
         _created_body(outcome, summary),
         status_code=201,
