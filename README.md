@@ -10,3 +10,11 @@ See [`_docs/plan.md`](_docs/plan.md) for the full specification and [`_docs/task
 uv sync
 uv run pytest
 ```
+
+Start the backend (serves on http://127.0.0.1:8000):
+
+```sh
+uv run uvicorn app.main:app --app-dir backend
+```
+
+Check it: `curl http://127.0.0.1:8000/api/health` returns `{"status":"ok"}`.
