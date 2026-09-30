@@ -73,7 +73,7 @@ def test_valid_file_creates_a_dataset(client, settings, data_dir):
 
     assert response.status_code == 201
     body = response.json()
-    assert set(body) == {"dataset_id", "token", "meta", "warnings"}
+    assert set(body) == {"dataset_id", "token", "meta", "warnings", "initial_summary"}
     assert body["warnings"] == []
     meta = body["meta"]
     assert set(meta) == {"id", "currency", "created_at", "expires_at", "row_count", "date_range"}

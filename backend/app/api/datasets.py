@@ -1,17 +1,25 @@
+import re
 import shutil
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
+from app.analytics.kpis import read_kpis
+from app.analytics.top_products import read_top_products
+from app.analytics.trend import read_trend
 from app.auth import AuthorizedDataset, require_dataset
 from app.config import Settings, get_settings
 from app.currencies import CURRENCIES, is_valid_currency
 from app.errors import ApiError
+from app.importer import dataset_path
 from app.ingest import CreatedDataset, ingest_csv, new_upload_path
+from app.schema import open_dataset_readonly
 
 router = APIRouter(prefix="/api")
 
@@ -19,10 +27,79 @@ SAMPLE_CSV = Path(__file__).resolve().parent.parent / "sample" / "sample_sales.c
 SAMPLE_CURRENCY = "USD"
 
 _MAX_FIELD_BYTES = 256  # the only text field is a currency code
+TOP_PRODUCTS_COUNT = 10
+_DATE_FORM = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 def _invalid(message: str) -> ApiError:
     return ApiError(400, "invalid_request", message)
+
+
+def _money(value: Decimal) -> str:
+    return f"{value:.4f}"
+
+
+def build_summary(connection, meta: dict, start: date, end: date) -> dict:
+    """The analytics response body for ``start`` to ``end`` (both inside the dataset)."""
+    kpis = read_kpis(connection, start, end)
+    trend = read_trend(connection, start, end)
+    top = read_top_products(connection, start, end, TOP_PRODUCTS_COUNT)
+    return {
+        "range": {"start": start.isoformat(), "end": end.isoformat()},
+        "currency": meta["currency"],
+        "granularity": trend["granularity"],
+        "kpis": {
+            "gross_sales": _money(kpis["gross_sales"]),
+            "orders": kpis["orders"],
+            "units_sold": kpis["units_sold"],
+            "average_order_value": _money(kpis["average_order_value"]),
+        },
+        "trend": [
+            {"bucket_start": b["bucket_start"].isoformat(), "gross_sales": _money(b["gross_sales"])}
+            for b in trend["buckets"]
+        ],
+        "top_products": [
+            {
+                "product_id": p["product_id"],
+                "product_name": p["product_name"],
+                "gross_sales": _money(p["gross_sales"]),
+                "units_sold": p["units_sold"],
+                "distinct_orders": p["distinct_orders"],
+            }
+            for p in top
+        ],
+    }
+
+
+def _full_range_summary(settings: Settings, created: CreatedDataset) -> dict:
+    """The summary for a just-created dataset; removes the dataset if it cannot be computed."""
+    target = dataset_path(settings, created.dataset_id)
+    try:
+        connection = open_dataset_readonly(target)
+        try:
+            first = date.fromisoformat(created.meta["date_range"]["min"])
+            last = date.fromisoformat(created.meta["date_range"]["max"])
+            return build_summary(connection, created.meta, first, last)
+        finally:
+            connection.close()
+    except BaseException:
+        for leftover in (target, target.with_name(target.name + ".wal")):
+            leftover.unlink(missing_ok=True)
+        raise
+
+
+def _created_body(created: CreatedDataset, summary: dict) -> dict:
+    return {
+        "dataset_id": created.dataset_id,
+        "token": created.token,
+        "meta": created.meta,
+        "warnings": created.warnings,
+        "initial_summary": summary,
+    }
+
+
+def _internal_error() -> ApiError:
+    return ApiError(500, "internal_error", "Something went wrong on the server.")
 
 
 class _Upload:
@@ -166,10 +243,15 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
     try:
         await _receive(request, upload)
         outcome = await run_in_threadpool(ingest_csv, upload.path, upload.currency, settings)
+        summary = (
+            await run_in_threadpool(_full_range_summary, settings, outcome)
+            if isinstance(outcome, CreatedDataset)
+            else None
+        )
     except ApiError:
         raise
     except Exception:
-        raise ApiError(500, "internal_error", "Something went wrong on the server.") from None
+        raise _internal_error() from None
     finally:
         # ingest_csv deletes the file itself; this covers every earlier exit.
         if upload.path is not None:
@@ -177,12 +259,7 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
 
     if isinstance(outcome, CreatedDataset):
         return JSONResponse(
-            {
-                "dataset_id": outcome.dataset_id,
-                "token": outcome.token,
-                "meta": outcome.meta,
-                "warnings": outcome.warnings,
-            },
+            _created_body(outcome, summary),
             status_code=201,
             headers={"Cache-Control": "no-store"},
         )
@@ -217,13 +294,12 @@ async def create_sample_dataset(settings: Settings = Depends(get_settings)):
         outcome = None
     if outcome is None:
         raise ApiError(500, "sample_unavailable", "The sample dataset is not available right now.")
+    try:
+        summary = await run_in_threadpool(_full_range_summary, settings, outcome)
+    except Exception:
+        raise _internal_error() from None
     return JSONResponse(
-        {
-            "dataset_id": outcome.dataset_id,
-            "token": outcome.token,
-            "meta": outcome.meta,
-            "warnings": outcome.warnings,
-        },
+        _created_body(outcome, summary),
         status_code=201,
         headers={"Cache-Control": "no-store"},
     )
@@ -232,3 +308,40 @@ async def create_sample_dataset(settings: Settings = Depends(get_settings)):
 @router.get("/datasets/{id}")
 def get_dataset_meta(dataset: AuthorizedDataset = Depends(require_dataset)):
     return JSONResponse(dataset.meta, headers={"Cache-Control": "no-store"})
+
+
+def _invalid_range(message: str) -> ApiError:
+    return ApiError(400, "invalid_range", message)
+
+
+def _parse_day(name: str, text: str) -> date:
+    if not _DATE_FORM.fullmatch(text):
+        raise _invalid_range(f"{name} must be a date written YYYY-MM-DD.")
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise _invalid_range(f"{name} is not a real date.") from None
+
+
+@router.get("/datasets/{id}/analytics")
+def get_dataset_analytics(
+    start: str | None = Query(default=None),
+    end: str | None = Query(default=None),
+    dataset: AuthorizedDataset = Depends(require_dataset),
+    settings: Settings = Depends(get_settings),
+):
+    first = date.fromisoformat(dataset.meta["date_range"]["min"])
+    last = date.fromisoformat(dataset.meta["date_range"]["max"])
+    range_start = first if start is None else _parse_day("start", start)
+    range_end = last if end is None else _parse_day("end", end)
+    if range_start > range_end:
+        raise _invalid_range("start must not be after end.")
+    if range_start < first or range_end > last:
+        raise _invalid_range(f"The range must be within {first.isoformat()} and {last.isoformat()}.")
+
+    connection = open_dataset_readonly(dataset_path(settings, dataset.id))
+    try:
+        body = build_summary(connection, dataset.meta, range_start, range_end)
+    finally:
+        connection.close()
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})

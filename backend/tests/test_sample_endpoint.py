@@ -60,7 +60,7 @@ def test_sample_returns_the_same_shape_as_an_upload(client):
 
     assert response.status_code == 201
     body = response.json()
-    assert set(body) == {"dataset_id", "token", "meta", "warnings"}
+    assert set(body) == {"dataset_id", "token", "meta", "warnings", "initial_summary"}
     assert body["warnings"] == []
     assert body["meta"]["id"] == body["dataset_id"]
     assert set(body["meta"]) == {"id", "currency", "created_at", "expires_at", "row_count", "date_range"}
