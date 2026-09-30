@@ -3,26 +3,73 @@ name: CI
 on:
   push:
     branches: [main]
+  # Never pull_request_target: a pull request runs its own code, without secrets.
   pull_request:
+
+# Nothing in this workflow writes to the repository or needs a secret.
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request cancels the run still in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-tests:
+    name: Backend (tests, ruff, mypy)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.12"
+          enable-cache: true
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
       - name: Run tests
         run: uv run pytest
+      - name: Ruff lint
+        run: uv run ruff check backend
+      - name: Ruff format check
+        run: uv run ruff format --check backend
+      - name: Mypy
+        run: uv run mypy backend/app
 
-  docker-smoke:
+  frontend:
+    name: Frontend (tests, lint, type check)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+
+  # The container from the Dockerfile is built and started once; the health check and the
+  # browser test both run against it, on port 8000.
+  docker-smoke:
+    name: Container (build, smoke, browser test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t open-sales-analytics .
       - name: Start container
@@ -38,6 +85,42 @@ jobs:
         run: |
           curl -f http://localhost:8000/api/health
           curl -f http://localhost:8000/d/anything | grep -qi '<div id="root"'
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+      - name: Download Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+        working-directory: frontend
+      # The system libraries are not part of the cached download.
+      - name: Install Chromium system libraries
+        run: npx playwright install-deps chromium
+        working-directory: frontend
+      - name: Run browser test against the container
+        run: npm run e2e
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://localhost:8000
+      - name: Upload traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results
+          path: frontend/test-results/
+          retention-days: 5
+          if-no-files-found: ignore
       - name: Show container logs on failure
         if: failure()
         run: docker logs oca

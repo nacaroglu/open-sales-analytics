@@ -11,6 +11,14 @@ uv sync
 uv run pytest
 ```
 
+Lint and type checks (the same commands CI runs; `uv sync` installs `ruff` and `mypy` as dev dependencies):
+
+```sh
+uv run ruff check backend
+uv run ruff format --check backend   # `uv run ruff format backend` fixes it
+uv run mypy backend/app
+```
+
 Start the backend (serves on http://127.0.0.1:8000):
 
 ```sh
@@ -27,7 +35,8 @@ Requires Node 22 or newer. From `frontend/`:
 npm ci            # install
 npm run dev       # dev server on http://localhost:5173
 npm test          # Vitest, single run
-npm run typecheck # tsc --noEmit
+npm run lint      # ESLint
+npm run typecheck # tsc --noEmit (TypeScript 7)
 npm run build     # writes frontend/dist
 ```
 

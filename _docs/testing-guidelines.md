@@ -12,10 +12,11 @@ the behaviour (`test_expired_dataset_is_404_even_with_correct_token`). Run from 
   `uv run pytest backend/tests/test_health.py::test_health_returns_ok` (one test)
 
 Frontend: `frontend/src/**/<name>.test.ts` or `.test.tsx` next to the code (Vitest, jsdom). From `frontend/`:
-`npm test` (all, single run), `npx vitest run src/App.test.tsx` (one file), `npm run typecheck`, `npm run build`.
+`npm test` (all, single run), `npx vitest run src/App.test.tsx` (one file), `npm run lint`, `npm run typecheck`, `npm run build`.
 
-CI (`.github/workflows/ci.yml`) runs only `uv run pytest` today; #35 adds frontend tests, type check and browser test.
-Baseline, measured 2026-09-30: `uv run pytest` 527 tests in about 40 s; `npm test` 27 tests in about 2.5 s.
+CI (`.github/workflows/ci.yml`) runs pytest, `ruff check`, `ruff format --check`, `mypy backend/app`, and in `frontend/` `npm test`, `npm run lint`,
+`npm run typecheck`, then the browser test on the built container.
+Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm test` 273 tests in about 11 s.
 
 ## Levels (plan section 12)
 
@@ -24,7 +25,7 @@ Baseline, measured 2026-09-30: `uv run pytest` 527 tests in about 40 s; `npm tes
 - Integration: a request through `TestClient(app)` with settings overridden (`test_upload_endpoint.py`,
   `test_analytics_endpoint.py`). A real `uvicorn` subprocess only for what an in-process client cannot
   see: startup failure and log output on the real stream (`test_startup.py`, `test_logging.py`).
-- Browser: exactly one (Playwright, Chromium, one spec, #33; not written yet). Nothing else drives a browser.
+- Browser: exactly one (Playwright, Chromium, `frontend/e2e/happy-path.spec.ts`, `npm run e2e`; CI runs it on the container). No other browser test.
 
 Plan section 12 rules and their tests: validation rules `test_validation_structure.py`, `_rows.py`,
 `_cross_row.py`; metrics, granularity, date boundaries `test_kpis.py`, `test_top_products.py`,
@@ -32,7 +33,7 @@ Plan section 12 rules and their tests: validation rules `test_validation_structu
 "rejected upload leaves nothing" `test_upload_endpoint.py`; filtered analytics
 `test_analytics_endpoint.py`; missing or invalid token `test_auth.py`, `test_delete_endpoint.py`,
 `test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
-demo mode `test_demo_mode.py`. Still to come: the browser happy path (#33).
+demo mode `test_demo_mode.py`; the browser happy path `frontend/e2e/happy-path.spec.ts`.
 
 ## Isolation and settings
 Tests never read or write the real `DATASET_DIR` (default `./tmp_datasets`). Two patterns:
