@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.datasets import router as datasets_router
 from app.config import get_settings
+from app.errors import register_error_handlers
 
 
 @asynccontextmanager
@@ -14,6 +16,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Open Sales Analytics", lifespan=lifespan)
+register_error_handlers(app)
+app.include_router(datasets_router)
 
 
 @app.get("/api/health")
