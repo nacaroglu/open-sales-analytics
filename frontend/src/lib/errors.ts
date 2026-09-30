@@ -8,6 +8,7 @@ export type ErrorKind =
   | "bad_range" // 400 from analytics: the range was refused
   | "upload_disabled" // 403 upload_disabled: a demo that takes no uploads
   | "bad_request" // 400 invalid_request: the request itself was refused
+  | "capacity_reached" // 503 capacity_reached: the server holds its maximum number of datasets
   | "failed"; // everything else: 5xx, network, unreadable answer, not an ApiError
 
 // Where the error happened: loading a dataset (the default), sending a file, or
@@ -29,6 +30,7 @@ export const SECTION_FAILED = "Something went wrong showing this section";
 export const BAD_RANGE = "The selected date range is not valid for this dataset";
 export const UPLOAD_FAILED = "Something went wrong — your file was not imported";
 export const SAMPLE_FAILED = "Something went wrong — the sample data could not be loaded";
+export const CAPACITY_REACHED = "The server is full right now. Please try again in a few minutes.";
 export const UPLOAD_DISABLED_HINT = "You can still use Try sample data.";
 
 export function errorKind(error: unknown): ErrorKind {
@@ -37,6 +39,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (error.status === 401) return "unauthorized";
   if (error.status === 400) return error.code === "invalid_request" ? "bad_request" : "bad_range";
   if (error.status === 403 && error.code === "upload_disabled") return "upload_disabled";
+  if (error.status === 503 && error.code === "capacity_reached") return "capacity_reached";
   return "failed";
 }
 
@@ -46,6 +49,7 @@ function serverText(error: unknown, fallback: string): string {
 
 export function describeError(error: unknown, context: ErrorContext = "load"): Described {
   const kind = errorKind(error);
+  if (kind === "capacity_reached") return { kind, message: CAPACITY_REACHED };
   if (context === "sample") return { kind, message: SAMPLE_FAILED };
   if (kind === "expired") return { kind, message: EXPIRED_TITLE };
   if (kind === "unauthorized") return { kind, message: UNAUTHORIZED_TITLE };

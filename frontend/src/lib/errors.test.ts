@@ -164,3 +164,44 @@ test("no message carries a status code, a server code or a stack", () => {
 test("a 400 with an unexpected code from analytics is still bad_range", () => {
   expect(errorKind(new ApiError(400, "whatever", "x"))).toBe("bad_range");
 });
+
+// The real body of the backend when it holds MAX_DATASETS live datasets (captured with MAX_DATASETS=3).
+const CAPACITY_REACHED = {
+  error: {
+    code: "capacity_reached",
+    message: "The server is holding the maximum number of datasets right now. Try again later.",
+  },
+};
+const FULL_SENTENCE = "The server is full right now. Please try again in a few minutes.";
+
+test("a 503 capacity_reached answer is capacity_reached, in every context, without the server's text", async () => {
+  for (const context of ["load", "upload", "sample"] as const) {
+    answer(503, CAPACITY_REACHED);
+    const error = await caught(() => createSampleDataset());
+    expect(describeError(error, context)).toEqual({ kind: "capacity_reached", message: FULL_SENTENCE });
+  }
+});
+
+test("the real 503 body of a full server reaches the mapping through the upload call", async () => {
+  answer(503, CAPACITY_REACHED);
+  const error = await caught(() => createDatasetFromUpload(file, "USD"));
+  expect(errorKind(error)).toBe("capacity_reached");
+});
+
+test("any other 503 stays failed: an HTML page, an empty body, another code, no ApiError", async () => {
+  answer(503, "<html>Service Unavailable</html>");
+  const html = await caught(() => createSampleDataset());
+  expect(describeError(html, "sample").kind).toBe("failed");
+
+  answer(503, "");
+  expect(errorKind(await caught(() => createSampleDataset()))).toBe("failed");
+
+  answer(503, { error: { code: "maintenance", message: "Back soon." } });
+  expect(describeError(await caught(() => createDatasetFromUpload(file, "USD")), "upload")).toEqual({
+    kind: "failed",
+    message: "Something went wrong — your file was not imported",
+  });
+
+  expect(errorKind(new ApiError(500, "capacity_reached", "x"))).toBe("failed");
+  expect(errorKind(new Error("capacity_reached"))).toBe("failed");
+});

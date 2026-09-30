@@ -1,7 +1,7 @@
 import logging
 import re
 import shutil
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,7 +14,8 @@ from python_multipart.multipart import MultipartParser, parse_options_header
 from app.analytics.kpis import read_kpis
 from app.analytics.top_products import read_top_products
 from app.analytics.trend import read_trend
-from app.auth import AuthorizedDataset, require_dataset
+from app.auth import AuthorizedDataset, get_now, require_dataset
+from app.capacity import count_live_datasets
 from app.config import Settings, get_settings
 from app.currencies import CURRENCIES, is_valid_currency
 from app.errors import ApiError
@@ -248,8 +249,31 @@ async def _receive(request: Request, upload: _Upload) -> None:
         raise _invalid(_currency_message())
 
 
+async def _ensure_capacity(settings: Settings, now: datetime) -> None:
+    """503 when the server already holds MAX_DATASETS live datasets.
+
+    The check and the creation are not one atomic step and there is no lock on
+    purpose: creates that arrive together can all pass, so the count may briefly
+    exceed MAX_DATASETS by at most the number of requests running at once (the
+    worker-thread limit). The goal is a bound on disk use, not an exact number,
+    and a lock would serialize the multi-second imports.
+    """
+    live = await run_in_threadpool(count_live_datasets, settings, now, settings.max_datasets)
+    if live >= settings.max_datasets:
+        logger.info("Dataset creation refused because the server is at capacity.")
+        raise ApiError(
+            503,
+            "capacity_reached",
+            "The server is holding the maximum number of datasets right now. Try again later.",
+        )
+
+
 @router.post("/datasets", status_code=201)
-async def create_dataset(request: Request, settings: Settings = Depends(get_settings)):
+async def create_dataset(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    now: datetime = Depends(get_now),
+):
     if settings.public_demo_mode:
         # First thing: the body is never read, parsed or stored.
         logger.info("Upload rejected because public demo mode is enabled.")
@@ -258,6 +282,7 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
             "upload_disabled",
             "Uploads are disabled on this demo. Upload your own file with the self-hosted version.",
         )
+    await _ensure_capacity(settings, now)
     upload = _Upload(settings)
     try:
         await _receive(request, upload)
@@ -311,8 +336,13 @@ def _ingest_sample(settings: Settings) -> CreatedDataset | None:
 
 
 @router.post("/datasets/sample", status_code=201)
-async def create_sample_dataset(request: Request, settings: Settings = Depends(get_settings)):
+async def create_sample_dataset(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    now: datetime = Depends(get_now),
+):
     # The request body and any form fields are deliberately never read.
+    await _ensure_capacity(settings, now)
     try:
         outcome = await run_in_threadpool(_ingest_sample, settings)
     except Exception as exc:

@@ -795,3 +795,81 @@ test.each<Scenario>(["demo", "defaults", "custom", "loading", "failed"])(
     expect(readSession()).toEqual({ id: "d1", token: "secret-token" });
   },
 );
+
+// --- capacity_reached (#41): the real 503 body of a full server ---
+
+const CAPACITY_MESSAGE = "The server is full right now. Please try again in a few minutes.";
+const FULL = () =>
+  new ApiError(
+    503,
+    "capacity_reached",
+    "The server is holding the maximum number of datasets right now. Try again later.",
+  );
+
+test("a full server on Upload shows the capacity sentence, keeps file and currency, and Upload can be retried", async () => {
+  await failUpload(FULL(), "SEK");
+
+  const block = expectOneBlock(CAPACITY_MESSAGE);
+  expect(block.textContent).not.toMatch(/503|capacity_reached|maximum number|not imported|Something went wrong/);
+  expectFormKept("SEK");
+
+  upload.mockResolvedValue(created);
+  fireEvent.click(uploadButton());
+  await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+  expect(upload).toHaveBeenCalledTimes(2);
+  expect(upload.mock.calls[1][1]).toBe("SEK");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a full server on Try sample data shows the capacity sentence, keeps the form, and the button can be pressed again", async () => {
+  sample.mockRejectedValueOnce(FULL());
+  await renderForm();
+  choose(csv(), "PLN");
+
+  fireEvent.click(sampleButton());
+  await screen.findByRole("alert");
+
+  const block = expectOneBlock(CAPACITY_MESSAGE);
+  expect(block.textContent).not.toMatch(/sample data could not be loaded|capacity_reached/);
+  expectFormKept("PLN");
+
+  fireEvent.click(sampleButton());
+  await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+  expect(sample).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a 503 with an unreadable body gives the generic failure sentence, for Upload", async () => {
+  await failUpload(new ApiError(503, "unknown_error", "The server sent an unexpected response."));
+
+  const block = expectOneBlock("Something went wrong — your file was not imported");
+  expect(block.textContent).not.toMatch(/full right now/);
+  expectFormKept("EUR");
+});
+
+test("a 503 with an unreadable body gives the generic failure sentence, for Try sample data", async () => {
+  sample.mockRejectedValue(new ApiError(503, "unknown_error", "The server sent an unexpected response."));
+  await renderForm();
+
+  fireEvent.click(sampleButton());
+  await screen.findByRole("alert");
+
+  const block = expectOneBlock("Something went wrong — the sample data could not be loaded");
+  expect(block.textContent).not.toMatch(/full right now/);
+});
+
+test("the capacity block goes away when another file is picked or a new attempt starts", async () => {
+  await failUpload(FULL());
+  fireEvent.change(input(), { target: { files: [csv("other.csv")] } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+  upload.mockRejectedValue(FULL());
+  fireEvent.click(uploadButton());
+  await screen.findByRole("alert");
+  let finish: (value: Created) => void = () => {};
+  sample.mockReturnValue(new Promise<Created>((resolve) => (finish = resolve)));
+  fireEvent.click(sampleButton());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  finish(created);
+  await waitFor(() => expect(onCreated).toHaveBeenCalled());
+});
