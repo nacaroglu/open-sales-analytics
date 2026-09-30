@@ -284,3 +284,21 @@ test("key figures show the analytics of the full range in the dataset currency, 
   expect(getAnalytics.mock.calls[0][0]).toBe("d1");
   expect(getAnalytics.mock.calls[0][1]).toEqual({ start: undefined, end: undefined });
 });
+
+test("the sales trend region shows the chart from the one analytics response", async () => {
+  getAnalytics.mockResolvedValue({
+    ...summary,
+    granularity: "weekly",
+    trend: [
+      { bucket_start: "2025-02-24", gross_sales: "10.0000" },
+      { bucket_start: "2025-03-03", gross_sales: "20.0000" },
+    ],
+  });
+  renderAt("/d/d1");
+
+  const region = screen.getByRole("region", { name: "Sales trend" });
+  expect(within(region).getByRole("status")).toHaveAttribute("aria-busy", "true");
+  expect(await within(region).findByRole("heading", { name: "Gross sales — weekly" })).toBeInTheDocument();
+  expect(within(region).getByRole("img", { name: /^Weekly gross sales from 2025-03-01 to 2025-03-31$/ })).toBeInTheDocument();
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+});

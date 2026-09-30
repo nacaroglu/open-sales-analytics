@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteDataset } from "../lib/api";
 import KpiCards from "../components/KpiCards";
+import TrendChart from "../components/TrendChart";
 import { useAnalytics, useMeta } from "../lib/hooks";
 import { clearSession, tokenFor } from "../lib/session";
 import type { Issue } from "../lib/types";
@@ -194,7 +195,14 @@ export default function DashboardPage({
       <section aria-label="Key figures">
         <KpiCards kpis={analytics.data?.kpis} currency={analytics.data?.currency} />
       </section>
-      <section aria-label="Sales trend" />
+      <section aria-label="Sales trend">
+        <TrendChart
+          granularity={analytics.data?.granularity}
+          buckets={analytics.data?.trend}
+          range={analytics.data?.range}
+          currency={analytics.data?.currency}
+        />
+      </section>
       <section aria-label="Top products" />
     </div>
   );
