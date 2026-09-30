@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
@@ -292,6 +292,10 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
     )
 
 
+def _sample_unavailable() -> ApiError:
+    return ApiError(500, "sample_unavailable", "The sample dataset is not available right now.")
+
+
 def _ingest_sample(settings: Settings) -> CreatedDataset | None:
     """Import a copy of the bundled sample; ``None`` if the sample is not clean.
 
@@ -315,7 +319,7 @@ async def create_sample_dataset(request: Request, settings: Settings = Depends(g
         log_exception(logger, "sample dataset import failed", exc)
         outcome = None
     if outcome is None:
-        raise ApiError(500, "sample_unavailable", "The sample dataset is not available right now.")
+        raise _sample_unavailable()
     try:
         summary = await run_in_threadpool(_full_range_summary, settings, outcome)
     except Exception as exc:
@@ -327,6 +331,15 @@ async def create_sample_dataset(request: Request, settings: Settings = Depends(g
         status_code=201,
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/sample.csv")
+def download_sample_csv() -> FileResponse:
+    # Public on purpose: no token, no settings, nothing written to DATASET_DIR.
+    # SAMPLE_CSV is read here, not at import, so a test can point it elsewhere.
+    if not SAMPLE_CSV.is_file():
+        raise _sample_unavailable()
+    return FileResponse(SAMPLE_CSV, media_type="text/csv", filename="sample_sales.csv")
 
 
 @router.get("/datasets/{id}")

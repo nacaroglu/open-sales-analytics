@@ -7,7 +7,7 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - One light theme, no dark mode. System font stack only (Tailwind's default), no web fonts, no external requests: the page works offline.
 - Product name: the visible `<h1>` of the upload screen is exactly "Open Sales Analytics" (`App.test.tsx` looks for it).
 - The measure is "gross sales", never "revenue": the word appears nowhere (labels, tooltips, alt text, errors).
-- Fixed labels: "Gross sales", "Orders", "Units sold", "Average order value", "Try sample data", "Upload", "Reset", "Retry", "Analyze another file".
+- Fixed labels: "Gross sales", "Orders", "Units sold", "Average order value", "Try sample data", "Download sample CSV", "Upload", "Reset", "Retry", "Analyze another file".
 - Text from the server or the user (reasons, field names, product names) is rendered as text, never as raw HTML.
 - Something not covered here: add one line to this file in your task; do not invent a private style.
 

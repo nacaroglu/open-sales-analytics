@@ -357,3 +357,37 @@ test("other failures show no validation report", async () => {
   await waitFor(() => expect(uploadButton()).toBeEnabled());
   expect(screen.queryByRole("region", { name: "Validation report" })).not.toBeInTheDocument();
 });
+
+test("the File format section links to the sample CSV as a plain download anchor", () => {
+  render(<UploadPage onCreated={onCreated} />);
+
+  const link = screen.getByRole("link", { name: "Download sample CSV" });
+  expect(link.tagName).toBe("A");
+  expect(link).toHaveAttribute("href", "/api/sample.csv");
+  expect(link).toHaveAttribute("download", "sample_sales.csv");
+  expect(link).not.toHaveAttribute("target");
+  expect(link).not.toHaveAttribute("tabindex");
+  expect(link.className).toContain("text-indigo-700 underline underline-offset-2 hover:text-indigo-900");
+  expect(link.className).toContain("focus-visible:outline-2");
+
+  const section = screen.getByRole("region", { name: "File format" });
+  expect(section).toContainElement(link);
+  const limits = within(section).getByText(/Limits: 50 MB/);
+  expect(limits.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  link.focus();
+  expect(link).toHaveFocus();
+  expect(upload).not.toHaveBeenCalled();
+  expect(sample).not.toHaveBeenCalled();
+});
+
+test("the sample link stays visible while an upload is running", async () => {
+  upload.mockReturnValue(new Promise(() => {}));
+  render(<UploadPage onCreated={onCreated} />);
+
+  choose(csv());
+  fireEvent.click(uploadButton());
+
+  expect(await screen.findByText("Processing…")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Download sample CSV" })).toBeVisible();
+});

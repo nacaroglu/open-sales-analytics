@@ -170,6 +170,15 @@ export default function UploadPage({
           <li>If any row is invalid, the whole file is rejected.</li>
           <li>Extra columns are ignored.</li>
         </ul>
+        <p className="text-sm">
+          <a
+            href="/api/sample.csv"
+            download="sample_sales.csv"
+            className={`text-indigo-700 underline underline-offset-2 hover:text-indigo-900 ${FOCUS}`}
+          >
+            Download sample CSV
+          </a>
+        </p>
       </section>
 
       <section
