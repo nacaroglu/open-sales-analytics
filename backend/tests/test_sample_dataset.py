@@ -150,5 +150,10 @@ def test_weekly_pattern(rows):
 
 def test_no_personal_data_columns(rows):
     assert set(rows[0]) == {
-        "order_id", "order_date", "product_id", "product_name", "quantity", "unit_price",
+        "order_id",
+        "order_date",
+        "product_id",
+        "product_name",
+        "quantity",
+        "unit_price",
     }

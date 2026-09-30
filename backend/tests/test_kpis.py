@@ -161,4 +161,4 @@ def test_dates_are_bound_parameters():
 
     source = inspect.getsource(kpis)
     assert "BETWEEN ? AND ?" in source
-    assert "f\"" not in source and "f'" not in source and ".format(" not in source
+    assert 'f"' not in source and "f'" not in source and ".format(" not in source

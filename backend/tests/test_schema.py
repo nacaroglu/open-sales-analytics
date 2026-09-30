@@ -79,9 +79,7 @@ def test_unit_price_round_trips_as_exact_decimal(dataset_path):
 def test_create_twice_keeps_existing_rows(dataset_path):
     create_dataset(dataset_path)
     connection = duckdb.connect(str(dataset_path))
-    connection.execute(
-        "INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 2, 5)"
-    )
+    connection.execute("INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 2, 5)")
     connection.close()
 
     create_dataset(dataset_path)

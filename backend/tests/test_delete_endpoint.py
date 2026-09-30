@@ -87,7 +87,9 @@ def test_second_delete_is_404_not_500(client, dataset):
     assert remove(client, dataset_id, token).status_code == 204
     response = remove(client, dataset_id, token)
     assert response.status_code == 404
-    assert response.json() == {"error": {"code": "not_found", "message": "The dataset was not found."}}
+    assert response.json() == {
+        "error": {"code": "not_found", "message": "The dataset was not found."}
+    }
 
 
 def test_no_token_is_401_and_file_stays(client, settings, dataset):
@@ -111,7 +113,10 @@ def test_other_datasets_token_is_401_and_nothing_is_removed(client, settings, da
     response = remove(client, dataset["dataset_id"], other["token"])
     assert response.status_code == 401
     assert files(settings) == before
-    assert client.get(f"/api/datasets/{other['dataset_id']}", headers=auth(other["token"])).status_code == 200
+    assert (
+        client.get(f"/api/datasets/{other['dataset_id']}", headers=auth(other["token"])).status_code
+        == 200
+    )
 
 
 def test_unknown_id_is_404(client):
@@ -160,4 +165,7 @@ def test_delete_leaves_other_datasets_and_files_untouched(client, settings, data
     assert remove(client, dataset["dataset_id"], dataset["token"]).status_code == 204
     assert stray.read_text() == "keep"
     assert (settings.dataset_dir / f"{other['dataset_id']}.duckdb").read_bytes() == other_before
-    assert client.get(f"/api/datasets/{other['dataset_id']}", headers=auth(other["token"])).status_code == 200
+    assert (
+        client.get(f"/api/datasets/{other['dataset_id']}", headers=auth(other["token"])).status_code
+        == 200
+    )

@@ -37,7 +37,9 @@ def write_csv(folder, *rows, header=HEADER):
     return path
 
 
-def run_import(uploads, settings, *rows, header=HEADER, dataset_id="abc123", currency="USD", now=NOW):
+def run_import(
+    uploads, settings, *rows, header=HEADER, dataset_id="abc123", currency="USD", now=NOW
+):
     path = write_csv(uploads, *rows, header=header)
     staging = stage_csv(path)
     return path, import_dataset(staging, path, dataset_id, currency, TOKEN_HASH, settings, now)
@@ -49,7 +51,8 @@ def files_of(folder):
 
 def test_creates_the_dataset_file_with_typed_rows(uploads, settings, data_dir):
     _, target = run_import(
-        uploads, settings,
+        uploads,
+        settings,
         "o1,2025-01-02,p1,Mug,2,19.99",
         "o2,2025-01-03,p2,Cup,1,4.5",
     )
@@ -57,9 +60,13 @@ def test_creates_the_dataset_file_with_typed_rows(uploads, settings, data_dir):
     assert target == data_dir / "abc123.duckdb"
     connection = open_dataset_readonly(target)
     rows = connection.execute("SELECT * FROM line_items ORDER BY order_id").fetchall()
-    types = [t for _, t in connection.execute(
-        "SELECT column_name, data_type FROM information_schema.columns "
-        "WHERE table_name = 'line_items' ORDER BY ordinal_position").fetchall()]
+    types = [
+        t
+        for _, t in connection.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = 'line_items' ORDER BY ordinal_position"
+        ).fetchall()
+    ]
     connection.close()
     assert rows == [
         ("o1", date(2025, 1, 2), "p1", "Mug", 2, Decimal("19.9900")),
@@ -91,22 +98,31 @@ def test_text_is_stored_trimmed_and_ids_keep_leading_zeros(uploads, settings):
 
 def test_extra_columns_are_not_in_the_dataset_file(uploads, settings):
     _, target = run_import(
-        uploads, settings, "o1,2025-01-02,p1,Mug,1,1,SECRET-NOTE",
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1,SECRET-NOTE",
         header=HEADER + ",notes",
     )
 
     assert b"SECRET-NOTE" not in target.read_bytes()
     connection = open_dataset_readonly(target)
-    names = [r[0] for r in connection.execute(
-        "SELECT column_name FROM information_schema.columns").fetchall()]
+    names = [
+        r[0]
+        for r in connection.execute("SELECT column_name FROM information_schema.columns").fetchall()
+    ]
     connection.close()
     assert "notes" not in names
 
 
 def test_dataset_meta_has_one_row_with_the_expected_values(uploads, settings):
     _, target = run_import(
-        uploads, settings, "o1,2025-01-02,p1,Mug,1,1", "o1,2025-01-02,p2,Cup,1,1", "o2,2025-01-02,p1,Mug,1,1",
-        dataset_id="ds-1", currency="EUR",
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1",
+        "o1,2025-01-02,p2,Cup,1,1",
+        "o2,2025-01-02,p1,Mug,1,1",
+        dataset_id="ds-1",
+        currency="EUR",
     )
 
     connection = open_dataset_readonly(target)
@@ -125,7 +141,9 @@ def test_created_at_defaults_to_now_in_utc(uploads, settings):
     _, target = run_import(uploads, settings, "o1,2025-01-02,p1,Mug,1,1", now=None)
 
     connection = open_dataset_readonly(target)
-    (created,) = connection.execute("SELECT CAST(epoch(created_at) AS BIGINT) FROM dataset_meta").fetchone()
+    (created,) = connection.execute(
+        "SELECT CAST(epoch(created_at) AS BIGINT) FROM dataset_meta"
+    ).fetchone()
     connection.close()
 
     assert before.timestamp() <= created <= (before + timedelta(seconds=30)).timestamp()
@@ -167,7 +185,9 @@ def test_many_rows_import_correctly(uploads, settings):
 
     connection = open_dataset_readonly(target)
     assert connection.execute("SELECT count(*), sum(unit_price) FROM line_items").fetchone() == (
-        20_000, Decimal("25000.0000"))
+        20_000,
+        Decimal("25000.0000"),
+    )
     assert connection.execute("SELECT row_count FROM dataset_meta").fetchone() == (20_000,)
     connection.close()
 
@@ -235,10 +255,13 @@ def test_uses_the_schema_from_schema_module(uploads, settings, tmp_path):
     create_dataset(reference)
     _, target = run_import(uploads, settings, "o1,2025-01-02,p1,Mug,1,1")
 
-    query = ("SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns "
-             "ORDER BY table_name, ordinal_position")
+    query = (
+        "SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns "
+        "ORDER BY table_name, ordinal_position"
+    )
     a, b = open_dataset_readonly(reference), open_dataset_readonly(target)
     try:
         assert a.execute(query).fetchall() == b.execute(query).fetchall()
     finally:
-        a.close(); b.close()
+        a.close()
+        b.close()

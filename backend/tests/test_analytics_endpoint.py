@@ -292,7 +292,9 @@ def test_sample_dataset_full_range_and_sub_range(client):
     assert body["range"] == {"start": "2025-01-01", "end": "2025-12-31"}
     assert body["currency"] == "USD"
     assert body["granularity"] == "weekly"
-    assert sum(Decimal(b["gross_sales"]) for b in body["trend"]) == Decimal(body["kpis"]["gross_sales"])
+    assert sum(Decimal(b["gross_sales"]) for b in body["trend"]) == Decimal(
+        body["kpis"]["gross_sales"]
+    )
     assert body["kpis"]["orders"] > 0
     assert 0 < len(body["top_products"]) <= 10
 
@@ -302,5 +304,7 @@ def test_sample_dataset_full_range_and_sub_range(client):
     assert part["range"] == {"start": "2025-03-01", "end": "2025-03-31"}
     assert part["granularity"] == "daily"
     assert len(part["trend"]) == 31
-    assert sum(Decimal(b["gross_sales"]) for b in part["trend"]) == Decimal(part["kpis"]["gross_sales"])
+    assert sum(Decimal(b["gross_sales"]) for b in part["trend"]) == Decimal(
+        part["kpis"]["gross_sales"]
+    )
     assert Decimal(part["kpis"]["gross_sales"]) < Decimal(body["kpis"]["gross_sales"])

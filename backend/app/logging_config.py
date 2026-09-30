@@ -116,7 +116,7 @@ def configure_logging() -> None:
 def _path_dataset_id(path: str) -> str | None:
     if not path.startswith(_DATASET_PREFIX):
         return None
-    candidate = path[len(_DATASET_PREFIX):].split("/", 1)[0]
+    candidate = path[len(_DATASET_PREFIX) :].split("/", 1)[0]
     return candidate if is_valid_dataset_id(candidate) else None
 
 

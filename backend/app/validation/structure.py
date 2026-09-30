@@ -55,14 +55,10 @@ def validate_structure(
                 if data_rows > max_rows:
                     break
     except UnicodeDecodeError:
-        result.add_error(
-            Issue(code="invalid_encoding", reason="The file is not valid UTF-8 text.")
-        )
+        result.add_error(Issue(code="invalid_encoding", reason="The file is not valid UTF-8 text."))
         return result
     except csv.Error:
-        result.add_error(
-            Issue(code="malformed_csv", reason="The file could not be read as CSV.")
-        )
+        result.add_error(Issue(code="malformed_csv", reason="The file could not be read as CSV."))
         return result
 
     if header is None:

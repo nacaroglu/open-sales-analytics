@@ -65,8 +65,15 @@ def import_dataset(
         working = target.with_name(f".{target.name}.importing")
         try:
             create_dataset(working)
-            _copy_rows(staging, working, dataset_id, currency, token_hash, created_at,
-                       created_at + timedelta(hours=settings.dataset_ttl_hours))
+            _copy_rows(
+                staging,
+                working,
+                dataset_id,
+                currency,
+                token_hash,
+                created_at,
+                created_at + timedelta(hours=settings.dataset_ttl_hours),
+            )
             working.rename(target)
         except BaseException:
             _remove_with_wal(working)

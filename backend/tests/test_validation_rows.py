@@ -28,8 +28,12 @@ def run_text(tmp_path, text, today=TODAY):
 
 def one_row(tmp_path, **values):
     row = {
-        "order_id": "o1", "order_date": "2025-01-02", "product_id": "p1",
-        "product_name": "Mug", "quantity": "1", "unit_price": "9.99",
+        "order_id": "o1",
+        "order_date": "2025-01-02",
+        "product_id": "p1",
+        "product_name": "Mug",
+        "quantity": "1",
+        "unit_price": "9.99",
     } | values
     return run_text(tmp_path, HEADER + "\n" + ",".join(row.values()) + "\n")
 
@@ -92,10 +96,13 @@ def test_staging_is_all_varchar_and_keeps_leading_zeros(tmp_path):
         ).fetchall()
     )
     assert {name: kind for name, kind in types.items() if name != "row_number"} == {
-        c: "VARCHAR" for c in
-        ("order_id", "order_date", "product_id", "product_name", "quantity", "unit_price")
+        c: "VARCHAR"
+        for c in ("order_id", "order_date", "product_id", "product_name", "quantity", "unit_price")
     }
-    assert connection.execute("SELECT order_id, product_id FROM staging").fetchone() == ("007", "0042")
+    assert connection.execute("SELECT order_id, product_id FROM staging").fetchone() == (
+        "007",
+        "0042",
+    )
 
 
 def test_row_numbers_start_at_two_for_the_first_data_row(tmp_path):
@@ -104,7 +111,10 @@ def test_row_numbers_start_at_two_for_the_first_data_row(tmp_path):
 
     connection = stage_csv(path)
 
-    assert connection.execute("SELECT row_number FROM staging ORDER BY 1").fetchall() == [(2,), (3,)]
+    assert connection.execute("SELECT row_number FROM staging ORDER BY 1").fetchall() == [
+        (2,),
+        (3,),
+    ]
 
 
 def test_quoted_comma_and_line_break_are_one_value_and_one_record(tmp_path):
@@ -117,8 +127,12 @@ def test_quoted_comma_and_line_break_are_one_value_and_one_record(tmp_path):
 
     connection = stage_csv(path)
 
-    assert connection.execute("SELECT row_number, product_name FROM staging ORDER BY 1").fetchall() == [
-        (2, "Mug, big"), (3, "Two\nlines"), (4, "Mug"),
+    assert connection.execute(
+        "SELECT row_number, product_name FROM staging ORDER BY 1"
+    ).fetchall() == [
+        (2, "Mug, big"),
+        (3, "Two\nlines"),
+        (4, "Mug"),
     ]
     assert validate_rows(connection, TODAY).errors == []
 
@@ -180,7 +194,9 @@ def test_values_are_trimmed_before_checking(tmp_path):
     assert result.errors == []
 
 
-@pytest.mark.parametrize("field", ["order_id", "order_date", "product_id", "product_name", "quantity", "unit_price"])
+@pytest.mark.parametrize(
+    "field", ["order_id", "order_date", "product_id", "product_name", "quantity", "unit_price"]
+)
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_blank_value_is_missing_and_only_reported_once(tmp_path, field, blank):
     result = one_row(tmp_path, **{field: blank})
@@ -193,7 +209,16 @@ def test_blank_value_is_missing_and_only_reported_once(tmp_path, field, blank):
 
 @pytest.mark.parametrize(
     "value",
-    ["2025-1-5", "05/01/2025", "2025-01-05T10:00", "20250105", "2025-02-30", "2025-13-01", "abc", "2025-01-5"],
+    [
+        "2025-1-5",
+        "05/01/2025",
+        "2025-01-05T10:00",
+        "20250105",
+        "2025-02-30",
+        "2025-13-01",
+        "abc",
+        "2025-01-5",
+    ],
 )
 def test_bad_dates(tmp_path, value):
     assert summary(one_row(tmp_path, order_date=value)) == [(2, "order_date", "invalid_date")]
@@ -311,7 +336,9 @@ def test_errors_are_ordered_by_row_then_column_with_malformed_in_place(tmp_path)
     result = run_text(tmp_path, text)
 
     assert [(e.row_number, e.code) for e in result.errors] == [
-        (2, "invalid_quantity"), (3, "malformed_row"), (4, "invalid_quantity"),
+        (2, "invalid_quantity"),
+        (3, "malformed_row"),
+        (4, "invalid_quantity"),
     ]
 
 

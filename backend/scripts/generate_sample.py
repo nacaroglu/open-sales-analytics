@@ -24,26 +24,62 @@ END = date(2025, 12, 31)
 
 # (product name, base price in cents)
 PRODUCTS = [
-    ("Ceramic Mug", 1200), ("Travel Tumbler", 2400), ("Linen Tote Bag", 1800),
-    ("Canvas Backpack", 5900), ("Wool Beanie", 2200), ("Cotton T-Shirt", 2500),
-    ("Denim Jacket", 8900), ("Running Socks", 1100), ("Leather Wallet", 4500),
-    ("Steel Water Bottle", 2000), ("Bamboo Cutting Board", 3200), ("Chef Knife", 7400),
-    ("Cast Iron Pan", 5600), ("Scented Candle", 1600), ("Soy Wax Candle Set", 3400),
-    ("Desk Lamp", 4900), ("Notebook A5", 900), ("Fountain Pen", 3800),
-    ("Wireless Mouse", 2900), ("Laptop Stand", 4200), ("USB-C Cable", 1000),
-    ("Phone Case", 1500), ("Bluetooth Speaker", 6900), ("Yoga Mat", 3600),
-    ("Resistance Bands", 1400), ("Herbal Tea Sampler", 1900), ("Coffee Beans 1kg", 2800),
-    ("Olive Oil 500ml", 2100), ("Hot Sauce Trio", 2300), ("Wall Calendar", 1300),
-    ("Framed Print", 6400), ("Throw Pillow", 2700), ("Wool Blanket", 7900),
-    ("Sunglasses", 4600), ("Umbrella", 2600), ("Gift Card Holder", 700),
+    ("Ceramic Mug", 1200),
+    ("Travel Tumbler", 2400),
+    ("Linen Tote Bag", 1800),
+    ("Canvas Backpack", 5900),
+    ("Wool Beanie", 2200),
+    ("Cotton T-Shirt", 2500),
+    ("Denim Jacket", 8900),
+    ("Running Socks", 1100),
+    ("Leather Wallet", 4500),
+    ("Steel Water Bottle", 2000),
+    ("Bamboo Cutting Board", 3200),
+    ("Chef Knife", 7400),
+    ("Cast Iron Pan", 5600),
+    ("Scented Candle", 1600),
+    ("Soy Wax Candle Set", 3400),
+    ("Desk Lamp", 4900),
+    ("Notebook A5", 900),
+    ("Fountain Pen", 3800),
+    ("Wireless Mouse", 2900),
+    ("Laptop Stand", 4200),
+    ("USB-C Cable", 1000),
+    ("Phone Case", 1500),
+    ("Bluetooth Speaker", 6900),
+    ("Yoga Mat", 3600),
+    ("Resistance Bands", 1400),
+    ("Herbal Tea Sampler", 1900),
+    ("Coffee Beans 1kg", 2800),
+    ("Olive Oil 500ml", 2100),
+    ("Hot Sauce Trio", 2300),
+    ("Wall Calendar", 1300),
+    ("Framed Print", 6400),
+    ("Throw Pillow", 2700),
+    ("Wool Blanket", 7900),
+    ("Sunglasses", 4600),
+    ("Umbrella", 2600),
+    ("Gift Card Holder", 700),
 ]
 
 # Zipf-like popularity: a few best-sellers, a long tail.
 PRODUCT_WEIGHTS = [1 / (rank + 1) ** 1.1 for rank in range(len(PRODUCTS))]
 
 # Seasonality: quiet start of year, strong November/December.
-MONTH_FACTOR = {1: 0.8, 2: 0.8, 3: 0.9, 4: 0.95, 5: 1.0, 6: 1.0,
-                7: 0.95, 8: 0.95, 9: 1.0, 10: 1.1, 11: 1.6, 12: 1.8}
+MONTH_FACTOR = {
+    1: 0.8,
+    2: 0.8,
+    3: 0.9,
+    4: 0.95,
+    5: 1.0,
+    6: 1.0,
+    7: 0.95,
+    8: 0.95,
+    9: 1.0,
+    10: 1.1,
+    11: 1.6,
+    12: 1.8,
+}
 # Weekly pattern, Monday=0: busier weekends, quiet midweek.
 WEEKDAY_FACTOR = {0: 1.0, 1: 0.9, 2: 0.8, 3: 0.9, 4: 1.1, 5: 1.4, 6: 1.3}
 

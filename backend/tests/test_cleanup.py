@@ -203,7 +203,9 @@ def test_symlinks_are_never_followed_or_deleted(settings, tmp_path):
         settings.dataset_dir / "uploads" / ".staging-link",
     ]
     for link in links:
-        link.symlink_to(target_file if link.suffix != "" and "staging" not in link.name else target_dir)
+        link.symlink_to(
+            target_file if link.suffix != "" and "staging" not in link.name else target_dir
+        )
         age(link, 10 * HOUR)
 
     sweep(settings, NOW)
@@ -258,8 +260,9 @@ def test_sweep_continues_after_an_undeletable_file(settings, monkeypatch, caplog
 
     assert first.exists() and not second.exists()
     assert result.datasets_removed == 1
-    assert any(first.name in r.getMessage() and "PermissionError" in r.getMessage()
-               for r in caplog.records)
+    assert any(
+        first.name in r.getMessage() and "PermissionError" in r.getMessage() for r in caplog.records
+    )
 
 
 def test_sweep_logs_one_info_line_with_counts_only(settings, caplog):
@@ -433,7 +436,9 @@ def test_startup_fails_naming_dataset_dir_when_it_cannot_be_created(tmp_path, mo
         get_settings.cache_clear()
 
 
-def test_startup_survives_a_failing_first_sweep_and_timer_is_cancelled(env_dir, monkeypatch, caplog):
+def test_startup_survives_a_failing_first_sweep_and_timer_is_cancelled(
+    env_dir, monkeypatch, caplog
+):
     def boom(s, now):
         raise OSError("boom")
 

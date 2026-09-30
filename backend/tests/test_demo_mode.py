@@ -74,7 +74,9 @@ def test_nothing_is_added_to_an_existing_empty_dir(demo, data_dir):
         lambda c: post_file(c, currency="XXX"),
         lambda c: post_file(c, currency=None),
         lambda c: c.post("/api/datasets", content=b"hello", headers={"content-type": "text/plain"}),
-        lambda c: c.post("/api/datasets", content=b"{}", headers={"content-type": "application/json"}),
+        lambda c: c.post(
+            "/api/datasets", content=b"{}", headers={"content-type": "application/json"}
+        ),
         lambda c: c.post(
             "/api/datasets", content=b"garbage", headers={"content-type": "multipart/form-data"}
         ),
@@ -154,8 +156,8 @@ def test_normal_mode_bad_upload_is_still_a_client_error_and_logs_nothing(normal,
 
 def test_each_rejection_logs_one_info_record_without_request_content(demo, caplog):
     body = (
-        b"--B\r\nContent-Disposition: form-data; name=\"currency\"\r\n\r\nMARKER_CURRENCY\r\n"
-        b"--B\r\nContent-Disposition: form-data; name=\"file\"; filename=\"MARKER_NAME.csv\"\r\n"
+        b'--B\r\nContent-Disposition: form-data; name="currency"\r\n\r\nMARKER_CURRENCY\r\n'
+        b'--B\r\nContent-Disposition: form-data; name="file"; filename="MARKER_NAME.csv"\r\n'
         b"Content-Type: text/csv\r\n\r\nMARKER_BODY,x\r\n--B--\r\n"
     )
     with caplog.at_level(logging.DEBUG, logger="app"):

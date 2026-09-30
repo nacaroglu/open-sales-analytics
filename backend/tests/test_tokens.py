@@ -22,7 +22,9 @@ def make_dataset(settings, tmp_path, token, dataset_id=None):
     dataset_id = dataset_id or new_dataset_id()
     csv_path = tmp_path / f"{dataset_id}.csv"
     csv_path.write_text(HEADER + "\no1,2025-01-02,p1,Mug,2,19.99\n", encoding="utf-8")
-    import_dataset(stage_csv(csv_path), csv_path, dataset_id, "USD", hash_token(token), settings, NOW)
+    import_dataset(
+        stage_csv(csv_path), csv_path, dataset_id, "USD", hash_token(token), settings, NOW
+    )
     return dataset_id
 
 
@@ -62,10 +64,21 @@ def test_hash_token_is_sha256_hex_of_utf8():
     assert re.fullmatch(r"[0-9a-f]{64}", digest)
 
 
-@pytest.mark.parametrize("value", [
-    "", "short", "a" * 21, "a" * 23, "../../etc/passwd", "a" * 21 + "/", "a" * 21 + ".",
-    "a" * 21 + "\n", "a" * 21 + "é", " " + "a" * 21,
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "short",
+        "a" * 21,
+        "a" * 23,
+        "../../etc/passwd",
+        "a" * 21 + "/",
+        "a" * 21 + ".",
+        "a" * 21 + "\n",
+        "a" * 21 + "é",
+        " " + "a" * 21,
+    ],
+)
 def test_is_valid_dataset_id_rejects(value):
     assert not is_valid_dataset_id(value)
 
@@ -122,6 +135,7 @@ def test_verify_false_when_dataset_meta_is_missing_or_empty(settings):
     no_table, no_row = new_dataset_id(), new_dataset_id()
     duckdb.connect(str(dataset_path(settings, no_table))).close()
     from app.schema import create_dataset
+
     create_dataset(dataset_path(settings, no_row))
     assert verify_token(no_table, new_token(), settings) is False
     assert verify_token(no_row, new_token(), settings) is False
@@ -138,7 +152,9 @@ def test_verify_non_ascii_token_can_match_its_own_hash(settings, tmp_path):
     assert verify_token(dataset_id, "tökén", settings) is True
 
 
-@pytest.mark.parametrize("bad_id", ["../../etc/passwd", "", "a/b", "a" * 21, "a" * 23, "a" * 21 + "/"])
+@pytest.mark.parametrize(
+    "bad_id", ["../../etc/passwd", "", "a/b", "a" * 21, "a" * 23, "a" * 21 + "/"]
+)
 def test_verify_never_opens_a_file_for_a_malformed_id(settings, monkeypatch, bad_id):
     def fail(path):
         pytest.fail("open_dataset_readonly must not be called")
@@ -164,6 +180,7 @@ def test_verify_closes_the_connection(settings, tmp_path, monkeypatch):
 
     assert good is True
     import duckdb
+
     for connection in opened:
         with pytest.raises(duckdb.ConnectionException):
             connection.execute("SELECT 1")

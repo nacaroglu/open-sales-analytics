@@ -51,7 +51,9 @@ async def _request_invalid(_: Request, __: RequestValidationError) -> JSONRespon
 
 async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
     code = _STATUS_CODES.get(exc.status_code, "http_error")
-    return _respond(exc.status_code, error_body(code, "The request could not be served."), exc.headers)
+    return _respond(
+        exc.status_code, error_body(code, "The request could not be served."), exc.headers
+    )
 
 
 async def _unexpected(_: Request, __: Exception) -> JSONResponse:

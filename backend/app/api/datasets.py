@@ -404,7 +404,9 @@ def get_dataset_analytics(
     if range_start > range_end:
         raise _invalid_range("start must not be after end.")
     if range_start < first or range_end > last:
-        raise _invalid_range(f"The range must be within {first.isoformat()} and {last.isoformat()}.")
+        raise _invalid_range(
+            f"The range must be within {first.isoformat()} and {last.isoformat()}."
+        )
 
     connection = open_dataset_readonly(dataset_path(settings, dataset.id))
     try:

@@ -39,7 +39,9 @@ def make_dataset(settings, tmp_path):
         token, dataset_id = new_token(), new_dataset_id()
         csv_path = tmp_path / f"{dataset_id}.csv"
         csv_path.write_text(HEADER + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
-        import_dataset(stage_csv(csv_path), csv_path, dataset_id, "EUR", hash_token(token), settings, CREATED)
+        import_dataset(
+            stage_csv(csv_path), csv_path, dataset_id, "EUR", hash_token(token), settings, CREATED
+        )
         return dataset_id, token
 
     return make
@@ -50,7 +52,9 @@ def fetch(client, dataset_id, token):
 
 
 def test_returns_metadata_with_exactly_the_documented_keys(client, make_dataset):
-    dataset_id, token = make_dataset(["o1,2025-01-02,p1,Mug,2,19.99", "o2,2025-03-09,p2,Cup,1,5.00"])
+    dataset_id, token = make_dataset(
+        ["o1,2025-01-02,p1,Mug,2,19.99", "o2,2025-03-09,p2,Cup,1,5.00"]
+    )
     response = fetch(client, dataset_id, token)
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
@@ -67,7 +71,9 @@ def test_returns_metadata_with_exactly_the_documented_keys(client, make_dataset)
 
 
 def test_single_date_dataset_has_equal_min_and_max(client, make_dataset):
-    dataset_id, token = make_dataset(["o1,2025-02-02,p1,Mug,2,19.99", "o2,2025-02-02,p2,Cup,1,5.00"])
+    dataset_id, token = make_dataset(
+        ["o1,2025-02-02,p1,Mug,2,19.99", "o2,2025-02-02,p2,Cup,1,5.00"]
+    )
     date_range = fetch(client, dataset_id, token).json()["date_range"]
     assert date_range == {"min": "2025-02-02", "max": "2025-02-02"}
 
@@ -133,7 +139,9 @@ def test_post_sample_is_not_captured_by_the_id_route(client, settings):
 def test_get_sample_is_a_malformed_id_not_a_dataset(client):
     # "sample" is not a valid dataset ID, so #14 answers 404 (401 without a token).
     created = client.post("/api/datasets/sample").json()
-    response = client.get("/api/datasets/sample", headers={"Authorization": f"Bearer {created['token']}"})
+    response = client.get(
+        "/api/datasets/sample", headers={"Authorization": f"Bearer {created['token']}"}
+    )
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
     assert client.get("/api/datasets/sample").status_code == 401

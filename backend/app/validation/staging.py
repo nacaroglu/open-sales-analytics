@@ -112,5 +112,7 @@ _MALFORMED_SQL = (
     "CREATE TABLE staging_malformed AS SELECT CAST(row_number AS BIGINT) AS row_number, "
     "CAST(field_count AS INTEGER) AS field_count, "
     "CAST(header_field_count AS INTEGER) AS header_field_count FROM "
-    + _read_csv("'row_number': 'VARCHAR', 'field_count': 'VARCHAR', 'header_field_count': 'VARCHAR'")
+    + _read_csv(
+        "'row_number': 'VARCHAR', 'field_count': 'VARCHAR', 'header_field_count': 'VARCHAR'"
+    )
 )

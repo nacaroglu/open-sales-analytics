@@ -275,10 +275,7 @@ def test_logged_exception_info_never_includes_the_message(log):
 
 
 def test_successful_upload_leaves_no_marker_or_token_in_the_log(client, log):
-    csv = (
-        HEADER + ",MARKER_COLUMN\n"
-        "MARKER_ORDER,2025-01-02,p1,MARKER_PRODUCT,2,19.99,MARKER_CELL\n"
-    )
+    csv = HEADER + ",MARKER_COLUMN\nMARKER_ORDER,2025-01-02,p1,MARKER_PRODUCT,2,19.99,MARKER_CELL\n"
     response = upload(client, csv, name="MARKER_FILENAME.csv")
     assert response.status_code == 201
     text = log.read()
@@ -302,8 +299,18 @@ def test_authorization_headers_never_reach_the_log(client, log, settings):
     log.clear()
     good = "Bearer " + created["token"]
     wrong = "Bearer MARKER_WRONG_TOKEN"
-    assert client.get(f"/api/datasets/{created['dataset_id']}", headers={"Authorization": good}).status_code == 200
-    assert client.get(f"/api/datasets/{created['dataset_id']}", headers={"Authorization": wrong}).status_code == 401
+    assert (
+        client.get(
+            f"/api/datasets/{created['dataset_id']}", headers={"Authorization": good}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            f"/api/datasets/{created['dataset_id']}", headers={"Authorization": wrong}
+        ).status_code
+        == 401
+    )
     text = log.read()
     assert created["token"] not in text
     assert "MARKER_WRONG_TOKEN" not in text
@@ -342,9 +349,19 @@ def test_real_uvicorn_writes_one_json_request_line_per_request_and_no_access_log
     env = {"PATH": os.environ.get("PATH", ""), "DATASET_DIR": str(tmp_path / "data")}
     with output.open("w") as sink:
         server = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--app-dir", str(BACKEND),
-             "--port", str(port)],
-            env=env, stdout=sink, stderr=subprocess.STDOUT,
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--app-dir",
+                str(BACKEND),
+                "--port",
+                str(port),
+            ],
+            env=env,
+            stdout=sink,
+            stderr=subprocess.STDOUT,
         )
         try:
             url = f"http://127.0.0.1:{port}"

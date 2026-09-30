@@ -24,7 +24,16 @@ def test_invalid_value_stops_the_server_with_nonzero_exit(monkeypatch):
 
 def test_uvicorn_exits_nonzero_on_invalid_environment(tmp_path):
     result = subprocess.run(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--app-dir", str(BACKEND), "--port", "8769"],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--app-dir",
+            str(BACKEND),
+            "--port",
+            "8769",
+        ],
         env={"MAX_UPLOAD_BYTES": "-1", "PATH": "/usr/bin:/bin"},
         capture_output=True,
         text=True,

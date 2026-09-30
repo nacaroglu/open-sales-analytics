@@ -82,7 +82,9 @@ def test_invalid_public_demo_mode_names_the_variable(monkeypatch):
         Settings()
 
 
-@pytest.mark.parametrize("variable", ["DATASET_TTL_HOURS", "MAX_UPLOAD_BYTES", "MAX_ROWS", "MAX_DATASETS"])
+@pytest.mark.parametrize(
+    "variable", ["DATASET_TTL_HOURS", "MAX_UPLOAD_BYTES", "MAX_ROWS", "MAX_DATASETS"]
+)
 @pytest.mark.parametrize("raw", ["0", "-1", "-5", "abc", "1.5"])
 def test_invalid_integers_name_the_variable(monkeypatch, variable, raw):
     monkeypatch.setenv(variable, raw)
@@ -126,8 +128,7 @@ def test_only_config_reads_the_environment():
     offenders = [
         path.name
         for path in app_dir.rglob("*.py")
-        if path.name != "config.py"
-        and re.search(r"os\.environ|os\.getenv", path.read_text())
+        if path.name != "config.py" and re.search(r"os\.environ|os\.getenv", path.read_text())
     ]
 
     assert offenders == []

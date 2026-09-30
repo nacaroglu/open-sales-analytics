@@ -63,7 +63,14 @@ def test_sample_returns_the_same_shape_as_an_upload(client):
     assert set(body) == {"dataset_id", "token", "meta", "warnings", "initial_summary"}
     assert body["warnings"] == []
     assert body["meta"]["id"] == body["dataset_id"]
-    assert set(body["meta"]) == {"id", "currency", "created_at", "expires_at", "row_count", "date_range"}
+    assert set(body["meta"]) == {
+        "id",
+        "currency",
+        "created_at",
+        "expires_at",
+        "row_count",
+        "date_range",
+    }
 
 
 def test_sample_meta_is_usd_with_the_full_year(client):
@@ -161,7 +168,9 @@ def assert_unavailable(response, data_dir, hidden):
 
 def test_broken_sample_is_500_sample_unavailable(client, data_dir, tmp_path, monkeypatch):
     broken = tmp_path / "broken.csv"
-    broken.write_text("order_id,order_date,product_id,product_name,quantity,unit_price\no1,not-a-date,p1,Mug,1,2.00\n")
+    broken.write_text(
+        "order_id,order_date,product_id,product_name,quantity,unit_price\no1,not-a-date,p1,Mug,1,2.00\n"
+    )
     monkeypatch.setattr(datasets_module, "SAMPLE_CSV", broken)
 
     assert_unavailable(client.post("/api/datasets/sample"), data_dir, [str(broken)])

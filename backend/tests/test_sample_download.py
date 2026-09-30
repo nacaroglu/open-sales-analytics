@@ -102,19 +102,25 @@ def test_missing_file_is_500_sample_unavailable(client, tmp_path, monkeypatch, l
     monkeypatch.setattr(datasets_module, "SAMPLE_CSV", tmp_path / "gone.csv")
     response = client.get(PATH)
     assert response.status_code == 500
-    assert response.json() == {"error": {"code": "sample_unavailable", "message": UNAVAILABLE_MESSAGE}}
+    assert response.json() == {
+        "error": {"code": "sample_unavailable", "message": UNAVAILABLE_MESSAGE}
+    }
     assert "Traceback" not in response.text
     assert str(tmp_path) not in response.text
     (line,) = log()
     assert line["status"] == 500
 
 
-def test_missing_file_gives_the_same_error_as_the_sample_dataset_endpoint(client, tmp_path, monkeypatch):
+def test_missing_file_gives_the_same_error_as_the_sample_dataset_endpoint(
+    client, tmp_path, monkeypatch
+):
     monkeypatch.setattr(datasets_module, "SAMPLE_CSV", tmp_path / "gone.csv")
     assert client.get(PATH).json() == client.post("/api/datasets/sample").json()
 
 
-def test_route_serves_whatever_sample_csv_points_at_when_the_request_arrives(client, tmp_path, monkeypatch):
+def test_route_serves_whatever_sample_csv_points_at_when_the_request_arrives(
+    client, tmp_path, monkeypatch
+):
     other = tmp_path / "other.csv"
     other.write_bytes(b"a,b\n1,2\n")
     monkeypatch.setattr(datasets_module, "SAMPLE_CSV", other)

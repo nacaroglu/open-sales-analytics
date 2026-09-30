@@ -124,7 +124,11 @@ def test_warnings_from_structure_and_rows_are_both_returned(client):
     body = upload(client, content).json()
 
     codes = [(w["code"], w["field"]) for w in body["warnings"]]
-    assert codes == [("extra_column", "note"), ("extra_column", "memo"), ("zero_price", "unit_price")]
+    assert codes == [
+        ("extra_column", "note"),
+        ("extra_column", "memo"),
+        ("zero_price", "unit_price"),
+    ]
     assert set(body["warnings"][0]) == {"code", "reason", "row_number", "field"}
 
 
@@ -186,7 +190,9 @@ def test_structure_errors_stop_further_checks(client, monkeypatch):
     calls = []
     monkeypatch.setattr(ingest_module, "stage_csv", lambda *a: calls.append("stage"))
     monkeypatch.setattr(ingest_module, "validate_rows", lambda *a: calls.append("rows"))
-    content = csv_text("o1,2025-01-02,p1,Mug,0", header="order_id,order_date,product_id,product_name,quantity")
+    content = csv_text(
+        "o1,2025-01-02,p1,Mug,0", header="order_id,order_date,product_id,product_name,quantity"
+    )
 
     response = upload(client, content)
 
@@ -200,7 +206,13 @@ def test_structure_errors_stop_further_checks(client, monkeypatch):
     [
         (HEADER + "\n", "no_data_rows"),
         ("", "empty_file"),
-        (csv_text("o1,2025-01-02,p1,Mug,1", header="order_id,order_date,product_id,product_name,quantity"), "missing_column"),
+        (
+            csv_text(
+                "o1,2025-01-02,p1,Mug,1",
+                header="order_id,order_date,product_id,product_name,quantity",
+            ),
+            "missing_column",
+        ),
     ],
 )
 def test_broken_files_return_422_not_500(client, data_dir, content, code):
@@ -276,7 +288,9 @@ def test_currency_after_the_file_is_still_checked_and_cleaned_up(client, data_di
     )
 
     response = client.post(
-        "/api/datasets", content=body, headers={"content-type": f"multipart/form-data; boundary={boundary}"}
+        "/api/datasets",
+        content=body,
+        headers={"content-type": f"multipart/form-data; boundary={boundary}"},
     )
 
     assert response.status_code == 400
@@ -289,7 +303,9 @@ def test_every_supported_currency_is_accepted(client):
 
 
 def test_no_file_part_is_400(client, data_dir):
-    response = client.post("/api/datasets", data={"currency": "USD"}, files={"other": ("a.csv", GOOD)})
+    response = client.post(
+        "/api/datasets", data={"currency": "USD"}, files={"other": ("a.csv", GOOD)}
+    )
 
     assert response.status_code == 400
     assert error_of(response)["code"] == "invalid_request"
@@ -315,7 +331,10 @@ def test_two_file_parts_are_400(client, data_dir):
         {"data": {"currency": "USD"}},  # urlencoded form
         {"content": b"", "headers": {}},
         {"content": "--x\r\ngarbage", "headers": {"content-type": "multipart/form-data"}},
-        {"content": "--x\r\ngarbage", "headers": {"content-type": "multipart/form-data; boundary=x"}},
+        {
+            "content": "--x\r\ngarbage",
+            "headers": {"content-type": "multipart/form-data; boundary=x"},
+        },
     ],
 )
 def test_non_multipart_request_is_400_in_our_shape(client, data_dir, kwargs):
@@ -346,7 +365,10 @@ def test_unexpected_failure_is_500_and_leaves_nothing(client, data_dir, monkeypa
     response = upload(client)
 
     assert response.status_code == 500
-    assert error_of(response) == {"code": "internal_error", "message": "Something went wrong on the server."}
+    assert error_of(response) == {
+        "code": "internal_error",
+        "message": "Something went wrong on the server.",
+    }
     assert "secret" not in response.text and str(data_dir) not in response.text
     assert "Traceback" not in response.text
     assert_clean(data_dir)

@@ -49,7 +49,9 @@ def dataset(settings, tmp_path):
     dataset_id = new_dataset_id()
     csv_path = tmp_path / "in.csv"
     csv_path.write_text(HEADER + "\no1,2025-01-02,p1,Mug,2,19.99\n", encoding="utf-8")
-    import_dataset(stage_csv(csv_path), csv_path, dataset_id, "USD", hash_token(token), settings, CREATED)
+    import_dataset(
+        stage_csv(csv_path), csv_path, dataset_id, "USD", hash_token(token), settings, CREATED
+    )
     return dataset_id, token
 
 
@@ -95,7 +97,9 @@ def test_no_authorization_header_is_401(client, dataset):
     assert_unauthorized(get(client, dataset[0]))
 
 
-@pytest.mark.parametrize("header", ["Basic dXNlcjpwYXNz", "Bearer", "Bearer ", "Bearer    ", "", "Token abc", "abc"])
+@pytest.mark.parametrize(
+    "header", ["Basic dXNlcjpwYXNz", "Bearer", "Bearer ", "Bearer    ", "", "Token abc", "abc"]
+)
 def test_malformed_header_is_401(client, dataset, header):
     assert_unauthorized(get(client, dataset[0], header))
 

@@ -93,9 +93,9 @@ WHERE row_number > first_row
 _CONFLICTING_NAME_SQL = f"""
 SELECT conflict.row_number, 4 AS position, 'product_name' AS field,
        'conflicting_product_name' AS code,
-       'Product ' || {_shown('conflict.product_id')} || ' has ' || conflict.name_count
-       || ' different names; the first two are ' || {_shown('conflict.first_name')}
-       || ' and ' || {_shown('conflict.second_name')} || '.' AS reason
+       'Product ' || {_shown("conflict.product_id")} || ' has ' || conflict.name_count
+       || ' different names; the first two are ' || {_shown("conflict.first_name")}
+       || ' and ' || {_shown("conflict.second_name")} || '.' AS reason
 FROM (
     SELECT s.product_id,
            min(s.row_number) AS row_number,

@@ -15,9 +15,7 @@ class Settings(BaseSettings):
     dataset_ttl_hours: int = Field(24, gt=0, validation_alias="DATASET_TTL_HOURS")
     max_upload_bytes: int = Field(52_428_800, gt=0, validation_alias="MAX_UPLOAD_BYTES")
     max_rows: int = Field(500_000, gt=0, validation_alias="MAX_ROWS")
-    cleanup_interval_minutes: int = Field(
-        15, gt=0, validation_alias="CLEANUP_INTERVAL_MINUTES"
-    )
+    cleanup_interval_minutes: int = Field(15, gt=0, validation_alias="CLEANUP_INTERVAL_MINUTES")
     max_datasets: int = Field(200, gt=0, validation_alias="MAX_DATASETS")
     public_demo_mode: bool = Field(False, validation_alias="PUBLIC_DEMO_MODE")
 

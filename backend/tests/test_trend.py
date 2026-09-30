@@ -79,7 +79,11 @@ def test_gap_in_the_middle_is_zero(tmp_path):
     rows = [row("A", date(2025, 3, 1), 1, "5.00"), row("B", date(2025, 3, 5), 2, "3.00")]
     buckets = trend_for(tmp_path, rows, date(2025, 3, 1), date(2025, 3, 5))["buckets"]
     assert [b["gross_sales"] for b in buckets] == [
-        Decimal("5"), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("6"),
+        Decimal("5"),
+        Decimal("0"),
+        Decimal("0"),
+        Decimal("0"),
+        Decimal("6"),
     ]
     assert [b["bucket_start"] for b in buckets] == [date(2025, 3, d) for d in range(1, 6)]
 
