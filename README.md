@@ -18,3 +18,15 @@ uv run uvicorn app.main:app --app-dir backend
 ```
 
 Check it: `curl http://127.0.0.1:8000/api/health` returns `{"status":"ok"}`.
+
+### Frontend
+
+Requires Node 22 or newer. From `frontend/`:
+
+```sh
+npm ci            # install
+npm run dev       # dev server on http://localhost:5173
+npm test          # Vitest, single run
+npm run typecheck # tsc --noEmit
+npm run build     # writes frontend/dist
+```
