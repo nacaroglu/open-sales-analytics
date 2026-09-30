@@ -6,8 +6,9 @@ import App from "./App";
 import { readSession, saveSession } from "./lib/session";
 import type { Created, Issue } from "./lib/types";
 
-const { sample, getMeta, remove } = vi.hoisted(() => ({
+const { sample, getMeta, remove, config } = vi.hoisted(() => ({
   sample: vi.fn(),
+  config: vi.fn(),
   getMeta: vi.fn(),
   remove: vi.fn(),
 }));
@@ -15,6 +16,7 @@ const { sample, getMeta, remove } = vi.hoisted(() => ({
 vi.mock("./lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/api")>()),
   createSampleDataset: sample,
+  getConfig: config,
   getMeta,
   deleteDataset: remove,
 }));
@@ -46,6 +48,7 @@ function created(warnings: Issue[] = []): Created {
 }
 
 beforeEach(() => {
+  config.mockResolvedValue({ public_demo_mode: false, max_upload_bytes: 52428800, max_rows: 500000 });
   getMeta.mockResolvedValue(meta);
   remove.mockResolvedValue(undefined);
   sample.mockResolvedValue(created());
@@ -54,6 +57,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   sample.mockReset();
+  config.mockReset();
   getMeta.mockReset();
   remove.mockReset();
   window.sessionStorage.clear();

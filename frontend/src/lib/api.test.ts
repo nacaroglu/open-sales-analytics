@@ -5,6 +5,7 @@ import {
   createSampleDataset,
   deleteDataset,
   getAnalytics,
+  getConfig,
   getHealth,
   getMeta,
 } from "./api";
@@ -249,4 +250,74 @@ test("an aborted request rejects with the abort error unchanged", async () => {
   expect(error).not.toBeInstanceOf(ApiError);
   expect((error as Error).name).toBe("AbortError");
   expect(lastCall().init.signal).toBe(controller.signal);
+});
+
+// Real bodies of GET /api/config from a running server.
+const REAL_DEFAULTS = { public_demo_mode: false, max_upload_bytes: 52428800, max_rows: 500000 };
+const REAL_DEMO = { public_demo_mode: true, max_upload_bytes: 1000, max_rows: 10 };
+
+test("getConfig calls GET /api/config with no Authorization header and returns the three values", async () => {
+  saveSession({ id: "d1", token: "tok" });
+  fetchMock.mockResolvedValue(json(REAL_DEFAULTS));
+
+  expect(await getConfig()).toEqual(REAL_DEFAULTS);
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const { url, init } = lastCall();
+  expect(url).toBe("/api/config");
+  expect(init.method).toBe("GET");
+  expect(headersOf(init).has("Authorization")).toBe(false);
+  expect(init.body).toBeUndefined();
+});
+
+test("getConfig returns a demo-mode body as sent and passes the abort signal on", async () => {
+  fetchMock.mockResolvedValue(json(REAL_DEMO));
+  const controller = new AbortController();
+
+  expect(await getConfig({ signal: controller.signal })).toEqual(REAL_DEMO);
+  expect(lastCall().init.signal).toBe(controller.signal);
+});
+
+test("getConfig drops keys it does not know", async () => {
+  fetchMock.mockResolvedValue(json({ ...REAL_DEFAULTS, dataset_dir: "/secret" }));
+  expect(await getConfig()).toEqual(REAL_DEFAULTS);
+});
+
+test.each([
+  ["a body that is not JSON", () => new Response("<html>spa</html>", { status: 200 })],
+  ["null", () => json(null)],
+  ["an array", () => json([REAL_DEFAULTS])],
+  ["a string", () => json("config")],
+  ["an empty object", () => json({})],
+  ["a missing flag", () => json({ max_upload_bytes: 1000, max_rows: 10 })],
+  ["a missing size", () => json({ public_demo_mode: false, max_rows: 10 })],
+  ["a missing row limit", () => json({ public_demo_mode: false, max_upload_bytes: 1000 })],
+  ["a flag that is a string", () => json({ ...REAL_DEFAULTS, public_demo_mode: "false" })],
+  ["a flag that is a number", () => json({ ...REAL_DEFAULTS, public_demo_mode: 0 })],
+  ["a flag that is null", () => json({ ...REAL_DEFAULTS, public_demo_mode: null })],
+  ["a size of zero", () => json({ ...REAL_DEFAULTS, max_upload_bytes: 0 })],
+  ["a negative size", () => json({ ...REAL_DEFAULTS, max_upload_bytes: -1 })],
+  ["a fractional size", () => json({ ...REAL_DEFAULTS, max_upload_bytes: 1.5 })],
+  ["a size that is a string", () => json({ ...REAL_DEFAULTS, max_upload_bytes: "1000" })],
+  ["a row limit of zero", () => json({ ...REAL_DEFAULTS, max_rows: 0 })],
+  ["a fractional row limit", () => json({ ...REAL_DEFAULTS, max_rows: 2.5 })],
+  ["a row limit that is null", () => json({ ...REAL_DEFAULTS, max_rows: null })],
+])("getConfig treats %s as an unknown_error, not partial data", async (_name, response) => {
+  fetchMock.mockResolvedValue(response());
+
+  const error = await rejection(getConfig());
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ code: "unknown_error" });
+});
+
+test("getConfig turns an error status or a network failure into an ApiError", async () => {
+  fetchMock.mockResolvedValue(json({ error: { code: "internal_error", message: "x" } }, 500));
+  expect(await rejection(getConfig())).toMatchObject({ status: 500, code: "internal_error" });
+
+  fetchMock.mockResolvedValue(new Response("", { status: 404 }));
+  expect(await rejection(getConfig())).toMatchObject({ status: 404, code: "unknown_error" });
+
+  fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+  expect(await rejection(getConfig())).toMatchObject({ status: 0, code: "network_error" });
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useAnalytics, useMeta } from "./hooks";
+import { useAnalytics, useConfig, useMeta } from "./hooks";
 import { saveSession } from "./session";
 
 const fetchMock = vi.fn();
@@ -103,4 +103,50 @@ test("a range change keeps the previous data while the new range loads, and a se
   expect(result.current.isPlaceholderData).toBe(false);
   expect(result.current.isFetching).toBe(false);
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+const REAL_CONFIG = { public_demo_mode: true, max_upload_bytes: 1000, max_rows: 10 };
+
+test("config hook fetches once without a token and is not refetched on remount, focus or reconnect", async () => {
+  saveSession({ id: "d1", token: "tok" });
+  fetchMock.mockImplementation(async () => new Response(JSON.stringify(REAL_CONFIG), { status: 200 }));
+
+  const first = renderHook(() => useConfig(), { wrapper });
+  await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+  expect(first.result.current.data).toEqual(REAL_CONFIG);
+  const [url, init] = fetchMock.mock.calls[0];
+  expect(url).toBe("/api/config");
+  expect(new Headers(init.headers).has("Authorization")).toBe(false);
+  expect(client.getQueryCache().find({ queryKey: ["config"] })?.isStale()).toBe(false);
+
+  first.unmount();
+  const second = renderHook(() => useConfig(), { wrapper });
+  expect(second.result.current.data).toEqual(REAL_CONFIG);
+  window.dispatchEvent(new Event("focus"));
+  window.dispatchEvent(new Event("online"));
+  await Promise.resolve();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+test("config hook does not retry a failure, even with the app's retry default", async () => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: 2, retryDelay: 0 } } });
+  fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+  const { result } = renderHook(() => useConfig(), { wrapper });
+
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+test("config hook does not ask again after a failure when the page mounts again", async () => {
+  fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+  const first = renderHook(() => useConfig(), { wrapper });
+  await waitFor(() => expect(first.result.current.isError).toBe(true));
+  first.unmount();
+
+  const second = renderHook(() => useConfig(), { wrapper });
+
+  expect(second.result.current.isError).toBe(true);
+  expect(second.result.current.isPending).toBe(false);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });

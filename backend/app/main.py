@@ -3,15 +3,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.routing import Match, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from app.api.datasets import router as datasets_router
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.errors import register_error_handlers
 from app.logging_config import RequestLogMiddleware, configure_logging
 
@@ -41,6 +41,19 @@ app.include_router(datasets_router)
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/config")
+def public_config(settings: Settings = Depends(get_settings)) -> JSONResponse:
+    # Public on purpose: only what the upload screen needs, never a path, TTL or token.
+    return JSONResponse(
+        {
+            "public_demo_mode": settings.public_demo_mode,
+            "max_upload_bytes": settings.max_upload_bytes,
+            "max_rows": settings.max_rows,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 class _SpaFallbackRoute(Route):

@@ -48,6 +48,12 @@ export interface Created {
   initial_summary: Summary;
 }
 
+export interface PublicConfig {
+  public_demo_mode: boolean;
+  max_upload_bytes: number;
+  max_rows: number;
+}
+
 export interface Health {
   status: string;
 }
