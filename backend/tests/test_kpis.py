@@ -3,7 +3,6 @@ from decimal import Decimal
 
 import duckdb
 import pytest
-
 from app.analytics.kpis import read_kpis
 from app.schema import create_dataset, open_dataset_readonly
 

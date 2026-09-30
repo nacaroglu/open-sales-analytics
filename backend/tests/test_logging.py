@@ -8,14 +8,13 @@ import time
 import urllib.request
 from pathlib import Path
 
+import app.ingest as ingest_module
 import duckdb
 import pytest
-from fastapi.testclient import TestClient
-
-import app.ingest as ingest_module
 from app.config import Settings, get_settings
 from app.logging_config import JsonFormatter, configure_logging
 from app.main import app
+from fastapi.testclient import TestClient
 
 BACKEND = Path(__file__).resolve().parents[1]
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"

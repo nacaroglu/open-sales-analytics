@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import duckdb
 import pytest
-
 from app.schema import DatasetFileError, create_dataset, open_dataset_readonly
 
 LINE_ITEMS = [

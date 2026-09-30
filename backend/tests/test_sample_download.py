@@ -1,12 +1,11 @@
 import json
 import logging
 
-import pytest
-from fastapi.testclient import TestClient
-
 import app.api.datasets as datasets_module
+import pytest
 from app.config import Settings, get_settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 SAMPLE = datasets_module.SAMPLE_CSV
 SAMPLE_BYTES = SAMPLE.read_bytes()

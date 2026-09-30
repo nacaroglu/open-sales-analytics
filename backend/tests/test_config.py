@@ -2,9 +2,8 @@ import re
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-
 from app.config import Settings, get_settings
+from pydantic import ValidationError
 
 VARIABLES = [
     "DATASET_DIR",

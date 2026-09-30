@@ -1,12 +1,11 @@
 from pathlib import Path
 
 import pytest
+from app.errors import register_error_handlers
+from app.main import app as real_app
+from app.main import mount_frontend
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from app.errors import register_error_handlers
-from app.main import mount_frontend
-from app.main import app as real_app
 
 INDEX_HTML = "<!doctype html><title>fake spa</title><div id=root></div>"
 

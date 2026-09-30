@@ -2,17 +2,16 @@ import os
 import re
 import stat
 
+import app.ingest as ingest_module
 import duckdb
 import pytest
-from fastapi.testclient import TestClient
-
-import app.ingest as ingest_module
 from app.config import Settings, get_settings
 from app.errors import ApiError, error_body
 from app.main import app
 from app.meta import read_meta
 from app.schema import open_dataset_readonly
 from app.tokens import hash_token, verify_token
+from fastapi.testclient import TestClient
 
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"
 GOOD_ROWS = ["o1,2025-01-02,p1,Mug,2,19.99", "o2,2025-03-04,p2,Cup,1,4.50"]
@@ -453,9 +452,8 @@ def test_ingest_csv_rejects_an_unknown_currency_and_deletes_the_file(settings, t
 
 
 def test_api_error_uses_the_shared_body_and_headers():
-    from fastapi import FastAPI
-
     from app.errors import register_error_handlers
+    from fastapi import FastAPI
 
     small = FastAPI()
     register_error_handlers(small)

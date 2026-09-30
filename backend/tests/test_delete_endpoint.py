@@ -1,14 +1,13 @@
 import inspect
 from datetime import UTC, datetime, timedelta
 
-import pytest
-from fastapi.testclient import TestClient
-
 import app.api.datasets as datasets_module
+import pytest
 from app.auth import get_now, require_dataset
 from app.config import Settings, get_settings
 from app.main import app
 from app.tokens import new_dataset_id, new_token
+from fastapi.testclient import TestClient
 
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"
 ROWS = ["o1,2025-01-02,p1,Mug,2,19.99", "o2,2025-01-10,p2,Cup,1,4.50"]

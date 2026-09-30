@@ -3,12 +3,10 @@ import logging
 import threading
 from datetime import UTC, datetime, timedelta
 
-import duckdb
-import pytest
-from fastapi.testclient import TestClient
-
 import app.api.datasets as datasets
 import app.capacity as capacity
+import duckdb
+import pytest
 from app.auth import get_now
 from app.capacity import count_live_datasets
 from app.cleanup import sweep
@@ -16,6 +14,7 @@ from app.config import Settings, get_settings
 from app.main import app
 from app.schema import create_dataset
 from app.tokens import new_dataset_id
+from fastapi.testclient import TestClient
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"

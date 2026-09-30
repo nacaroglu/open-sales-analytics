@@ -1,9 +1,7 @@
-import shutil
 from datetime import date
 from pathlib import Path
 
 import pytest
-
 from app.validation import stage_csv, validate_rows, validate_structure
 
 FIXTURES = Path(__file__).parent / "fixtures" / "rows"

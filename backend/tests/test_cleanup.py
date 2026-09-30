@@ -5,17 +5,16 @@ import stat
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import app.cleanup as cleanup
 import duckdb
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
-import app.cleanup as cleanup
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely, sweep
 from app.config import Settings, get_settings
 from app.main import app
 from app.schema import create_dataset
 from app.tokens import new_dataset_id
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 HOUR = 3600

@@ -21,7 +21,9 @@ def read_kpis(connection: duckdb.DuckDBPyConnection, start: date, end: date) -> 
     "average_order_value": Decimal}``. Money stays ``Decimal`` end to end; the
     average is rounded half-up to four places. An empty range gives zeros.
     """
-    gross_sales, orders, units_sold = connection.execute(_KPI_SQL, [start, end]).fetchone()
+    kpi_row = connection.execute(_KPI_SQL, [start, end]).fetchone()
+    assert kpi_row is not None  # an aggregate query always returns one row
+    gross_sales, orders, units_sold = kpi_row
     orders = int(orders)
     units_sold = int(units_sold or 0)
     gross_sales = Decimal(gross_sales) if gross_sales is not None else _ZERO_MONEY

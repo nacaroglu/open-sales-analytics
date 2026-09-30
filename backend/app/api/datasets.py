@@ -4,6 +4,7 @@ import shutil
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import BinaryIO
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -133,8 +134,8 @@ class _Upload:
         self.file_done = False
         self.full = False
         self._written = 0
-        self._target = None  # "file", "currency" or None, for the current part
-        self._out = None
+        self._target: str | None = None  # "file", "currency" or None, for the current part
+        self._out: BinaryIO | None = None
         self._field = bytearray()
         self._name = bytearray()
         self._value = bytearray()
@@ -180,6 +181,7 @@ class _Upload:
         chunk = data[start:end]
         if self._target == "file":
             chunk = chunk[: self.max_bytes - self._written]
+            assert self._out is not None  # set when the file part's headers finished
             self._out.write(chunk)
             self._written += len(chunk)
             self.full = self._written >= self.max_bytes
@@ -190,6 +192,7 @@ class _Upload:
 
     def on_part_end(self) -> None:
         if self._target == "file":
+            assert self._out is not None
             self._out.close()
             self._out = None
             self.file_done = True
@@ -286,6 +289,8 @@ async def create_dataset(
     upload = _Upload(settings)
     try:
         await _receive(request, upload)
+        # _receive raised unless both the file part and the currency were present.
+        assert upload.path is not None and upload.currency is not None
         outcome = await run_in_threadpool(ingest_csv, upload.path, upload.currency, settings)
         summary = (
             await run_in_threadpool(_full_range_summary, settings, outcome)
@@ -303,6 +308,7 @@ async def create_dataset(
             upload.path.unlink(missing_ok=True)
 
     if isinstance(outcome, CreatedDataset):
+        assert summary is not None  # computed above for every CreatedDataset
         request.state.created_dataset_id = outcome.dataset_id
         return JSONResponse(
             _created_body(outcome, summary),

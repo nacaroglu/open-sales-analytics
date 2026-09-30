@@ -36,7 +36,7 @@ def exception_details(exc: BaseException) -> dict:
         frames.append({"file": code.co_filename, "line": tb.tb_lineno, "function": code.co_name})
         tb = tb.tb_next
     details: dict = {"exception": type(exc).__name__, "frames": frames[-_MAX_FRAMES:]}
-    chained = []
+    chained: list[str] = []
     link = exc.__cause__ or exc.__context__
     while link is not None and len(chained) < 10:
         chained.append(type(link).__name__)

@@ -55,7 +55,9 @@ def import_dataset(
         if target.exists():
             raise FileExistsError(f"dataset {dataset_id} already exists")
 
-        (row_count,) = staging.execute("SELECT count(*) FROM staging").fetchone()
+        count_row = staging.execute("SELECT count(*) FROM staging").fetchone()
+        assert count_row is not None  # count(*) always returns one row
+        (row_count,) = count_row
         if row_count == 0:
             raise ValueError("refusing to import a dataset with no rows")
 

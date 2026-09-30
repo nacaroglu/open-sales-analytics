@@ -24,3 +24,16 @@ pythonpath = ["backend"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# Small rule set: pycodestyle errors, pyflakes, import order, bugbear.
+# Line length is left to the formatter, so E501 is ignored below.
+select = ["E", "F", "I", "B"]
+# B008: FastAPI's Depends(...) and File(...) calls in argument defaults are the framework's idiom.
+ignore = ["B008", "E501"]
+
+[tool.mypy]
+# Default (non-strict) mode, application code only: run as `mypy backend/app`.
+python_version = "3.12"
+mypy_path = "backend"
+plugins = ["pydantic.mypy"]

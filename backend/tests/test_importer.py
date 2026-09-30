@@ -2,8 +2,8 @@ import stat
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import duckdb
 import pytest
-
 from app.config import Settings
 from app.importer import import_dataset
 from app.schema import create_dataset, open_dataset_readonly
@@ -198,7 +198,7 @@ def test_many_rows_import_correctly(uploads, settings):
 def test_failure_while_inserting_lines_leaves_nothing(uploads, settings, data_dir):
     path = write_csv(uploads, "o1,2025-01-02,p1,Mug,1,1", "o2,2025-01-02,p2,Cup,notanumber,1")
 
-    with pytest.raises(Exception):
+    with pytest.raises(duckdb.Error):
         import_dataset(stage_csv(path), path, "abc123", "USD", TOKEN_HASH, settings, NOW)
 
     assert files_of(data_dir) == []
@@ -210,7 +210,7 @@ def test_failure_after_line_items_are_written_leaves_nothing(uploads, settings, 
     path = write_csv(uploads, "o1,2025-01-02,p1,Mug,1,1")
 
     # currency=None violates NOT NULL on dataset_meta, after line_items were inserted
-    with pytest.raises(Exception):
+    with pytest.raises(duckdb.Error):
         import_dataset(stage_csv(path), path, "abc123", None, TOKEN_HASH, settings, NOW)
 
     assert files_of(data_dir) == []

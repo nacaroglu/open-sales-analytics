@@ -29,7 +29,9 @@ def read_meta(connection: duckdb.DuckDBPyConnection) -> dict:
     if row is None:
         raise LookupError("the dataset has no metadata row")
     dataset_id, currency, created_at, expires_at, row_count = row
-    first, last = connection.execute(_DATE_RANGE_SQL).fetchone()
+    date_range = connection.execute(_DATE_RANGE_SQL).fetchone()
+    assert date_range is not None  # an aggregate query always returns one row
+    first, last = date_range
     return {
         "id": dataset_id,
         "currency": currency,

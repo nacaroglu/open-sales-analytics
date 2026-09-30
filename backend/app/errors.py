@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -36,7 +37,7 @@ class ApiError(Exception):
 _STATUS_CODES = {404: "not_found", 405: "method_not_allowed"}
 
 
-def _respond(status: int, body: dict, headers: dict[str, str] | None = None) -> JSONResponse:
+def _respond(status: int, body: dict, headers: Mapping[str, str] | None = None) -> JSONResponse:
     return JSONResponse(body, status_code=status, headers=headers)
 
 
@@ -62,7 +63,10 @@ async def _unexpected(_: Request, __: Exception) -> JSONResponse:
 
 def register_error_handlers(app: FastAPI) -> None:
     """Make every error the app can produce use the ``error_body`` shape."""
-    app.add_exception_handler(ApiError, _api_error)
-    app.add_exception_handler(RequestValidationError, _request_invalid)
-    app.add_exception_handler(StarletteHTTPException, _http_error)
+    # Starlette types a handler's second parameter as plain ``Exception`` although it only
+    # calls the handler registered for that exact class, so the narrower annotations below
+    # are correct at run time; mypy cannot see that, hence the three ignores.
+    app.add_exception_handler(ApiError, _api_error)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, _request_invalid)  # type: ignore[arg-type]
+    app.add_exception_handler(StarletteHTTPException, _http_error)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, _unexpected)

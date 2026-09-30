@@ -1,10 +1,9 @@
 import logging
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.config import Settings, get_settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"
 GOOD = HEADER + "\no1,2025-01-02,p1,Mug,2,19.99\no2,2025-03-04,p2,Cup,1,4.50\n"

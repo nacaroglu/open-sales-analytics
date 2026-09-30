@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import duckdb
 import pytest
-
 from app.analytics import top_products
 from app.analytics.top_products import read_top_products
 from app.schema import create_dataset, open_dataset_readonly

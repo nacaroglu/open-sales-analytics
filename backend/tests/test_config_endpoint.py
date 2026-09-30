@@ -2,12 +2,11 @@ import json
 import logging
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.config import Settings, get_settings
 from app.errors import register_error_handlers
 from app.main import app, mount_frontend
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 PATH = "/api/config"
 DEFAULTS = {"public_demo_mode": False, "max_upload_bytes": 52428800, "max_rows": 500000}

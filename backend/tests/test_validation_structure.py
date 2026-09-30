@@ -1,7 +1,6 @@
 import tracemalloc
 
 import pytest
-
 from app.validation import MAX_REPORTED_ERRORS, Issue, ValidationResult, validate_structure
 
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"

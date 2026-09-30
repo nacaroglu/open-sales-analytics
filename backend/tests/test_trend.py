@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import duckdb
 import pytest
-
 from app.analytics import trend
 from app.analytics.kpis import read_kpis
 from app.analytics.trend import read_trend
@@ -115,7 +114,7 @@ def test_weekly_partial_first_and_last_week(tmp_path):
     assert buckets[1] == {"bucket_start": date(2025, 1, 6), "gross_sales": Decimal("4")}
     assert buckets[-1] == {"bucket_start": date(2025, 3, 31), "gross_sales": Decimal("24")}
     assert all(b["bucket_start"].weekday() == 0 for b in buckets)
-    for earlier, later in zip(buckets, buckets[1:]):
+    for earlier, later in zip(buckets, buckets[1:], strict=False):
         assert later["bucket_start"] - earlier["bucket_start"] == timedelta(days=7)
 
 

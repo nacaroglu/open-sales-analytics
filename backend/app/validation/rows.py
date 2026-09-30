@@ -148,7 +148,9 @@ def validate_rows(
 
     connection.execute(_ISSUES_SQL, {"today": today.isoformat()})
     try:
-        (result.error_count,) = connection.execute("SELECT count(*) FROM row_issues").fetchone()
+        count_row = connection.execute("SELECT count(*) FROM row_issues").fetchone()
+        assert count_row is not None  # count(*) always returns one row
+        (result.error_count,) = count_row
         for row_number, field, code, reason in connection.execute(
             "SELECT row_number, field, code, reason FROM row_issues "
             "ORDER BY row_number, position LIMIT ?",
@@ -160,7 +162,9 @@ def validate_rows(
     finally:
         connection.execute("DROP TABLE IF EXISTS row_issues")
 
-    (zero_lines,) = connection.execute(_ZERO_PRICE_SQL).fetchone()
+    zero_row = connection.execute(_ZERO_PRICE_SQL).fetchone()
+    assert zero_row is not None  # an aggregate query always returns one row
+    (zero_lines,) = zero_row
     if zero_lines:
         noun = "line has" if zero_lines == 1 else "lines have"
         result.add_warning(
