@@ -11,20 +11,19 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - Text from the server or the user (reasons, field names, product names) is rendered as text, never as raw HTML.
 - Something not covered here: add one line to this file in your task; do not invent a private style.
 
-## Colour roles (contrast checked with WCAG 2.x, all text pairs >= 4.5:1)
+## Colour roles (contrast checked with WCAG 2.x, every text pair, disabled ones included, >= 4.5:1; ratios recomputed from Tailwind 4's palette)
 
 | Role | Classes | Ratio |
 |---|---|---|
 | App wrapper (page background, text) | `min-h-screen bg-slate-50 text-slate-900` | 17.0 |
 | Surface (cards, tables, inputs) | `bg-white border border-slate-200` | text 17.8 |
-| Muted text | `text-slate-600` (on white 7.6, on slate-50 7.3) | 7.3 |
-| Link | `text-indigo-700 underline underline-offset-2 hover:text-indigo-900` | 7.7 |
+| Muted text | `text-slate-600` | 7.6 on white, 7.2 on slate-50 |
+| Link | `text-indigo-700 underline underline-offset-2 hover:text-indigo-900` | 7.7 on slate-50 (8.1 on white) |
 | Primary action | `bg-indigo-700 text-white enabled:hover:bg-indigo-800` | 8.1 |
 | Error | `bg-red-50 border-red-700 text-red-900` | 9.2 |
-| Warning | `bg-amber-50 border-amber-700 text-amber-900` | 8.7 |
+| Warning | `bg-amber-50 border-amber-700 text-amber-900` | 8.8 |
 
-Control borders use `border-slate-500` (4.8:1 on white, above the 3:1 needed for controls); decorative borders `border-slate-200`.
-No success or neutral role: no task needs one.
+Control borders use `border-slate-500` (4.8:1 on white, 4.6 on slate-50, above the 3:1 needed for controls); decorative borders `border-slate-200`. No success or neutral role: no task needs one.
 
 ## Type and spacing
 
@@ -44,11 +43,13 @@ Spacing steps 1, 2, 3, 4, 6, 8 only. Page padding `px-8 py-8`; gap between secti
 
 ## Layout (768 px and up)
 
-Supported: desktop and tablet, 768 px and wider, no horizontal page scroll at 768 px. Phones are not supported.
-Page: `<main className="mx-auto max-w-5xl px-8 py-8 space-y-8">`. Dashboard, top to bottom, each a
-`<section aria-label="...">` stacked full width: Date range, Key figures, Sales trend, Top products (the four names from #27).
-Key figures: `grid grid-cols-2 lg:grid-cols-4 gap-4`. At 768 px the cards are ~340 px wide, so `$1,234,567,890.12`
-fits at `text-2xl`; from 1024 px they are narrower, hence `lg:text-xl` and `wrap-anywhere`, which wraps rather than overflows.
+Supported: desktop and tablet, 768 px and wider, no horizontal page scroll at 768 px. Phones are not supported. Page: `<main className="mx-auto max-w-5xl px-8 py-8 space-y-8">`. Dashboard, top to bottom, each a `<section aria-label="...">` stacked full width: Date range, Key figures, Sales trend, Top products (the four names from #27).
+Key figures: `grid grid-cols-2 lg:grid-cols-4 gap-4`. At 768 px the cards are ~340 px wide, so `$1,234,567,890.12` fits at `text-2xl`; from 1024 px they are narrower, hence `lg:text-xl` and `wrap-anywhere`, which wraps rather than overflows.
+
+Date range section (#27 + #31) is one card `rounded-lg border border-slate-200 bg-white p-4 space-y-4`, top to bottom: right-aligned primary **Analyze another file**;
+the dataset facts `<dl className="grid grid-cols-2 lg:grid-cols-4 gap-4">`, each a `<dt>` (card-label classes) over a `<dd className="mt-1 text-base font-semibold tabular-nums wrap-anywhere">`,
+labelled "Period" (`2025-01-01 to 2025-03-31`, as received), "Currency" (ISO code), "Rows" (`1,234`), "Expires" (local date and time), loading as `h-6 w-24` pulse blocks;
+then `<div className="flex flex-wrap items-end gap-3 border-t border-slate-200 pt-4">` with two `<div className="w-44">` (label "Start date" / "End date" over a date input, inline error `mt-1` below it) and a secondary **Reset** button, in that order.
 Wide content scrolls or wraps in its own box (`overflow-x-auto`, `wrap-anywhere`), never the page.
 
 ## Components
@@ -66,9 +67,8 @@ Wide content scrolls or wraps in its own box (`overflow-x-auto`, `wrap-anywhere`
 Busy: the button is `disabled` and the "Processing…" indicator is shown beside it. Text-only actions (Dismiss, links) use the link classes.
 
 **Form fields.** Visible `<label className="block text-sm font-medium">` above the control, never placeholder-only; the control follows with `mt-1`.
-Text, date and select: `block h-10 w-full rounded-md border border-slate-500 bg-white px-3 text-base text-slate-900 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed aria-[invalid=true]:border-2 aria-[invalid=true]:border-red-700` + focus classes.
-File input: `block w-full text-sm file:mr-3 file:h-10 file:rounded-md file:border file:border-slate-500 file:bg-white file:px-3 file:font-medium hover:file:bg-slate-100`.
-Invalid: set `aria-invalid="true"` and `aria-describedby` on the control, and the inline error (below) under it.
+Text, date and select: `block h-10 w-full rounded-md border border-slate-500 bg-white px-3 text-base text-slate-900 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed aria-[invalid=true]:border-2 aria-[invalid=true]:border-red-700` + focus classes.
+File input: `block w-full text-sm file:mr-3 file:h-10 file:rounded-md file:border file:border-slate-500 file:bg-white file:px-3 file:font-medium hover:file:bg-slate-100`. Invalid: set `aria-invalid="true"` and `aria-describedby` on the control, and the inline error (below) under it.
 
 **Card:** `rounded-lg border border-slate-200 bg-white p-4` (`p-6` for a chart section). KPI card: `<dt>`/label `text-sm font-medium text-slate-600` above the value, in a `<dl>` pair so they are read together.
 
@@ -91,9 +91,9 @@ Warnings from an accepted upload are a dismissible notice: warning look plus a l
 | State | Look |
 |---|---|
 | Loading card / chart / page (reduced motion: every animation carries `motion-reduce:animate-none`) | `animate-pulse motion-reduce:animate-none rounded bg-slate-200` blocks: `h-8 w-32` (KPI value), `h-72 w-full` (chart), a page-level block plus visible text "Loading…". Wrapper has `role="status"` and `aria-busy="true"`. Never hides the rest of the page. |
-| Processing (upload) | Text "Processing…" (`text-sm text-slate-600`, `role="status"`) above a track `h-1 w-full overflow-hidden rounded bg-slate-200` holding `h-full w-1/3 animate-pulse motion-reduce:animate-none bg-indigo-600` |
+| Processing (upload) | Text "Processing…" (`text-sm text-slate-600`, `role="status"`) above a track `h-1 w-full overflow-hidden rounded bg-slate-200` holding `h-full w-1/3 animate-pulse motion-reduce:animate-none bg-indigo-700` |
 | Refresh over old data | Old data stays, unchanged; add `text-sm text-slate-600` "Updating…" (`role="status"`) beside the section heading |
-| Empty chart / table | Inside the same box, same height (`h-72`): `flex h-72 items-center justify-center text-center text-slate-600`: "No sales in this range" / "No products sold in this range" |
+| Empty chart / table | Inside the same box, same height (`h-72`): `flex h-72 items-center justify-center text-center text-slate-600`: "No sales in this range" / "No products sold in this range". A range with no sales also shows the warning notice "No sales in the selected range" with a secondary **Reset** |
 | Section failed | Error look (above), text "Something went wrong loading this data" and a primary **Retry** |
 | Full page (expired, no session) | `mx-auto max-w-md rounded-lg border border-slate-200 bg-white p-6 text-center` with an h2 message and one button or link; the h1 stays |
 
@@ -103,13 +103,13 @@ Chart area `h-72` in a `ResponsiveContainer`, on a white card. One series colour
 
 | Part | Value |
 |---|---|
-| Trend line and bars | `#4f46e5` (indigo-600, 6.5:1 on white); line `strokeWidth` 2 with dots (a single bucket must show) |
+| Trend line and bars | `#432dd7` (`indigo-700`, 8.1:1 on white); line `strokeWidth` 2 with dots (a single bucket must show) |
 | Grid lines | `#e2e8f0` (slate-200) |
 | Axis lines | `#62748e` (slate-500) |
 | Tick labels | `#45556c` (slate-600), font size 12 |
 | Tooltip | white background, `1px solid #cad5e2` (slate-300) border, radius 6, text `#0f172b`, size 14 |
 
-The line and bars differ in hue and lightness from text and grid; one series is safe for colour-blind readers. A second series would need a dash pattern or marker too (add a line here first).
+The line and bars are saturated violet-blue (8.1 on white; axis 4.8, grid 1.2) and the axes, ticks and grid are grey slate, so hue and lightness both differ. One series is safe for colour-blind readers. A second series would need a dash pattern or marker too (add a line here first).
 
 ## Accessibility (every task)
 
