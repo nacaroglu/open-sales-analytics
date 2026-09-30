@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { createDatasetFromUpload, createSampleDataset } from "../lib/api";
+import ValidationReport from "../components/ValidationReport";
+import { ApiError, createDatasetFromUpload, createSampleDataset } from "../lib/api";
 import { saveSession } from "../lib/session";
-import type { Created } from "../lib/types";
+import type { Created, Issue } from "../lib/types";
 
 export const MAX_UPLOAD_BYTES = 52_428_800;
 
@@ -79,6 +80,11 @@ export default function UploadPage({
   const [file, setFile] = useState<File | null>(null);
   const [currency, setCurrency] = useState("");
   const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<{
+    errors: Issue[];
+    errorCount?: number;
+    warnings: Issue[];
+  } | null>(null);
   const inFlight = useRef(false);
 
   const problem = fileProblem(file);
@@ -88,12 +94,25 @@ export default function UploadPage({
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
+    setReport(null);
     try {
       const created = await start();
       saveSession({ id: created.dataset_id, token: created.token });
       onCreated(created);
-    } catch {
-      // What to show for a failure is #26 and #32; the controls just come back.
+    } catch (error) {
+      // Only a validation report is shown here; other failures are #32.
+      if (
+        error instanceof ApiError &&
+        error.status === 422 &&
+        error.code === "validation_failed" &&
+        Array.isArray(error.errors)
+      ) {
+        setReport({
+          errors: error.errors,
+          errorCount: error.errorCount,
+          warnings: Array.isArray(error.warnings) ? error.warnings : [],
+        });
+      }
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -102,6 +121,7 @@ export default function UploadPage({
 
   function onFile(event: ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null);
+    setReport(null);
   }
 
   return (
@@ -227,6 +247,8 @@ export default function UploadPage({
           </div>
         )}
       </section>
+
+      {report !== null && <ValidationReport {...report} />}
     </div>
   );
 }
