@@ -1,0 +1,4 @@
+order_id,order_date,product_id,product_name,quantity,unit_price
+o1,2025-01-02,p1,Mug,1,9.99
+o2,2025-01-02,p2,Cup,2,4.50
+o1,2025-01-02,p1,Mug,1,9.99

@@ -108,7 +108,10 @@ def test_row_numbers_start_at_two_for_the_first_data_row(tmp_path):
 
 
 def test_quoted_comma_and_line_break_are_one_value_and_one_record(tmp_path):
-    text = f'{HEADER}\no1,2025-01-02,p1,"Mug, big",1,9.99\no2,2025-01-02,p2,"Two\nlines",1,9.99\n{GOOD}\n'
+    text = (
+        f'{HEADER}\no1,2025-01-02,p1,"Mug, big",1,9.99\n'
+        'o2,2025-01-02,p2,"Two\nlines",1,9.99\no3,2025-01-02,p3,Mug,1,9.99\n'
+    )
     path = tmp_path / "u.csv"
     path.write_text(text)
 

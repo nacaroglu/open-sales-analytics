@@ -74,12 +74,59 @@ def _select(field: str, code: str, condition: str, reason: str) -> str:
     )
 
 
-_ISSUES_SQL = (
-    "CREATE OR REPLACE TEMP TABLE row_issues AS "
-    + " UNION ALL ".join(_select(*check) for check in _CHECKS)
-    + " UNION ALL SELECT row_number, 0, NULL, 'malformed_row', "
-    "'The row has ' || field_count || ' values but the header has ' || header_field_count "
-    "|| '.' FROM staging_malformed"
+# Cross-row rules. Rows with a blank ID or name are skipped: the row-level
+# check has already reported them.
+_DUPLICATE_LINE_SQL = """
+SELECT row_number, 0 AS position, NULL AS field, 'duplicate_line' AS code,
+       'This order and product already appear on row ' || first_row || '.' AS reason
+FROM (
+    SELECT row_number,
+           min(row_number) OVER (PARTITION BY order_id, product_id) AS first_row
+    FROM staging
+    WHERE order_id <> '' AND product_id <> ''
+)
+WHERE row_number > first_row
+"""
+
+# One error per product ID: on the first row whose name differs from the name
+# first seen for that ID, naming the first two names and how many there are.
+_CONFLICTING_NAME_SQL = f"""
+SELECT conflict.row_number, 4 AS position, 'product_name' AS field,
+       'conflicting_product_name' AS code,
+       'Product ' || {_shown('conflict.product_id')} || ' has ' || conflict.name_count
+       || ' different names; the first two are ' || {_shown('conflict.first_name')}
+       || ' and ' || {_shown('conflict.second_name')} || '.' AS reason
+FROM (
+    SELECT s.product_id,
+           min(s.row_number) AS row_number,
+           any_value(names.first_name) AS first_name,
+           arg_min(s.product_name, s.row_number) AS second_name,
+           any_value(names.name_count) AS name_count
+    FROM staging AS s
+    JOIN (
+        SELECT product_id,
+               arg_min(product_name, row_number) AS first_name,
+               count(DISTINCT product_name) AS name_count
+        FROM staging
+        WHERE product_id <> '' AND product_name <> ''
+        GROUP BY product_id
+        HAVING count(DISTINCT product_name) > 1
+    ) AS names ON s.product_id = names.product_id
+    WHERE s.product_name <> '' AND s.product_name <> names.first_name
+    GROUP BY s.product_id
+) AS conflict
+"""
+
+_MALFORMED_ROW_SQL = """
+SELECT row_number, 0 AS position, NULL AS field, 'malformed_row' AS code,
+       'The row has ' || field_count || ' values but the header has ' || header_field_count
+       || '.' AS reason
+FROM staging_malformed
+"""
+
+_ISSUES_SQL = "CREATE OR REPLACE TEMP TABLE row_issues AS " + " UNION ALL ".join(
+    [_select(*check) for check in _CHECKS]
+    + [_MALFORMED_ROW_SQL, _DUPLICATE_LINE_SQL, _CONFLICTING_NAME_SQL]
 )
 
 _ZERO_PRICE_SQL = (
@@ -91,7 +138,7 @@ _ZERO_PRICE_SQL = (
 def validate_rows(
     connection: duckdb.DuckDBPyConnection, today: date | None = None
 ) -> ValidationResult:
-    """Run the row-level rules as SQL over the tables made by ``stage_csv``.
+    """Run the row-level and cross-row rules as SQL over the tables made by ``stage_csv``.
 
     ``today`` is the latest acceptable order date; it defaults to today's date
     in UTC and exists so tests can fix it.
