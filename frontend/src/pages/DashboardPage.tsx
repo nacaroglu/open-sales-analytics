@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteDataset } from "../lib/api";
-import { useMeta } from "../lib/hooks";
+import KpiCards from "../components/KpiCards";
+import { useAnalytics, useMeta } from "../lib/hooks";
 import { clearSession, tokenFor } from "../lib/session";
 import type { Issue } from "../lib/types";
 
@@ -96,6 +97,9 @@ export default function DashboardPage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const meta = useMeta(datasetId);
+  // The one analytics request of the page (full range). The trend chart (#29)
+  // and the top products (#30) read it from here too.
+  const analytics = useAnalytics(datasetId);
   const [leaving, setLeaving] = useState(false);
 
   const hasToken = tokenFor(datasetId) !== null;
@@ -187,7 +191,9 @@ export default function DashboardPage({
       </section>
 
       {/* Empty areas: #28, #29 and #30 place their content here. */}
-      <section aria-label="Key figures" />
+      <section aria-label="Key figures">
+        <KpiCards kpis={analytics.data?.kpis} currency={analytics.data?.currency} />
+      </section>
       <section aria-label="Sales trend" />
       <section aria-label="Top products" />
     </div>

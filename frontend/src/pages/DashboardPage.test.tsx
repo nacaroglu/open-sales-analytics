@@ -5,13 +5,18 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import DashboardPage from "./DashboardPage";
 import { ApiError } from "../lib/api";
 import { readSession, saveSession } from "../lib/session";
-import type { Issue, Meta } from "../lib/types";
+import type { Issue, Meta, Summary } from "../lib/types";
 
-const { getMeta, remove } = vi.hoisted(() => ({ getMeta: vi.fn(), remove: vi.fn() }));
+const { getMeta, getAnalytics, remove } = vi.hoisted(() => ({
+  getMeta: vi.fn(),
+  getAnalytics: vi.fn(),
+  remove: vi.fn(),
+}));
 
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   getMeta,
+  getAnalytics,
   deleteDataset: remove,
 }));
 
@@ -30,12 +35,22 @@ const meta: Meta = {
   date_range: { min: "2025-03-01", max: "2025-03-31" },
 };
 
+const summary: Summary = {
+  range: { start: "2025-03-01", end: "2025-03-31" },
+  currency: "EUR",
+  granularity: "daily",
+  kpis: { gross_sales: "1234567.8900", orders: 10482, units_sold: 25000, average_order_value: "117.7900" },
+  trend: [],
+  top_products: [],
+};
+
 let queryClient: QueryClient;
 const dismiss = vi.fn();
 
 beforeEach(() => {
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   getMeta.mockResolvedValue(meta);
+  getAnalytics.mockResolvedValue(summary);
   remove.mockResolvedValue(undefined);
   saveSession({ id: "d1", token: "tok" });
 });
@@ -43,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   getMeta.mockReset();
+  getAnalytics.mockReset();
   remove.mockReset();
   dismiss.mockReset();
   window.sessionStorage.clear();
@@ -117,14 +133,15 @@ test("while loading, a status with Loading… replaces the facts", async () => {
   getMeta.mockReturnValue(new Promise<Meta>((resolve) => (finish = resolve)));
   renderAt("/d/d1");
 
-  const status = screen.getByRole("status");
+  const region = screen.getByRole("region", { name: "Date range" });
+  const status = within(region).getByRole("status");
   expect(status).toHaveAttribute("aria-busy", "true");
   expect(status).toHaveTextContent("Loading…");
   expect(screen.queryByText("EUR")).not.toBeInTheDocument();
 
   finish(meta);
   expect(await screen.findByText("EUR")).toBeInTheDocument();
-  expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  expect(within(region).queryByText("Loading…")).not.toBeInTheDocument();
 });
 
 test("no stored token: message and link to the upload screen, no request", () => {
@@ -250,4 +267,20 @@ test("Analyze another file cannot be pressed twice", async () => {
   expect(remove).toHaveBeenCalledTimes(1);
   finish();
   await screen.findByText("Upload screen route");
+});
+
+test("key figures show the analytics of the full range in the dataset currency, from one request", async () => {
+  renderAt("/d/d1");
+
+  const region = screen.getByRole("region", { name: "Key figures" });
+  expect(within(region).getByRole("status")).toHaveAttribute("aria-busy", "true");
+  expect(await within(region).findByText("€1,234,567.89")).toBeInTheDocument();
+  expect(within(region).getByText("10,482")).toBeInTheDocument();
+  expect(within(region).getByText("25,000")).toBeInTheDocument();
+  expect(within(region).getByText("€117.79")).toBeInTheDocument();
+  expect(within(region).queryByRole("status")).not.toBeInTheDocument();
+
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+  expect(getAnalytics.mock.calls[0][0]).toBe("d1");
+  expect(getAnalytics.mock.calls[0][1]).toEqual({ start: undefined, end: undefined });
 });
