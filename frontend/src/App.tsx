@@ -1,7 +1,12 @@
+import UploadPage from "./pages/UploadPage";
+
 export default function App() {
   return (
-    <main className="p-8">
-      <h1 className="text-3xl font-bold text-indigo-700">Open Sales Analytics</h1>
-    </main>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <main className="mx-auto max-w-5xl px-8 py-8 space-y-8">
+        {/* Navigating to the dashboard after success is #27. */}
+        <UploadPage onCreated={() => {}} />
+      </main>
+    </div>
   );
 }
