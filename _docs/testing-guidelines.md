@@ -1,0 +1,104 @@
+# Testing guidelines
+
+How tests are written in this repo today. Read before writing a test. If the repo differs, the repo
+wins: fix this file in the same change.
+
+## Where tests live, how to run them
+
+Backend: `backend/tests/test_<area>.py`, flat. No `conftest.py`, no markers, no subfolder except
+`backend/tests/fixtures/`, so a fixture is defined in the test file that uses it. Test names are a
+sentence about the behaviour (`test_expired_dataset_is_404_even_with_correct_token`). Pytest settings
+are in `pyproject.toml`; run from the repository root:
+
+- `uv run pytest` (all), `uv run pytest backend/tests/test_health.py` (one file)
+- `uv run pytest backend/tests/test_health.py::test_health_returns_ok` (one test)
+
+Frontend: `frontend/src/**/<name>.test.ts` or `.test.tsx` next to the code (Vitest, jsdom). From `frontend/`:
+`npm test` (all, single run), `npx vitest run src/App.test.tsx` (one file), `npm run typecheck`, `npm run build`.
+
+CI (`.github/workflows/ci.yml`) runs only `uv run pytest` today. Frontend tests, type check and the
+browser test are added by #35; until then nothing gates them.
+Baseline, measured 2026-09-30: `uv run pytest` 527 tests in about 40 s; `npm test` 27 tests in about 2.5 s.
+
+## Levels (plan section 12)
+
+- Unit: a function called directly on a small hand-built dataset or CSV (`test_kpis.py`,
+  `test_validation_rows.py`). Vitest component and hook tests are unit level and never start the backend.
+- Integration: a request through `TestClient(app)` with settings overridden (`test_upload_endpoint.py`,
+  `test_analytics_endpoint.py`). A real `uvicorn` subprocess only for what an in-process client cannot
+  see: startup failure and log output on the real stream (`test_startup.py`, `test_logging.py`).
+- Browser: exactly one (Playwright, Chromium, one spec, #33; not written yet). Nothing else drives a browser.
+
+Plan section 12 rules and their tests: validation rules `test_validation_structure.py`, `_rows.py`,
+`_cross_row.py`; metrics, granularity, date boundaries `test_kpis.py`, `test_top_products.py`,
+`test_trend.py`; token verification and expiry `test_tokens.py`, `test_auth.py`; upload and
+"rejected upload leaves nothing" `test_upload_endpoint.py`; filtered analytics
+`test_analytics_endpoint.py`; missing or invalid token `test_auth.py`, `test_delete_endpoint.py`,
+`test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
+demo mode `test_demo_mode.py`. Still to come: the browser happy path (#33).
+
+## Isolation and settings
+
+Tests never read or write the real `DATASET_DIR` (default `./tmp_datasets`, relative to the working
+directory). Two patterns:
+
+- (a) `Settings(DATASET_DIR=tmp_path / "data", ...)` plus `app.dependency_overrides[get_settings] = lambda: settings`
+  in a fixture, `app.dependency_overrides.clear()` after the `yield` (`test_upload_endpoint.py`).
+  Use for endpoint and service tests.
+- (b) `monkeypatch.setenv(...)` with `get_settings.cache_clear()` before and after, because
+  `get_settings` is cached (`test_config.py`, `test_startup.py`). Use only when the test is about reading the environment.
+
+Files go under `tmp_path` (pytest removes it); leave nothing in the repo. `TestClient(app)` without `with`
+does not run the startup sweep and timer; `with TestClient(app):` does (`test_cleanup.py`, lifespan
+section). Use `with` only when the test is about startup.
+A subprocess test passes an explicit `env` dict (`PATH` plus only what it needs), never the developer's
+environment, and terminates and waits for the process in a `finally` (`test_logging.py`).
+
+## Time
+
+Never sleep to wait for expiry or for "today" to change. Handles: the `get_now` dependency in `app.auth`
+(`app.dependency_overrides[get_now] = lambda: fixed`); `now=` on `sweep` and the importer; `today=` on the
+row validator; `sleep=` on `run_cleanup_loop`. Use a fixed `datetime(..., tzinfo=UTC)`. Test exactly at the
+limit and one second either side: `test_cleanup.py::test_expiry_exactly_now_is_expired_one_second_later_is_not`,
+`test_auth.py::test_one_second_before_expiry_is_accepted`,
+`test_validation_rows.py::test_today_is_accepted_and_tomorrow_is_the_future`.
+The one accepted real wait is a bounded poll (100 tries, 0.1 s apart) until a spawned server answers
+`/api/health`, in `test_logging.py`. Any new wait must be bounded and poll a condition, never a fixed sleep.
+
+## Fixtures
+
+CSVs live in `backend/tests/fixtures/<group>/<name>.csv` (groups: `rows/`, `cross_row/`), named after the
+rule, one violation per file plus one `clean.csv` per group; load with `Path(__file__).parent / "fixtures" / "<group>"`.
+A single-use CSV is written inline (`HEADER` plus rows, under `tmp_path`). `backend/app/sample/sample_sales.csv`
+is application data, not a test fixture. Frontend tests build data inline (objects typed with
+`frontend/src/lib/types.ts`, `File` objects for uploads); there is no frontend fixtures folder.
+
+## Logging and secrets
+
+Assert log output from JSON lines read via `capsys` (the `log` fixture in `test_logging.py`), or `caplog`
+with `logger="app"` for demo-mode records (`test_demo_mode.py`). A test that touches tokens, hashes or
+uploaded content asserts none of them appear in the captured output
+(`test_successful_upload_leaves_no_marker_or_token_in_the_log`, `test_token_hash_never_reaches_the_log`).
+
+## Frontend patterns
+
+Stub fetch (`api.test.ts`, `hooks.test.tsx`): `vi.stubGlobal("fetch", fetchMock)` in `beforeEach`;
+`fetchMock.mockReset()`, `vi.unstubAllGlobals()`, `window.sessionStorage.clear()` in `afterEach`; respond with
+`new Response(JSON.stringify(body), { status })`; assert on the URL and `Authorization` header of `fetchMock.mock.calls`.
+Hook and component tests wrap in `QueryClientProvider` with a fresh `new QueryClient({ defaultOptions:
+{ queries: { retry: false } } })` per test, wait with `waitFor` / `findBy...` (never sleep), and use `fireEvent`:
+`@testing-library/user-event` and MSW are not installed (adding one needs approval, see `AGENTS.md`).
+`src/test-setup.ts` loads the `@testing-library/jest-dom` matchers.
+
+jsdom caveats (when you hit a new one, add it here in one line):
+
+- No layout, no `ResizeObserver`: Recharts' `ResponsiveContainer` renders nothing unless the test stubs
+  `ResizeObserver` and gives the container a size. The stub goes in `frontend/src/test-setup.ts`; it does not
+  exist yet and is added by whichever of #29 / #30 lands first.
+- Do not rely on the class of an abort error; check `signal.aborted` or `error.name === "AbortError"`
+  (see `isAbort` in `frontend/src/lib/api.ts`).
+
+## Fast and clean
+
+No network, no fixed sleeps, small hand-built datasets, no shared state: each test gets its own `tmp_path`,
+`QueryClient` and stubs. A test that leaves a server, a file or a stubbed global behind is a bug.
