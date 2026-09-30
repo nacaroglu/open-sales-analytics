@@ -12,6 +12,7 @@ VARIABLES = [
     "MAX_UPLOAD_BYTES",
     "MAX_ROWS",
     "CLEANUP_INTERVAL_MINUTES",
+    "MAX_DATASETS",
     "PUBLIC_DEMO_MODE",
 ]
 
@@ -32,6 +33,7 @@ def test_defaults_with_empty_environment():
     assert settings.dataset_ttl_hours == 24
     assert settings.max_upload_bytes == 52_428_800
     assert settings.max_rows == 500_000
+    assert settings.max_datasets == 200
     assert settings.public_demo_mode is False
 
 
@@ -42,6 +44,7 @@ def test_defaults_with_empty_environment():
         ("DATASET_TTL_HOURS", "6", "dataset_ttl_hours", 6),
         ("MAX_UPLOAD_BYTES", "1000", "max_upload_bytes", 1000),
         ("MAX_ROWS", "42", "max_rows", 42),
+        ("MAX_DATASETS", "3", "max_datasets", 3),
         ("PUBLIC_DEMO_MODE", "true", "public_demo_mode", True),
     ],
 )
@@ -79,8 +82,8 @@ def test_invalid_public_demo_mode_names_the_variable(monkeypatch):
         Settings()
 
 
-@pytest.mark.parametrize("variable", ["DATASET_TTL_HOURS", "MAX_UPLOAD_BYTES", "MAX_ROWS"])
-@pytest.mark.parametrize("raw", ["0", "-5", "abc", "1.5"])
+@pytest.mark.parametrize("variable", ["DATASET_TTL_HOURS", "MAX_UPLOAD_BYTES", "MAX_ROWS", "MAX_DATASETS"])
+@pytest.mark.parametrize("raw", ["0", "-1", "-5", "abc", "1.5"])
 def test_invalid_integers_name_the_variable(monkeypatch, variable, raw):
     monkeypatch.setenv(variable, raw)
 
