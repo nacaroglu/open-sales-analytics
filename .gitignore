@@ -15,6 +15,10 @@ node_modules/
 dist/
 .vite/
 
+# Playwright
+test-results/
+playwright-report/
+
 # Editor / OS
 .DS_Store
 .idea/
