@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
@@ -71,6 +71,12 @@ def build_summary(connection, meta: dict, start: date, end: date) -> dict:
     }
 
 
+def _remove_dataset_files(target: Path) -> None:
+    """Delete a dataset file and its ``.wal`` sibling; raises FileNotFoundError if the file is gone."""
+    target.with_name(target.name + ".wal").unlink(missing_ok=True)
+    target.unlink()
+
+
 def _full_range_summary(settings: Settings, created: CreatedDataset) -> dict:
     """The summary for a just-created dataset; removes the dataset if it cannot be computed."""
     target = dataset_path(settings, created.dataset_id)
@@ -83,8 +89,10 @@ def _full_range_summary(settings: Settings, created: CreatedDataset) -> dict:
         finally:
             connection.close()
     except BaseException:
-        for leftover in (target, target.with_name(target.name + ".wal")):
-            leftover.unlink(missing_ok=True)
+        try:
+            _remove_dataset_files(target)
+        except FileNotFoundError:
+            pass
         raise
 
 
@@ -345,3 +353,16 @@ def get_dataset_analytics(
     finally:
         connection.close()
     return JSONResponse(body, headers={"Cache-Control": "no-store"})
+
+
+@router.delete("/datasets/{id}", status_code=204)
+def delete_dataset(
+    dataset: AuthorizedDataset = Depends(require_dataset),
+    settings: Settings = Depends(get_settings),
+):
+    try:
+        _remove_dataset_files(dataset_path(settings, dataset.id))
+    except FileNotFoundError:
+        # Removed by someone else after the authorisation check.
+        raise ApiError(404, "not_found", "The dataset was not found.") from None
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
