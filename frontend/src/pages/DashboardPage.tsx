@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteDataset } from "../lib/api";
 import KpiCards from "../components/KpiCards";
+import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
 import { useAnalytics, useMeta } from "../lib/hooks";
 import { clearSession, tokenFor } from "../lib/session";
@@ -203,7 +204,13 @@ export default function DashboardPage({
           currency={analytics.data?.currency}
         />
       </section>
-      <section aria-label="Top products" />
+      <section aria-label="Top products">
+        <TopProducts
+          topProducts={analytics.data?.top_products}
+          currency={analytics.data?.currency}
+          range={analytics.data?.range}
+        />
+      </section>
     </div>
   );
 }

@@ -302,3 +302,24 @@ test("the sales trend region shows the chart from the one analytics response", a
   expect(within(region).getByRole("img", { name: /^Weekly gross sales from 2025-03-01 to 2025-03-31$/ })).toBeInTheDocument();
   expect(getAnalytics).toHaveBeenCalledTimes(1);
 });
+
+test("the top products region shows the products from the one analytics response", async () => {
+  getAnalytics.mockResolvedValue({
+    ...summary,
+    top_products: [
+      { product_id: "p2", product_name: "Desk", gross_sales: "900.0000", units_sold: 3, distinct_orders: 2 },
+      { product_id: "p1", product_name: "Chair", gross_sales: "100.5000", units_sold: 1, distinct_orders: 1 },
+    ],
+  });
+  renderAt("/d/d1");
+
+  const region = screen.getByRole("region", { name: "Top products" });
+  expect(within(region).getByRole("status")).toHaveAttribute("aria-busy", "true");
+  expect(within(region).getByRole("heading", { level: 2, name: "Top products" })).toBeInTheDocument();
+  expect(
+    await within(region).findByRole("img", { name: "Top 2 products by gross sales from 2025-03-01 to 2025-03-31" }),
+  ).toBeInTheDocument();
+  expect(within(region).getByText("€900.00")).toBeInTheDocument();
+  expect(within(region).getAllByRole("row")).toHaveLength(3);
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+});

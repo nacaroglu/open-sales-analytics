@@ -88,8 +88,8 @@ Hook and component tests wrap in `QueryClientProvider` with a fresh `new QueryCl
 jsdom caveats (when you hit a new one, add it here in one line):
 
 - No layout, no `ResizeObserver`: Recharts' `ResponsiveContainer` renders nothing unless the test stubs
-  `ResizeObserver` and sizes the container. The stub goes in `frontend/src/test-setup.ts`; not there yet, added by
-  whichever of #29 / #30 lands first.
+  `ResizeObserver` and sizes the container. The stub is in `frontend/src/test-setup.ts` (reports a fixed 800 x 288 px
+  box on `observe`), so charts render in every test without further setup.
 - Abort errors: in jsdom `new DOMException("x", "AbortError") instanceof Error` is false (verified 2026-09-30), so
   `fetchMock.mockRejectedValue(new DOMException(...))` is not an `Error`; `signal.reason` after `controller.abort()`
   and a real `fetch` rejected by an aborted signal are `instanceof Error`. `isAbort` (`frontend/src/lib/api.ts`) is
