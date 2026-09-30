@@ -235,6 +235,9 @@ export default function DashboardPage({
 
   useEffect(() => {
     if (terminal === null) return;
+    // Justified exception: the query cache is emptied just below, so the terminal answer
+    // has to be copied into state here or the page would flip back to a blank dashboard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setGone({ id: datasetId, kind: terminal });
     // Only this dataset's own session is let go of, never another one's.
     if (readSession()?.id === datasetId) clearSession();
