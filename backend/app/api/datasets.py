@@ -1,3 +1,4 @@
+import logging
 import re
 import shutil
 from datetime import date
@@ -22,6 +23,7 @@ from app.ingest import CreatedDataset, ingest_csv, new_upload_path
 from app.schema import open_dataset_readonly
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 SAMPLE_CSV = Path(__file__).resolve().parent.parent / "sample" / "sample_sales.csv"
 SAMPLE_CURRENCY = "USD"
@@ -247,6 +249,14 @@ async def _receive(request: Request, upload: _Upload) -> None:
 
 @router.post("/datasets", status_code=201)
 async def create_dataset(request: Request, settings: Settings = Depends(get_settings)):
+    if settings.public_demo_mode:
+        # First thing: the body is never read, parsed or stored.
+        logger.info("Upload rejected because public demo mode is enabled.")
+        raise ApiError(
+            403,
+            "upload_disabled",
+            "Uploads are disabled on this demo. Upload your own file with the self-hosted version.",
+        )
     upload = _Upload(settings)
     try:
         await _receive(request, upload)
