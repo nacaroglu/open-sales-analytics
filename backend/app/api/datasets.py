@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
+from app.auth import AuthorizedDataset, require_dataset
 from app.config import Settings, get_settings
 from app.currencies import CURRENCIES, is_valid_currency
 from app.errors import ApiError
@@ -226,3 +227,8 @@ async def create_sample_dataset(settings: Settings = Depends(get_settings)):
         status_code=201,
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/datasets/{id}")
+def get_dataset_meta(dataset: AuthorizedDataset = Depends(require_dataset)):
+    return JSONResponse(dataset.meta, headers={"Cache-Control": "no-store"})
