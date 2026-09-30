@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import DashboardPage from "./DashboardPage";
@@ -322,4 +322,398 @@ test("the top products region shows the products from the one analytics response
   expect(within(region).getByText("€900.00")).toBeInTheDocument();
   expect(within(region).getAllByRole("row")).toHaveLength(3);
   expect(getAnalytics).toHaveBeenCalledTimes(1);
+});
+
+// ---- Date range filter (#31) ----
+
+function filterInputs() {
+  return {
+    start: screen.getByLabelText("Start date") as HTMLInputElement,
+    end: screen.getByLabelText("End date") as HTMLInputElement,
+    reset: screen.getByRole("button", { name: "Reset" }),
+  };
+}
+
+function type(input: HTMLElement, value: string) {
+  fireEvent.change(input, { target: { value } });
+}
+
+// An answer for one range: orders tells the responses apart, the trend and the
+// products carry the same marker so the three sections can be checked together.
+function answer(
+  range: { start: string; end: string },
+  orders: number,
+  granularity: Summary["granularity"] = "daily",
+): Summary {
+  return {
+    ...summary,
+    range,
+    granularity,
+    kpis: { ...summary.kpis, orders },
+    trend: [{ bucket_start: range.start, gross_sales: "10.0000" }],
+    top_products: [
+      { product_id: "p1", product_name: `Product ${orders}`, gross_sales: "10.0000", units_sold: 1, distinct_orders: 1 },
+    ],
+  };
+}
+
+// Answers every request with the range it asked for (a missing bound is the dataset's).
+function answerEvery(orders: number) {
+  getAnalytics.mockImplementation(async (_id: string, range: { start?: string; end?: string }) =>
+    answer({ start: range.start ?? "2025-03-01", end: range.end ?? "2025-03-31" }, orders),
+  );
+}
+
+async function renderLoaded() {
+  renderAt("/d/d1");
+  await screen.findByDisplayValue("2025-03-01");
+  await screen.findByText("10,482");
+}
+
+test("the filter shows Start date, End date and Reset in that order, with the dataset bounds", async () => {
+  await renderLoaded();
+
+  const { start, end, reset } = filterInputs();
+  expect(start).toHaveAttribute("type", "date");
+  expect(end).toHaveAttribute("type", "date");
+  expect(start).toHaveValue("2025-03-01");
+  expect(end).toHaveValue("2025-03-31");
+  for (const input of [start, end]) {
+    expect(input).toHaveAttribute("min", "2025-03-01");
+    expect(input).toHaveAttribute("max", "2025-03-31");
+    expect(input).toBeEnabled();
+  }
+  expect(start.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(end.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(reset).toBeDisabled();
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+});
+
+test("while the metadata loads the inputs and Reset are disabled and empty, and no range is sent", () => {
+  getMeta.mockReturnValue(new Promise<Meta>(() => {}));
+  renderAt("/d/d1");
+
+  const { start, end, reset } = filterInputs();
+  expect(start).toBeDisabled();
+  expect(end).toBeDisabled();
+  expect(reset).toBeDisabled();
+  expect(start).toHaveValue("");
+  expect(end).toHaveValue("");
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+  expect(getAnalytics.mock.calls[0][1]).toEqual({ start: undefined, end: undefined });
+});
+
+test("when the metadata failed the inputs and Reset stay disabled and empty", async () => {
+  getMeta.mockRejectedValue(new ApiError(500, "internal_error", "boom"));
+  renderAt("/d/d1");
+
+  await screen.findByRole("alert");
+  const { start, end, reset } = filterInputs();
+  expect(start).toBeDisabled();
+  expect(end).toBeDisabled();
+  expect(reset).toBeDisabled();
+  expect(start).toHaveValue("");
+  expect(end).toHaveValue("");
+});
+
+test("a date outside the dataset shows an inline error, sends no request and keeps the results", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+
+  type(start, "2025-02-28");
+  const error = screen.getByText("Start date must be between 2025-03-01 and 2025-03-31");
+  expect(error).toHaveAttribute("role", "alert");
+  expect(start).toHaveAttribute("aria-invalid", "true");
+  expect(start).toHaveAccessibleDescription(/Start date must be between 2025-03-01 and 2025-03-31/);
+  expect(end).not.toHaveAttribute("aria-invalid");
+
+  type(end, "2025-04-01");
+  expect(screen.getByText("End date must be between 2025-03-01 and 2025-03-31")).toHaveAttribute("role", "alert");
+  expect(end).toHaveAttribute("aria-invalid", "true");
+  expect(end).toHaveAccessibleDescription(/End date must be between/);
+
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("10,482")).toBeInTheDocument();
+
+  type(start, "2025-03-05");
+  type(end, "2025-03-31");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(start).not.toHaveAttribute("aria-invalid");
+  expect(start).not.toHaveAttribute("aria-describedby");
+});
+
+test("start after end shows the inverted message under Start date, sends nothing, and clears when fixed", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+  answerEvery(7);
+
+  type(end, "2025-03-10");
+  await screen.findByText("Product 7");
+  getAnalytics.mockClear();
+  type(start, "2025-03-20");
+
+  const error = screen.getByText("Start date must be on or before end date");
+  expect(error).toHaveAttribute("role", "alert");
+  expect(start).toHaveAttribute("aria-invalid", "true");
+  expect(start).toHaveAccessibleDescription("Start date must be on or before end date");
+  expect(end).not.toHaveAttribute("aria-invalid");
+  expect(getAnalytics).not.toHaveBeenCalled();
+  expect(screen.getAllByText("Product 7").length).toBeGreaterThan(0);
+
+  type(end, "2025-03-25");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await waitFor(() => expect(getAnalytics).toHaveBeenCalledTimes(1));
+  expect(getAnalytics.mock.calls[0][1]).toEqual({ start: "2025-03-20", end: "2025-03-25" });
+});
+
+test("a valid change sends exactly one request with the dates exactly as typed", async () => {
+  getMeta.mockResolvedValue({ ...meta, date_range: { min: "2025-01-01", max: "2025-12-31" } });
+  renderAt("/d/d1");
+  await screen.findByDisplayValue("2025-01-01");
+  await screen.findByText("10,482");
+  const { start, end } = filterInputs();
+  getAnalytics.mockImplementation(async (_id: string, range: { start: string; end: string }) =>
+    answer({ start: range.start, end: range.end ?? "2025-12-31" }, 5),
+  );
+
+  type(start, "2025-03-01");
+  await screen.findByText("Product 5");
+  expect(getAnalytics).toHaveBeenCalledTimes(2);
+  expect(getAnalytics.mock.calls[1][1]).toEqual({ start: "2025-03-01", end: undefined });
+
+  type(end, "2025-03-31");
+  await waitFor(() => expect(getAnalytics).toHaveBeenCalledTimes(3));
+  expect(getAnalytics.mock.calls[2][1]).toEqual({ start: "2025-03-01", end: "2025-03-31" });
+  await waitFor(() => expect(screen.queryByText("Updating…")).not.toBeInTheDocument());
+  expect(getAnalytics).toHaveBeenCalledTimes(3);
+});
+
+test("start equal to end is accepted and sends a request", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+  answerEvery(3);
+
+  type(end, "2025-03-15");
+  type(start, "2025-03-15");
+
+  await waitFor(() =>
+    expect(getAnalytics.mock.calls.at(-1)?.[1]).toEqual({ start: "2025-03-15", end: "2025-03-15" }),
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("the first date into Start, the last into End and Reset after a narrower range send no request", async () => {
+  await renderLoaded();
+  const { start, end, reset } = filterInputs();
+
+  type(start, "2025-03-01");
+  type(end, "2025-03-31");
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+
+  answerEvery(9);
+  type(start, "2025-03-10");
+  await screen.findByText("Product 9");
+  expect(getAnalytics).toHaveBeenCalledTimes(2);
+
+  fireEvent.click(reset);
+  expect(await screen.findByText("10,482")).toBeInTheDocument();
+  expect(getAnalytics).toHaveBeenCalledTimes(2);
+  expect(start).toHaveValue("2025-03-01");
+  expect(end).toHaveValue("2025-03-31");
+  expect(queryClient.getQueryCache().getAll().map((query) => query.queryKey)).toContainEqual([
+    "analytics",
+    "d1",
+    undefined,
+    undefined,
+  ]);
+  expect(queryClient.getQueryCache().getAll()).toHaveLength(3);
+});
+
+test("KPI cards, trend heading and top products all show the one response of the new range", async () => {
+  await renderLoaded();
+  const { start } = filterInputs();
+  getAnalytics.mockResolvedValue(answer({ start: "2025-03-05", end: "2025-03-31" }, 42, "weekly"));
+
+  type(start, "2025-03-05");
+
+  expect(await within(screen.getByRole("region", { name: "Key figures" })).findByText("42")).toBeInTheDocument();
+  const trend = screen.getByRole("region", { name: "Sales trend" });
+  expect(within(trend).getByRole("heading", { name: "Gross sales — weekly" })).toBeInTheDocument();
+  expect(within(trend).getByText("Weekly gross sales from 2025-03-05 to 2025-03-31")).toBeInTheDocument();
+  const products = screen.getByRole("region", { name: "Top products" });
+  expect(within(products).getAllByText("Product 42").length).toBeGreaterThan(0);
+  expect(getAnalytics).toHaveBeenCalledTimes(2);
+});
+
+test("emptying an input sends no request and shows no error; leaving it empty refills the bound", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+
+  type(start, "");
+  expect(start).toHaveValue("");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+  fireEvent.blur(start);
+  expect(start).toHaveValue("2025-03-01");
+
+  type(end, "");
+  expect(end).toHaveValue("");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.blur(end);
+  expect(end).toHaveValue("2025-03-31");
+  expect(getAnalytics).toHaveBeenCalledTimes(1);
+});
+
+test("a refilled bound is applied like a typed one", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+  answerEvery(6);
+
+  type(start, "2025-03-10");
+  await screen.findByText("Product 6");
+  getAnalytics.mockClear();
+  type(start, "");
+  fireEvent.blur(start);
+
+  // start is the first date again and end the last: the full range, already viewed
+  expect(start).toHaveValue("2025-03-01");
+  expect(end).toHaveValue("2025-03-31");
+  expect(await screen.findByText("10,482")).toBeInTheDocument();
+  expect(getAnalytics).not.toHaveBeenCalled();
+});
+
+test("while a new range loads the old numbers stay and Updating… shows beside Reset", async () => {
+  await renderLoaded();
+  const { start, reset } = filterInputs();
+  let finish: (value: Summary) => void = () => {};
+  getAnalytics.mockReturnValue(new Promise<Summary>((resolve) => (finish = resolve)));
+
+  type(start, "2025-03-10");
+
+  const updating = await screen.findByText("Updating…");
+  expect(updating).toHaveAttribute("role", "status");
+  expect(updating).toHaveClass("text-sm", "text-slate-600");
+  expect(reset.parentElement).toContainElement(updating);
+  expect(screen.getByText("10,482")).toBeInTheDocument();
+  expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  const keyFigures = screen.getByRole("region", { name: "Key figures" });
+  expect(within(keyFigures).queryByRole("status")).not.toBeInTheDocument();
+
+  finish(answer({ start: "2025-03-10", end: "2025-03-31" }, 11));
+  expect((await screen.findAllByText("Product 11")).length).toBeGreaterThan(0);
+  expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+});
+
+test("the first load keeps the skeletons and shows no Updating…", async () => {
+  getAnalytics.mockReturnValue(new Promise<Summary>(() => {}));
+  renderAt("/d/d1");
+
+  await screen.findByDisplayValue("2025-03-01");
+  expect(
+    within(screen.getByRole("region", { name: "Key figures" })).getByRole("status"),
+  ).toHaveAttribute("aria-busy", "true");
+  expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+});
+
+test("when two ranges are chosen quickly and the first answer arrives last, the last range wins", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+  const pending: Record<string, (value: Summary) => void> = {};
+  getAnalytics.mockImplementation(
+    (_id: string, range: { start?: string; end?: string }) =>
+      new Promise<Summary>((resolve) => (pending[`${range.start}|${range.end}`] = resolve)),
+  );
+
+  type(start, "2025-03-05");
+  type(start, "2025-03-06");
+  type(end, "2025-03-30");
+  await waitFor(() => expect(getAnalytics).toHaveBeenCalledTimes(4));
+
+  // answers come back in reverse order: the last range first, the first range last
+  pending["2025-03-06|2025-03-30"](answer({ start: "2025-03-06", end: "2025-03-30" }, 66));
+  expect((await screen.findAllByText("Product 66")).length).toBeGreaterThan(0);
+  pending["2025-03-05|undefined"](answer({ start: "2025-03-05", end: "2025-03-31" }, 55));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(screen.getAllByText("Product 66").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Product 55")).not.toBeInTheDocument();
+  expect(start).toHaveValue("2025-03-06");
+  expect(end).toHaveValue("2025-03-30");
+  expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+});
+
+test("Reset restores both inputs and the full-range values, and clears an inline error", async () => {
+  await renderLoaded();
+  const { start, end, reset } = filterInputs();
+  answerEvery(8);
+  type(start, "2025-03-10");
+  await screen.findByText("Product 8");
+  expect(reset).toBeEnabled();
+  type(end, "2025-03-02");
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+
+  fireEvent.click(reset);
+
+  expect(start).toHaveValue("2025-03-01");
+  expect(end).toHaveValue("2025-03-31");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(await screen.findByText("10,482")).toBeInTheDocument();
+  expect(reset).toBeDisabled();
+});
+
+test("Reset is enabled when only one input differs, even while it is empty", async () => {
+  await renderLoaded();
+  const { start, reset } = filterInputs();
+
+  type(start, "");
+  expect(reset).toBeEnabled();
+  fireEvent.click(reset);
+  expect(start).toHaveValue("2025-03-01");
+  expect(reset).toBeDisabled();
+});
+
+test("going back to a viewed range shows its values at once and sends no request", async () => {
+  await renderLoaded();
+  const { start, end } = filterInputs();
+  answerEvery(21);
+  type(start, "2025-03-10");
+  await screen.findByText("Product 21");
+  type(end, "2025-03-20");
+  await waitFor(() => expect(getAnalytics).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(screen.queryByText("Updating…")).not.toBeInTheDocument());
+  getAnalytics.mockClear();
+
+  type(end, "2025-03-31");
+  expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+  type(end, "2025-03-20");
+  expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+  expect(screen.getAllByText("Product 21").length).toBeGreaterThan(0);
+  expect(getAnalytics).not.toHaveBeenCalled();
+});
+
+test("a dataset of one day shows that day in both inputs, Reset disabled and its numbers", async () => {
+  getMeta.mockResolvedValue({ ...meta, date_range: { min: "2025-03-01", max: "2025-03-01" } });
+  renderAt("/d/d1");
+
+  await screen.findByText("10,482");
+  const { start, end, reset } = filterInputs();
+  expect(start).toHaveValue("2025-03-01");
+  expect(end).toHaveValue("2025-03-01");
+  expect(start).toHaveAttribute("min", "2025-03-01");
+  expect(start).toHaveAttribute("max", "2025-03-01");
+  expect(reset).toBeDisabled();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("the selection is not kept in the URL or in storage", async () => {
+  await renderLoaded();
+  const before = JSON.stringify({ ...window.sessionStorage });
+  type(filterInputs().start, "2025-03-10");
+  await waitFor(() => expect(getAnalytics).toHaveBeenCalledTimes(2));
+
+  expect(JSON.stringify({ ...window.sessionStorage })).toBe(before);
+  expect(window.localStorage.length).toBe(0);
+  expect(window.location.search).toBe("");
 });

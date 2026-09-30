@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getAnalytics, getMeta } from "./api";
 import { tokenFor } from "./session";
 
@@ -15,5 +15,9 @@ export function useAnalytics(datasetId: string, start?: string, end?: string) {
     queryKey: ["analytics", datasetId, start, end],
     queryFn: ({ signal }) => getAnalytics(datasetId, { start, end }, { signal }),
     enabled: tokenFor(datasetId) !== null,
+    // A range change keeps the old numbers on screen until the new ones arrive.
+    placeholderData: keepPreviousData,
+    // Analytics never change after the import, so a range seen once is final.
+    staleTime: Infinity,
   });
 }

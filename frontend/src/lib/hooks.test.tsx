@@ -76,3 +76,31 @@ test("hooks make no request when the session has no token for that dataset", asy
 
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+test("a range change keeps the previous data while the new range loads, and a seen range is never refetched", async () => {
+  saveSession({ id: "d1", token: "tok" });
+  fetchMock.mockImplementation(async (url: string) => new Response(JSON.stringify({ url }), { status: 200 }));
+
+  const { result, rerender } = renderHook(({ start }: { start?: string }) => useAnalytics("d1", start), {
+    wrapper,
+    initialProps: {} as { start?: string },
+  });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  const full = result.current.data;
+
+  let finish: (value: Response) => void = () => {};
+  fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (finish = resolve)));
+  rerender({ start: "2026-01-05" });
+  expect(result.current.data).toBe(full);
+  expect(result.current.isPlaceholderData).toBe(true);
+  finish(new Response(JSON.stringify({ url: "narrow" }), { status: 200 }));
+  await waitFor(() => expect(result.current.isPlaceholderData).toBe(false));
+  expect(result.current.data).toEqual({ url: "narrow" });
+
+  fetchMock.mockClear();
+  rerender({});
+  expect(result.current.data).toBe(full);
+  expect(result.current.isPlaceholderData).toBe(false);
+  expect(result.current.isFetching).toBe(false);
+  expect(fetchMock).not.toHaveBeenCalled();
+});

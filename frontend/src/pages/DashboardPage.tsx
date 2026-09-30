@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteDataset } from "../lib/api";
+import DateRangeFilter, { validateRange } from "../components/DateRangeFilter";
 import KpiCards from "../components/KpiCards";
 import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
@@ -99,9 +100,16 @@ export default function DashboardPage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const meta = useMeta(datasetId);
-  // The one analytics request of the page (full range). The trend chart (#29)
-  // and the top products (#30) read it from here too.
-  const analytics = useAnalytics(datasetId);
+  // What the two date inputs show; null means the dataset's first (Start) or
+  // last (End) date. Page state only: a reload starts on the full range again.
+  const [startText, setStartText] = useState<string | null>(null);
+  const [endText, setEndText] = useState<string | null>(null);
+  // The range last sent: only ever a valid one. A bound equal to the dataset's
+  // first or last date is undefined, so the full range always has one query key.
+  const [applied, setApplied] = useState<{ start?: string; end?: string }>({});
+  // The one analytics request of the page. KPI cards, trend chart and top
+  // products all read it from here.
+  const analytics = useAnalytics(datasetId, applied.start, applied.end);
   const [leaving, setLeaving] = useState(false);
 
   const hasToken = tokenFor(datasetId) !== null;
@@ -125,6 +133,28 @@ export default function DashboardPage({
   }
 
   const data = meta.data;
+  const min = data?.date_range.min;
+  const max = data?.date_range.max;
+  const start = startText ?? min ?? "";
+  const end = endText ?? max ?? "";
+
+  // Takes the new texts of the two inputs; sends a range only if it is valid.
+  function change(nextStart: string, nextEnd: string) {
+    setStartText(nextStart);
+    setEndText(nextEnd);
+    if (min === undefined || max === undefined) return;
+    if (!validateRange(min, max, nextStart, nextEnd).valid) return;
+    setApplied({
+      start: nextStart === min ? undefined : nextStart,
+      end: nextEnd === max ? undefined : nextEnd,
+    });
+  }
+
+  function reset() {
+    setStartText(null);
+    setEndText(null);
+    setApplied({});
+  }
 
   return (
     <div className="space-y-8">
@@ -188,7 +218,16 @@ export default function DashboardPage({
               </div>
             </dl>
           )}
-          {/* The date-range filter (#31) goes here. */}
+          <DateRangeFilter
+            min={min}
+            max={max}
+            start={start}
+            end={end}
+            onStartChange={(value) => change(value, end)}
+            onEndChange={(value) => change(start, value)}
+            onReset={reset}
+            updating={analytics.isPlaceholderData}
+          />
         </div>
       </section>
 
