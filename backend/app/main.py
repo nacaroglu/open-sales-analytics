@@ -1,8 +1,13 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from starlette.routing import Match, Route
+from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
 from app.api.datasets import router as datasets_router
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely
@@ -36,3 +41,35 @@ app.include_router(datasets_router)
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+class _SpaFallbackRoute(Route):
+    """Matches every GET and HEAD path except the ``/api`` tree."""
+
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        path = scope["path"]
+        if path == "/api" or path.startswith("/api/"):
+            return Match.NONE, {}
+        return super().matches(scope)
+
+
+def mount_frontend(app: FastAPI, dist_dir: Path) -> None:
+    """Serve the built React app from the same origin as the API.
+
+    ``/assets`` comes from ``dist_dir/assets``; every other GET or HEAD outside ``/api``
+    answers with ``dist_dir/index.html`` so a reloaded ``/d/<id>`` reaches the router.
+    Nothing is read from a path built from the request. Call it after the API routes.
+    """
+    index = dist_dir / "index.html"
+
+    async def spa_index(_: object) -> FileResponse:
+        return FileResponse(index, media_type="text/html")
+
+    app.mount("/assets", StaticFiles(directory=dist_dir / "assets"), name="assets")
+    app.router.routes.append(_SpaFallbackRoute("/{path:path}", spa_index, methods=["GET", "HEAD"]))
+
+
+# <repository root>/frontend/dist; in the image /app/frontend/dist next to /app/backend/app.
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    mount_frontend(app, _FRONTEND_DIST)

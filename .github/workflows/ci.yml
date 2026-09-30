@@ -18,3 +18,29 @@ jobs:
         run: uv sync
       - name: Run tests
         run: uv run pytest
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t open-sales-analytics .
+      - name: Start container
+        run: docker run -d --name oca -p 8000:8000 open-sales-analytics
+      - name: Wait for /api/health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:8000/api/health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Check health response and single-page app
+        run: |
+          curl -f http://localhost:8000/api/health
+          curl -f http://localhost:8000/d/anything | grep -qi '<div id="root"'
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs oca
+      - name: Remove container
+        if: always()
+        run: docker rm -f oca
