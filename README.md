@@ -30,3 +30,23 @@ npm test          # Vitest, single run
 npm run typecheck # tsc --noEmit
 npm run build     # writes frontend/dist
 ```
+
+### Browser test
+
+One Playwright test (Chromium) covers the happy path: load the sample, see the dashboard, change the date range.
+Install the browser once (about 150 MB, stored outside the repository), then run it from `frontend/`:
+
+```sh
+npx playwright install chromium
+npm run e2e
+```
+
+`npm run e2e` starts the backend (port 8000) and the Vite dev server (port 5173) itself, with a temporary dataset
+directory, and stops them afterwards. Both ports must be free. To test an app that is already running (for example
+the container), set `E2E_BASE_URL`; no server is started then:
+
+```sh
+E2E_BASE_URL=http://localhost:8000 npm run e2e
+```
+
+On failure a trace and a screenshot are saved in `frontend/test-results/` (open a trace with `npx playwright show-trace`).
