@@ -391,3 +391,190 @@ test("the sample link stays visible while an upload is running", async () => {
   expect(await screen.findByText("Processing…")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Download sample CSV" })).toBeVisible();
 });
+
+// ---- Failures of Upload and Try sample data (#32) ----
+
+// Bodies of the real backend: a demo that takes no uploads, a request without a file.
+const DISABLED = () =>
+  new ApiError(
+    403,
+    "upload_disabled",
+    "Uploads are disabled on this demo. Upload your own file with the self-hosted version.",
+  );
+const INVALID_REQUEST = () => new ApiError(400, "invalid_request", "A file part named 'file' is required.");
+
+function expectOneBlock(text: string | RegExp) {
+  const alerts = screen.getAllByRole("alert");
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]).toHaveTextContent(text);
+  expect(screen.queryByRole("region", { name: "Validation report" })).not.toBeInTheDocument();
+  return alerts[0];
+}
+
+async function failUpload(error: unknown, currency = "EUR") {
+  upload.mockRejectedValue(error);
+  render(<UploadPage onCreated={onCreated} />);
+  choose(csv(), currency);
+  fireEvent.click(uploadButton());
+  await screen.findByRole("alert");
+}
+
+function expectFormKept(currency: string) {
+  expect(onCreated).not.toHaveBeenCalled();
+  expect(readSession()).toBeNull();
+  expect(input().files?.[0].name).toBe("sales.csv");
+  expect(select().value).toBe(currency);
+  expect(uploadButton()).toBeEnabled();
+  expect(sampleButton()).toBeEnabled();
+  expect(input()).toBeEnabled();
+  expect(screen.queryByText("Processing…")).not.toBeInTheDocument();
+}
+
+test("403 upload_disabled shows the server's message and the sample hint under the buttons, the form stays", async () => {
+  await failUpload(DISABLED());
+
+  const block = expectOneBlock(
+    "Uploads are disabled on this demo. Upload your own file with the self-hosted version.",
+  );
+  expect(block).toHaveTextContent("You can still use Try sample data.");
+  expect(block.textContent).not.toMatch(/403|upload_disabled/);
+  expect(sampleButton().compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expectFormKept("EUR");
+});
+
+test("400 invalid_request shows the server's message", async () => {
+  await failUpload(INVALID_REQUEST());
+
+  const block = expectOneBlock("A file part named 'file' is required.");
+  expect(block.textContent).not.toMatch(/400|invalid_request|Try sample data/);
+  expectFormKept("EUR");
+});
+
+test("the server's text is shown as text, never as HTML", async () => {
+  await failUpload(new ApiError(400, "invalid_request", "<b>bad</b> <script>alert(1)</script>"));
+
+  const block = screen.getByRole("alert");
+  expect(block).toHaveTextContent("<b>bad</b> <script>alert(1)</script>");
+  expect(block.querySelector("b")).toBeNull();
+  expect(block.querySelector("script")).toBeNull();
+});
+
+test("a 5xx shows that the file was not imported, and Upload can be pressed again without choosing again", async () => {
+  await failUpload(new ApiError(500, "internal_error", "Something went wrong on the server."), "CHF");
+
+  const block = expectOneBlock("Something went wrong — your file was not imported");
+  expect(block.textContent).not.toMatch(/500|internal_error|on the server/);
+  expectFormKept("CHF");
+
+  upload.mockResolvedValue(created);
+  fireEvent.click(uploadButton());
+  await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+  expect(upload).toHaveBeenCalledTimes(2);
+  expect(upload.mock.calls[1][1]).toBe("CHF");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a network failure shows that the file was not imported", async () => {
+  await failUpload(new ApiError(0, "network_error", "The server could not be reached."));
+
+  const block = expectOneBlock("Something went wrong — your file was not imported");
+  expect(block.textContent).not.toMatch(/reached|network/i);
+  expectFormKept("EUR");
+});
+
+test("an unreadable answer (a 502 with an HTML body) shows that the file was not imported", async () => {
+  await failUpload(new ApiError(502, "unknown_error", "The server sent an unexpected response."));
+
+  expectOneBlock("Something went wrong — your file was not imported");
+  expectFormKept("EUR");
+});
+
+test("a 422 without an errors array is a failure, not a report", async () => {
+  await failUpload(new ApiError(422, "validation_failed", "The file has problems."));
+
+  expectOneBlock("Something went wrong — your file was not imported");
+});
+
+test("a failure of Try sample data says the sample could not be loaded, and the form stays usable", async () => {
+  sample.mockRejectedValue(new ApiError(500, "sample_unavailable", "The sample dataset is not available right now."));
+  render(<UploadPage onCreated={onCreated} />);
+  choose(csv(), "GBP");
+
+  fireEvent.click(sampleButton());
+  await screen.findByRole("alert");
+
+  const block = expectOneBlock("Something went wrong — the sample data could not be loaded");
+  expect(block.textContent).not.toMatch(/sample_unavailable|not available right now|file was not imported/);
+  expectFormKept("GBP");
+});
+
+test("any status from Try sample data gives the sample sentence, including a 403", async () => {
+  sample.mockRejectedValue(DISABLED());
+  render(<UploadPage onCreated={onCreated} />);
+
+  fireEvent.click(sampleButton());
+  await screen.findByRole("alert");
+
+  expectOneBlock("the sample data could not be loaded");
+  expect(screen.getByRole("alert").textContent).not.toMatch(/Uploads are disabled/);
+});
+
+test("a failure of Try sample data can be retried", async () => {
+  sample.mockRejectedValueOnce(new ApiError(0, "network_error", "x"));
+  render(<UploadPage onCreated={onCreated} />);
+  fireEvent.click(sampleButton());
+  await screen.findByRole("alert");
+
+  fireEvent.click(sampleButton());
+
+  await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("the error block is removed when a new attempt starts", async () => {
+  await failUpload(new ApiError(500, "internal_error", "x"));
+  let finish: (value: Created) => void = () => {};
+  upload.mockReturnValue(new Promise<Created>((resolve) => (finish = resolve)));
+
+  fireEvent.click(uploadButton());
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByText("Processing…")).toBeInTheDocument();
+  finish(created);
+  await waitFor(() => expect(onCreated).toHaveBeenCalled());
+});
+
+test("Try sample data removes an earlier upload error", async () => {
+  await failUpload(DISABLED());
+
+  fireEvent.click(sampleButton());
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await waitFor(() => expect(onCreated).toHaveBeenCalled());
+});
+
+test("choosing a different file removes the error block", async () => {
+  await failUpload(new ApiError(500, "internal_error", "x"));
+
+  fireEvent.change(input(), { target: { files: [csv("other.csv")] } });
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a failure never shows together with the 422 report, in either order", async () => {
+  await failUpload(new ApiError(500, "internal_error", "x"));
+  upload.mockRejectedValue(rejection());
+  fireEvent.click(uploadButton());
+  await screen.findByRole("region", { name: "Validation report" });
+  expect(screen.queryByText(/your file was not imported/)).not.toBeInTheDocument();
+
+  upload.mockRejectedValue(INVALID_REQUEST());
+  fireEvent.click(uploadButton());
+  await screen.findByText("A file part named 'file' is required.");
+  expect(screen.queryByRole("region", { name: "Validation report" })).not.toBeInTheDocument();
+});
+
+test("no failure text says revenue", async () => {
+  await failUpload(DISABLED());
+  expect(document.body.textContent).not.toMatch(/revenue/i);
+});

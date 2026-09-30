@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import ErrorBlock from "../components/ErrorBlock";
 import ValidationReport from "../components/ValidationReport";
+import { describeError } from "../lib/errors";
 import { ApiError, createDatasetFromUpload, createSampleDataset } from "../lib/api";
 import { saveSession } from "../lib/session";
 import type { Created, Issue } from "../lib/types";
@@ -85,33 +87,39 @@ export default function UploadPage({
     errorCount?: number;
     warnings: Issue[];
   } | null>(null);
+  // The sentence for a failed Upload or Try sample data (never a 422 report).
+  const [failure, setFailure] = useState<string | null>(null);
   const inFlight = useRef(false);
 
   const problem = fileProblem(file);
   const canUpload = file !== null && problem === null && currency !== "" && !busy;
 
-  async function run(start: () => Promise<Created>) {
+  async function run(start: () => Promise<Created>, context: "upload" | "sample") {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setReport(null);
+    setFailure(null);
     try {
       const created = await start();
       saveSession({ id: created.dataset_id, token: created.token });
       onCreated(created);
     } catch (error) {
-      // Only a validation report is shown here; other failures are #32.
       if (
+        context === "upload" &&
         error instanceof ApiError &&
         error.status === 422 &&
         error.code === "validation_failed" &&
         Array.isArray(error.errors)
       ) {
+        // The file's own problems: the report, never together with an error block.
         setReport({
           errors: error.errors,
           errorCount: error.errorCount,
           warnings: Array.isArray(error.warnings) ? error.warnings : [],
         });
+      } else {
+        setFailure(describeError(error, context).message);
       }
     } finally {
       inFlight.current = false;
@@ -122,6 +130,7 @@ export default function UploadPage({
   function onFile(event: ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null);
     setReport(null);
+    setFailure(null);
   }
 
   return (
@@ -234,7 +243,9 @@ export default function UploadPage({
             type="button"
             className={PRIMARY}
             disabled={!canUpload}
-            onClick={() => file !== null && run(() => createDatasetFromUpload(file, currency))}
+            onClick={() =>
+              file !== null && run(() => createDatasetFromUpload(file, currency), "upload")
+            }
           >
             Upload
           </button>
@@ -242,11 +253,12 @@ export default function UploadPage({
             type="button"
             className={SECONDARY}
             disabled={busy}
-            onClick={() => run(() => createSampleDataset())}
+            onClick={() => run(() => createSampleDataset(), "sample")}
           >
             Try sample data
           </button>
         </div>
+        {failure !== null && <ErrorBlock message={failure} />}
         {busy && (
           <div role="status" aria-busy="true" className="space-y-2">
             <p className="text-sm text-slate-600">Processing…</p>
