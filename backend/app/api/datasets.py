@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
@@ -12,6 +13,9 @@ from app.errors import ApiError
 from app.ingest import CreatedDataset, ingest_csv, new_upload_path
 
 router = APIRouter(prefix="/api")
+
+SAMPLE_CSV = Path(__file__).resolve().parent.parent / "sample" / "sample_sales.csv"
+SAMPLE_CURRENCY = "USD"
 
 _MAX_FIELD_BYTES = 256  # the only text field is a currency code
 
@@ -186,4 +190,39 @@ async def create_dataset(request: Request, settings: Settings = Depends(get_sett
         "validation_failed",
         "The file has problems that must be fixed before it can be used.",
         details=outcome.to_dict(),
+    )
+
+
+def _ingest_sample(settings: Settings) -> CreatedDataset | None:
+    """Import a copy of the bundled sample; ``None`` if the sample is not clean.
+
+    The copy is what gets imported, because the import deletes its input.
+    """
+    copy = new_upload_path(settings)
+    try:
+        shutil.copyfile(SAMPLE_CSV, copy)
+        outcome = ingest_csv(copy, SAMPLE_CURRENCY, settings)
+    finally:
+        copy.unlink(missing_ok=True)
+    return outcome if isinstance(outcome, CreatedDataset) else None
+
+
+@router.post("/datasets/sample", status_code=201)
+async def create_sample_dataset(settings: Settings = Depends(get_settings)):
+    # The request body and any form fields are deliberately never read.
+    try:
+        outcome = await run_in_threadpool(_ingest_sample, settings)
+    except Exception:
+        outcome = None
+    if outcome is None:
+        raise ApiError(500, "sample_unavailable", "The sample dataset is not available right now.")
+    return JSONResponse(
+        {
+            "dataset_id": outcome.dataset_id,
+            "token": outcome.token,
+            "meta": outcome.meta,
+            "warnings": outcome.warnings,
+        },
+        status_code=201,
+        headers={"Cache-Control": "no-store"},
     )
