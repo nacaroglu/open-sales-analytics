@@ -1,5 +1,5 @@
 import { tokenFor } from "./session";
-import type { Created, Health, Issue, Meta, Summary } from "./types";
+import type { Created, Health, Issue, Meta, PublicConfig, Summary } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -108,6 +108,19 @@ const datasetUrl = (id: string) => `/api/datasets/${encodeURIComponent(id)}`;
 
 export function getHealth(options: Options = {}): Promise<Health> {
   return request("GET", "/api/health", options);
+}
+
+const isLimit = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value > 0;
+
+export async function getConfig(options: Options = {}): Promise<PublicConfig> {
+  const data = await request<unknown>("GET", "/api/config", options);
+  const config = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
+  const { public_demo_mode, max_upload_bytes, max_rows } = config;
+  if (typeof public_demo_mode !== "boolean" || !isLimit(max_upload_bytes) || !isLimit(max_rows)) {
+    throw unknownError(200);
+  }
+  return { public_demo_mode, max_upload_bytes, max_rows };
 }
 
 export function createDatasetFromUpload(

@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import UploadPage, { MAX_UPLOAD_BYTES } from "./UploadPage";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import UploadPage from "./UploadPage";
 import { ApiError } from "../lib/api";
 import { readSession } from "../lib/session";
-import type { Created, Issue } from "../lib/types";
+import type { Created, Issue, PublicConfig } from "../lib/types";
 
-const { upload, sample } = vi.hoisted(() => ({ upload: vi.fn(), sample: vi.fn() }));
+const { upload, sample, config } = vi.hoisted(() => ({
+  upload: vi.fn(),
+  sample: vi.fn(),
+  config: vi.fn(),
+}));
 
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   createDatasetFromUpload: upload,
   createSampleDataset: sample,
+  getConfig: config,
 }));
 
 const created: Created = {
@@ -35,9 +41,29 @@ const created: Created = {
   },
 };
 
+// Real bodies of GET /api/config from a running server (defaults, and
+// PUBLIC_DEMO_MODE=true MAX_UPLOAD_BYTES=1000 MAX_ROWS=10).
+const DEFAULTS: PublicConfig = { public_demo_mode: false, max_upload_bytes: 52428800, max_rows: 500000 };
+const DEMO: PublicConfig = { public_demo_mode: true, max_upload_bytes: 1000, max_rows: 10 };
+
 const onCreated = vi.fn();
 
+function renderPage() {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <UploadPage onCreated={onCreated} />
+    </QueryClientProvider>,
+  );
+}
+
+// The page with the full form on screen: the config has loaded (or failed).
+async function renderForm() {
+  renderPage();
+  await screen.findByLabelText("CSV file");
+}
+
 beforeEach(() => {
+  config.mockResolvedValue(DEFAULTS);
   upload.mockResolvedValue(created);
   sample.mockResolvedValue(created);
 });
@@ -46,6 +72,7 @@ afterEach(() => {
   cleanup();
   upload.mockReset();
   sample.mockReset();
+  config.mockReset();
   onCreated.mockReset();
   window.sessionStorage.clear();
 });
@@ -66,8 +93,8 @@ function choose(file: File, code = "USD") {
   if (code) fireEvent.change(select(), { target: { value: code } });
 }
 
-test("first render explains the tool, the schema and the limits", () => {
-  render(<UploadPage onCreated={onCreated} />);
+test("first render explains the tool, the schema and the limits", async () => {
+  await renderForm();
 
   expect(screen.getByRole("heading", { level: 1, name: "Open Sales Analytics" })).toBeInTheDocument();
   expect(screen.getByText(/gross sales, orders and top products/)).toBeInTheDocument();
@@ -88,8 +115,8 @@ test("first render explains the tool, the schema and the limits", () => {
   expect(screen.queryByText("Processing…")).not.toBeInTheDocument();
 });
 
-test("Upload needs both a file and a currency", () => {
-  render(<UploadPage onCreated={onCreated} />);
+test("Upload needs both a file and a currency", async () => {
+  await renderForm();
 
   fireEvent.change(input(), { target: { files: [csv()] } });
   expect(uploadButton()).toBeDisabled();
@@ -97,15 +124,15 @@ test("Upload needs both a file and a currency", () => {
   expect(uploadButton()).toBeEnabled();
 });
 
-test("a currency alone does not enable Upload", () => {
-  render(<UploadPage onCreated={onCreated} />);
+test("a currency alone does not enable Upload", async () => {
+  await renderForm();
 
   fireEvent.change(select(), { target: { value: "EUR" } });
   expect(uploadButton()).toBeDisabled();
 });
 
-test("a name not ending in .csv shows a message, in any letter case for .CSV", () => {
-  render(<UploadPage onCreated={onCreated} />);
+test("a name not ending in .csv shows a message, in any letter case for .CSV", async () => {
+  await renderForm();
 
   choose(csv("sales.txt"));
   expect(screen.getByRole("alert")).toHaveTextContent(".csv");
@@ -117,14 +144,14 @@ test("a name not ending in .csv shows a message, in any letter case for .CSV", (
   expect(uploadButton()).toBeEnabled();
 });
 
-test("50 MB exactly is accepted and one byte more is refused without a request", () => {
-  render(<UploadPage onCreated={onCreated} />);
+test("50 MB exactly is accepted and one byte more is refused without a request", async () => {
+  await renderForm();
 
-  choose(csv("big.csv", MAX_UPLOAD_BYTES));
+  choose(csv("big.csv", 52_428_800));
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(uploadButton()).toBeEnabled();
 
-  choose(csv("big.csv", MAX_UPLOAD_BYTES + 1));
+  choose(csv("big.csv", 52_428_801));
   expect(screen.getByRole("alert")).toHaveTextContent("50 MB");
   expect(uploadButton()).toBeDisabled();
   fireEvent.click(uploadButton());
@@ -132,7 +159,7 @@ test("50 MB exactly is accepted and one byte more is refused without a request",
 });
 
 test("an empty .csv is sent to the server", async () => {
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
 
   choose(new File([], "empty.csv"));
   fireEvent.click(uploadButton());
@@ -142,7 +169,7 @@ test("an empty .csv is sent to the server", async () => {
 });
 
 test("Upload calls the api once with the file and currency, saves the session and reports the result", async () => {
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   const file = csv();
   choose(file, "GBP");
 
@@ -159,7 +186,7 @@ test("Upload calls the api once with the file and currency, saves the session an
 });
 
 test("Try sample data works with no file and no currency", async () => {
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
 
   fireEvent.click(sampleButton());
 
@@ -172,7 +199,7 @@ test("Try sample data works with no file and no currency", async () => {
 test("while a request runs, Processing is shown and every control is disabled", async () => {
   let finish: (value: Created) => void = () => {};
   sample.mockReturnValue(new Promise<Created>((resolve) => (finish = resolve)));
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   choose(csv());
 
   fireEvent.click(sampleButton());
@@ -193,7 +220,7 @@ test("while a request runs, Processing is shown and every control is disabled", 
 
 test("after a failure the controls come back and the choices stay", async () => {
   upload.mockRejectedValue(new ApiError(500, "internal_error", "boom"));
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   choose(csv(), "CHF");
 
   fireEvent.click(uploadButton());
@@ -232,7 +259,7 @@ function rejection(overrides: Partial<{ errors: Issue[]; errorCount: number; war
 
 async function reject(error: ApiError) {
   upload.mockRejectedValue(error);
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   choose(csv());
   fireEvent.click(uploadButton());
   return screen.findByRole("region", { name: "Validation report" });
@@ -351,15 +378,15 @@ test("Try sample data removes the report", async () => {
 
 test("other failures show no validation report", async () => {
   upload.mockRejectedValue(new ApiError(500, "internal_error", "boom"));
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   choose(csv());
   fireEvent.click(uploadButton());
   await waitFor(() => expect(uploadButton()).toBeEnabled());
   expect(screen.queryByRole("region", { name: "Validation report" })).not.toBeInTheDocument();
 });
 
-test("the File format section links to the sample CSV as a plain download anchor", () => {
-  render(<UploadPage onCreated={onCreated} />);
+test("the File format section links to the sample CSV as a plain download anchor", async () => {
+  await renderForm();
 
   const link = screen.getByRole("link", { name: "Download sample CSV" });
   expect(link.tagName).toBe("A");
@@ -383,7 +410,7 @@ test("the File format section links to the sample CSV as a plain download anchor
 
 test("the sample link stays visible while an upload is running", async () => {
   upload.mockReturnValue(new Promise(() => {}));
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
 
   choose(csv());
   fireEvent.click(uploadButton());
@@ -413,7 +440,7 @@ function expectOneBlock(text: string | RegExp) {
 
 async function failUpload(error: unknown, currency = "EUR") {
   upload.mockRejectedValue(error);
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   choose(csv(), currency);
   fireEvent.click(uploadButton());
   await screen.findByRole("alert");
@@ -497,7 +524,7 @@ test("a 422 without an errors array is a failure, not a report", async () => {
 
 test("a failure of Try sample data says the sample could not be loaded, and the form stays usable", async () => {
   sample.mockRejectedValue(new ApiError(500, "sample_unavailable", "The sample dataset is not available right now."));
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   choose(csv(), "GBP");
 
   fireEvent.click(sampleButton());
@@ -510,7 +537,7 @@ test("a failure of Try sample data says the sample could not be loaded, and the 
 
 test("any status from Try sample data gives the sample sentence, including a 403", async () => {
   sample.mockRejectedValue(DISABLED());
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
 
   fireEvent.click(sampleButton());
   await screen.findByRole("alert");
@@ -521,7 +548,7 @@ test("any status from Try sample data gives the sample sentence, including a 403
 
 test("a failure of Try sample data can be retried", async () => {
   sample.mockRejectedValueOnce(new ApiError(0, "network_error", "x"));
-  render(<UploadPage onCreated={onCreated} />);
+  await renderForm();
   fireEvent.click(sampleButton());
   await screen.findByRole("alert");
 
@@ -578,3 +605,193 @@ test("no failure text says revenue", async () => {
   await failUpload(DISABLED());
   expect(document.body.textContent).not.toMatch(/revenue/i);
 });
+
+// --- config-driven form (GET /api/config) ---
+
+const limitsBullet = () => screen.queryByText(/^Limits:/);
+const loadingBlock = () => screen.queryByText("Loading…");
+
+type Scenario = "demo" | "defaults" | "custom" | "loading" | "failed";
+
+async function show(scenario: Scenario) {
+  if (scenario === "demo") config.mockResolvedValue(DEMO);
+  if (scenario === "custom") config.mockResolvedValue({ ...DEFAULTS, max_upload_bytes: 1048576, max_rows: 1000 });
+  if (scenario === "loading") config.mockReturnValue(new Promise(() => {}));
+  if (scenario === "failed") config.mockRejectedValue(new ApiError(0, "network_error", "down"));
+  renderPage();
+  if (scenario === "demo") await screen.findByText("Uploads are available in the self-hosted version.");
+  else if (scenario === "loading") await screen.findByText("Loading…");
+  else await screen.findByLabelText("CSV file");
+}
+
+test("demo mode shows only Try sample data and the self-hosted sentence, with no limits bullet", async () => {
+  await show("demo");
+
+  expect(screen.queryByLabelText("CSV file")).not.toBeInTheDocument();
+  expect(document.querySelector('input[type="file"]')).toBeNull();
+  expect(screen.queryByLabelText("Currency")).not.toBeInTheDocument();
+  expect(document.querySelector("select")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
+  expect(limitsBullet()).not.toBeInTheDocument();
+  expect(loadingBlock()).not.toBeInTheDocument();
+  expect(sampleButton()).toBeEnabled();
+  const help = screen.getByText("Uploads are available in the self-hosted version.");
+  expect(help).toHaveClass("text-sm", "text-slate-600");
+  const section = screen.getByRole("region", { name: "Start an analysis" });
+  expect(section).toContainElement(help);
+  expect(within(section).getByRole("heading", { level: 2, name: "Start an analysis" })).toBeInTheDocument();
+});
+
+test("demo mode leaves the header paragraph and the File format section as they are", async () => {
+  await show("demo");
+
+  expect(screen.getByRole("heading", { level: 1, name: "Open Sales Analytics" })).toBeInTheDocument();
+  expect(screen.getByText(/gross sales, orders and top products/)).toBeInTheDocument();
+  const format = screen.getByRole("region", { name: "File format" });
+  expect(within(format).getByText("order_id")).toBeInTheDocument();
+  expect(within(format).getByText(/whole file is rejected/)).toBeInTheDocument();
+  expect(within(format).getByText(/Extra columns are ignored/)).toBeInTheDocument();
+  expect(within(format).getByRole("link", { name: "Download sample CSV" })).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/revenue/i);
+});
+
+test("demo off with the real default payload shows the full form and the old limits text", async () => {
+  await show("defaults");
+
+  expect(input()).toBeEnabled();
+  expect(select()).toBeEnabled();
+  expect(uploadButton()).toBeDisabled();
+  expect(limitsBullet()).toHaveTextContent("Limits: 50 MB and 500,000 rows per upload.");
+  expect(screen.queryByText(/self-hosted version/)).not.toBeInTheDocument();
+  expect(loadingBlock()).not.toBeInTheDocument();
+  expect(config).toHaveBeenCalledTimes(1);
+});
+
+test("custom limits show as 1 MB and 1,000 rows, and the limit itself is accepted while one byte more is refused", async () => {
+  await show("custom");
+
+  expect(limitsBullet()).toHaveTextContent("Limits: 1 MB and 1,000 rows per upload.");
+  choose(csv("edge.csv", 1_048_576));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(uploadButton()).toBeEnabled();
+
+  choose(csv("edge.csv", 1_048_577));
+  expect(screen.getByRole("alert")).toHaveTextContent("The file is larger than the 1 MB limit.");
+  expect(uploadButton()).toBeDisabled();
+  fireEvent.click(uploadButton());
+  expect(upload).not.toHaveBeenCalled();
+
+  choose(csv("edge.csv", 0));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("a 50 MB file is refused with the configured size when the limit is lower", async () => {
+  await show("custom");
+
+  choose(csv("big.csv", 52_428_800));
+  expect(screen.getByRole("alert")).toHaveTextContent("larger than the 1 MB limit");
+  expect(screen.getByRole("alert")).not.toHaveTextContent("50 MB");
+});
+
+test.each([
+  [1000, "0.000954 MB"],
+  [1_572_864, "1.5 MB"],
+  [52_428_800, "50 MB"],
+  [1_048_576 * 1000, "1e+03 MB"],
+  [1_048_576 * 1024, "1.02e+03 MB"],
+  [1_048_576 * 999.4, "999 MB"],
+  [1, "9.54e-07 MB"],
+])("a limit of %i bytes is written as %s like the server does", async (bytes, text) => {
+  config.mockResolvedValue({ ...DEFAULTS, max_upload_bytes: Math.round(bytes) });
+  renderPage();
+  expect(await screen.findByText(`Limits: ${text} and 500,000 rows per upload.`)).toBeInTheDocument();
+  choose(csv("big.csv", Math.round(bytes) + 1));
+  expect(screen.getByRole("alert")).toHaveTextContent(`The file is larger than the ${text} limit.`);
+});
+
+test("max_rows is written with thousands separators", async () => {
+  config.mockResolvedValue({ ...DEFAULTS, max_rows: 1234567 });
+  renderPage();
+  expect(await screen.findByText(/and 1,234,567 rows per upload\./)).toBeInTheDocument();
+});
+
+test("while loading, a loading block stands in for the form and the limits", async () => {
+  await show("loading");
+
+  const block = screen.getByText("Loading…").closest('[role="status"]')!;
+  expect(block).toHaveAttribute("aria-busy", "true");
+  expect(block.querySelector(".animate-pulse.motion-reduce\\:animate-none")).not.toBeNull();
+  expect(screen.queryByLabelText("CSV file")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Currency")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
+  expect(limitsBullet()).not.toBeInTheDocument();
+  expect(screen.queryByText(/self-hosted version/)).not.toBeInTheDocument();
+  expect(sampleButton()).toBeEnabled();
+});
+
+test("the form appears in place of the loading block when the config arrives", async () => {
+  let arrive: (value: PublicConfig) => void = () => {};
+  config.mockReturnValue(new Promise<PublicConfig>((resolve) => (arrive = resolve)));
+  renderPage();
+  await screen.findByText("Loading…");
+
+  arrive(DEFAULTS);
+
+  expect(await screen.findByLabelText("CSV file")).toBeInTheDocument();
+  expect(loadingBlock()).not.toBeInTheDocument();
+  expect(limitsBullet()).toBeInTheDocument();
+});
+
+test("in demo mode the file input is never in the page, not even for a moment", async () => {
+  let arrive: (value: PublicConfig) => void = () => {};
+  config.mockReturnValue(new Promise<PublicConfig>((resolve) => (arrive = resolve)));
+  renderPage();
+  await screen.findByText("Loading…");
+  const seen: boolean[] = [];
+  const watcher = new MutationObserver(() => seen.push(document.querySelector('input[type="file"]') !== null));
+  watcher.observe(document.body, { childList: true, subtree: true });
+
+  arrive(DEMO);
+  await screen.findByText(/self-hosted version/);
+  watcher.disconnect();
+
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen).not.toContain(true);
+});
+
+test("if the config cannot be loaded the full form shows with no limits bullet, no error and no size check", async () => {
+  await show("failed");
+
+  expect(input()).toBeEnabled();
+  expect(select()).toBeEnabled();
+  expect(uploadButton()).toBeDisabled();
+  expect(sampleButton()).toBeEnabled();
+  expect(limitsBullet()).not.toBeInTheDocument();
+  expect(loadingBlock()).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByText(/self-hosted version/)).not.toBeInTheDocument();
+  expect(screen.getByText(/whole file is rejected/)).toBeInTheDocument();
+
+  choose(csv("huge.txt", 5));
+  expect(screen.getByRole("alert")).toHaveTextContent(".csv");
+  choose(csv("huge.csv", 10_000_000_000));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(uploadButton()).toBeEnabled();
+  fireEvent.click(uploadButton());
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+  expect(config).toHaveBeenCalledTimes(1);
+});
+
+test.each<Scenario>(["demo", "defaults", "custom", "loading", "failed"])(
+  "Try sample data works in the %s state",
+  async (scenario) => {
+    await show(scenario);
+
+    fireEvent.click(sampleButton());
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
+    expect(sample).toHaveBeenCalledTimes(1);
+    expect(upload).not.toHaveBeenCalled();
+    expect(readSession()).toEqual({ id: "d1", token: "secret-token" });
+  },
+);

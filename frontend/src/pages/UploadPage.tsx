@@ -4,10 +4,10 @@ import ErrorBlock from "../components/ErrorBlock";
 import ValidationReport from "../components/ValidationReport";
 import { describeError } from "../lib/errors";
 import { ApiError, createDatasetFromUpload, createSampleDataset } from "../lib/api";
+import { formatCount } from "../lib/format";
+import { useConfig } from "../lib/hooks";
 import { saveSession } from "../lib/session";
 import type { Created, Issue } from "../lib/types";
-
-export const MAX_UPLOAD_BYTES = 52_428_800;
 
 const CURRENCIES = [
   "USD",
@@ -63,13 +63,26 @@ const SECONDARY = `${BUTTON} bg-white text-slate-900 border border-slate-500 ena
 const SELECT = `block h-10 w-full rounded-md border border-slate-500 bg-white px-3 text-base text-slate-900 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed aria-[invalid=true]:border-2 aria-[invalid=true]:border-red-700 ${FOCUS}`;
 const FILE_INPUT = `block w-full text-sm file:mr-3 file:h-10 file:rounded-md file:border file:border-slate-500 file:bg-white file:px-3 file:font-medium hover:file:bg-slate-100 ${FOCUS}`;
 
-function fileProblem(file: File | null): string | null {
+// Megabytes to three significant digits, written as the server writes them
+// (Python's "{:.3g}"): "1.5 MB", "0.000954 MB", "1e+03 MB".
+function formatSize(bytes: number): string {
+  const megabytes = bytes / (1024 * 1024);
+  const power = Number(megabytes.toExponential(2).split("e")[1]);
+  if (power >= -4 && power < 3) return `${Number(megabytes.toPrecision(3))} MB`;
+  const [mantissa, exponent] = megabytes.toExponential(2).split("e");
+  const sign = power < 0 ? "-" : "+";
+  return `${Number(mantissa)}e${sign}${exponent.replace(/^[+-]/, "").padStart(2, "0")} MB`;
+}
+
+// maxBytes is null while the limit is unknown (config loading or failed): then
+// only the server checks the size.
+function fileProblem(file: File | null, maxBytes: number | null): string | null {
   if (file === null) return null;
   if (!file.name.toLowerCase().endsWith(".csv")) {
     return "The file must be a .csv file.";
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return "The file is larger than the 50 MB limit.";
+  if (maxBytes !== null && file.size > maxBytes) {
+    return `The file is larger than the ${formatSize(maxBytes)} limit.`;
   }
   return null;
 }
@@ -91,7 +104,13 @@ export default function UploadPage({
   const [failure, setFailure] = useState<string | null>(null);
   const inFlight = useRef(false);
 
-  const problem = fileProblem(file);
+  const config = useConfig();
+  // The limits are known only once the config loaded; until then, and if it
+  // failed, nothing is shown or checked here and the server decides.
+  const limits = config.data ?? null;
+  const showForm = !config.isPending && limits?.public_demo_mode !== true;
+
+  const problem = fileProblem(file, limits?.max_upload_bytes ?? null);
   const canUpload = file !== null && problem === null && currency !== "" && !busy;
 
   async function run(start: () => Promise<Created>, context: "upload" | "sample") {
@@ -175,7 +194,12 @@ export default function UploadPage({
           </table>
         </div>
         <ul className="list-disc space-y-1 pl-6 text-sm text-slate-600">
-          <li>Limits: 50 MB and 500,000 rows per upload.</li>
+          {limits !== null && !limits.public_demo_mode && (
+            <li>
+              Limits: {formatSize(limits.max_upload_bytes)} and {formatCount(limits.max_rows)}{" "}
+              rows per upload.
+            </li>
+          )}
           <li>If any row is invalid, the whole file is rejected.</li>
           <li>Extra columns are ignored.</li>
         </ul>
@@ -195,60 +219,72 @@ export default function UploadPage({
         className="space-y-4 rounded-lg border border-slate-200 bg-white p-6"
       >
         <h2 className="text-xl font-semibold text-slate-900">Start an analysis</h2>
-        <div>
-          <label htmlFor="csv-file" className="block text-sm font-medium">
-            CSV file
-          </label>
-          <input
-            id="csv-file"
-            type="file"
-            accept=".csv"
-            onChange={onFile}
-            disabled={busy}
-            aria-invalid={problem !== null ? "true" : undefined}
-            aria-describedby={problem !== null ? "csv-file-error" : undefined}
-            className={`mt-1 ${FILE_INPUT}`}
-          />
-          {problem !== null && (
-            <p
-              id="csv-file-error"
-              role="alert"
-              className="mt-1 text-sm font-medium text-red-800"
-            >
-              <span aria-hidden>✕</span> {problem}
-            </p>
-          )}
-        </div>
-        <div className="w-44">
-          <label htmlFor="currency" className="block text-sm font-medium">
-            Currency
-          </label>
-          <select
-            id="currency"
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value)}
-            disabled={busy}
-            className={`mt-1 ${SELECT}`}
-          >
-            <option value="">Select a currency</option>
-            {CURRENCIES.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </div>
+        {config.isPending && (
+          <div role="status" aria-busy="true" className="space-y-2">
+            <div className="h-10 w-full animate-pulse motion-reduce:animate-none rounded bg-slate-200" />
+            <p className="text-sm text-slate-600">Loading…</p>
+          </div>
+        )}
+        {showForm && (
+          <>
+            <div>
+              <label htmlFor="csv-file" className="block text-sm font-medium">
+                CSV file
+              </label>
+              <input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={onFile}
+                disabled={busy}
+                aria-invalid={problem !== null ? "true" : undefined}
+                aria-describedby={problem !== null ? "csv-file-error" : undefined}
+                className={`mt-1 ${FILE_INPUT}`}
+              />
+              {problem !== null && (
+                <p
+                  id="csv-file-error"
+                  role="alert"
+                  className="mt-1 text-sm font-medium text-red-800"
+                >
+                  <span aria-hidden>✕</span> {problem}
+                </p>
+              )}
+            </div>
+            <div className="w-44">
+              <label htmlFor="currency" className="block text-sm font-medium">
+                Currency
+              </label>
+              <select
+                id="currency"
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value)}
+                disabled={busy}
+                className={`mt-1 ${SELECT}`}
+              >
+                <option value="">Select a currency</option>
+                {CURRENCIES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            className={PRIMARY}
-            disabled={!canUpload}
-            onClick={() =>
-              file !== null && run(() => createDatasetFromUpload(file, currency), "upload")
-            }
-          >
-            Upload
-          </button>
+          {showForm && (
+            <button
+              type="button"
+              className={PRIMARY}
+              disabled={!canUpload}
+              onClick={() =>
+                file !== null && run(() => createDatasetFromUpload(file, currency), "upload")
+              }
+            >
+              Upload
+            </button>
+          )}
           <button
             type="button"
             className={SECONDARY}
@@ -258,6 +294,11 @@ export default function UploadPage({
             Try sample data
           </button>
         </div>
+        {limits?.public_demo_mode === true && (
+          <p className="text-sm text-slate-600">
+            Uploads are available in the self-hosted version.
+          </p>
+        )}
         {failure !== null && <ErrorBlock message={failure} />}
         {busy && (
           <div role="status" aria-busy="true" className="space-y-2">
