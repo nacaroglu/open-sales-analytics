@@ -5,7 +5,7 @@ gross sales, orders, units, average order value, a sales trend and the top produ
 Gross sales is quantity times unit price, summed over the lines in the chosen period. It has no refunds, discounts,
 taxes or shipping in it.
 
-Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) |
+Contents: [Run it with Docker](#run-it-with-docker) | [Docker Compose](#docker-compose) | [Configuration](#configuration) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
 [Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
 
@@ -36,6 +36,23 @@ Pass a setting with `-e`, using a variable from the [table below](#configuration
 
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+```
+
+### Docker Compose
+
+`compose.yaml` builds the same image, publishes port 8000 and keeps the datasets in a named volume (`datasets`, mounted
+at `/data`), so you do not have to type the flags above:
+
+```sh
+docker compose up --build
+```
+
+Stop it with `docker compose down`; add `-v` to delete the volume, and with it the datasets. Set any variable from the
+[table below](#configuration) in your shell or in a `.env` file next to `compose.yaml`; unset variables keep their
+defaults:
+
+```sh
+PUBLIC_DEMO_MODE=true docker compose up -d
 ```
 
 ## Configuration

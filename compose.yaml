@@ -1,0 +1,23 @@
+# One container serves the API and the built front end on port 8000.
+# Start: docker compose up --build    Stop: docker compose down
+# Settings are the variables of the README's Configuration table; set them in the
+# shell or in a .env file next to this one. The defaults below match the app's own.
+services:
+  app:
+    build: .
+    image: open-sales-analytics
+    ports:
+      - "8000:8000"
+    environment:
+      DATASET_TTL_HOURS: ${DATASET_TTL_HOURS:-24}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      MAX_ROWS: ${MAX_ROWS:-500000}
+      CLEANUP_INTERVAL_MINUTES: ${CLEANUP_INTERVAL_MINUTES:-15}
+      PUBLIC_DEMO_MODE: ${PUBLIC_DEMO_MODE:-false}
+      MAX_DATASETS: ${MAX_DATASETS:-200}
+    volumes:
+      - datasets:/data
+    restart: unless-stopped
+
+volumes:
+  datasets:
