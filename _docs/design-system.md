@@ -120,6 +120,8 @@ Chart area `h-72` in a `ResponsiveContainer`, on a white card. One series colour
 | Tick labels | `#45556c` (slate-600), font size 12 |
 | Tooltip | white background, `1px solid #cad5e2` (slate-300) border, radius 6, text `#0f172b`, size 14 |
 
+Partial trend bucket (a first or last week or month the range cuts, #43): hollow point (`#ffffff` fill, `#432dd7` stroke, so it differs by shape, not only by label); axis label is the covered dates ("29–31 Dec", "10–31 Mar 2025") instead of "Week of ..." or the month name; one `text-sm text-slate-600` note under the range sentence starting "Partial period:"; the tooltip adds a bold "Partial period: <dates with year>" line. A whole bucket and every daily bucket look as before.
+
 The line and bars are saturated violet-blue (8.1 on white; axis 4.8, grid 1.2) and the axes, ticks and grid are grey slate, so hue and lightness both differ. One series is safe for colour-blind readers. A second series would need a dash pattern or marker too (add a line here first).
 
 ## Accessibility (every task)

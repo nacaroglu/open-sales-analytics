@@ -1,8 +1,11 @@
 import { afterEach, beforeAll, expect, test } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import TrendChart, {
+  axisLabel,
+  bucketCoverage,
   bucketLabel,
   bucketLabelWithYear,
+  coverageLabel,
   formatMoneyShort,
   parseBucketDate,
   rangeSentence,
@@ -50,14 +53,14 @@ test("daily: heading, range sentence, text alternative and an axis label", () =>
   expect(xLabels(container)).toEqual(["1 Mar", "2 Mar", "3 Mar"]);
 });
 
-test("weekly: heading and a Week of label, the first bucket may start before the range", () => {
+test("weekly: heading and a Week of label, a first week cut by the range shows its covered dates instead", () => {
   const { container } = renderChart("weekly", [
     { bucket_start: "2025-02-24", gross_sales: "10.0000" },
     { bucket_start: "2025-03-03", gross_sales: "20.0000" },
   ]);
 
   expect(screen.getByRole("heading", { name: "Gross sales — weekly" })).toBeInTheDocument();
-  expect(xLabels(container)).toEqual(["Week of 24 Feb", "Week of 3 Mar"]);
+  expect(xLabels(container)).toEqual(["1–2 Mar", "Week of 3 Mar"]);
   expect(screen.getByRole("img")).toHaveAttribute(
     "aria-label",
     "Weekly gross sales from 2025-03-01 to 2025-03-31",
@@ -180,4 +183,119 @@ test("focusing a point shows its date with the year and its gross sales in full"
   fireEvent.keyDown(surface, { key: "ArrowRight" });
   expect(tooltip).toHaveTextContent("Week of 10 Mar 2025");
   expect(tooltip).toHaveTextContent("Gross sales : $20.00");
+});
+
+// Partial period coverage (fixed dates, no clock).
+
+function coverage(start: string, granularity: "daily" | "weekly" | "monthly", from: string, to: string) {
+  return bucketCoverage(start, granularity, { start: from, end: to });
+}
+
+test("a first weekly bucket cut by the range start is partial and labelled with its covered dates", () => {
+  // Wed 2025-12-31 starts the range; its Monday-Sunday week is 29 Dec - 4 Jan.
+  const range2 = { start: "2025-12-31", end: "2026-04-01" };
+  const first = bucketCoverage("2025-12-29", "weekly", range2);
+  expect(first?.partial).toBe(true);
+  expect(coverageLabel(first!, false)).toBe("31 Dec–4 Jan");
+  expect(coverageLabel(first!, true)).toBe("31 Dec 2025–4 Jan 2026");
+  expect(axisLabel("2025-12-29", "weekly", range2)).toBe("31 Dec–4 Jan");
+  expect(bucketCoverage("2026-01-05", "weekly", range2)?.partial).toBe(false);
+});
+
+test("a last weekly bucket cut by the range end is partial", () => {
+  const range2 = { start: "2025-01-06", end: "2025-04-02" }; // Wed
+  const last = bucketCoverage("2025-03-31", "weekly", range2);
+  expect(last?.partial).toBe(true);
+  expect(axisLabel("2025-03-31", "weekly", range2)).toBe("31 Mar–2 Apr");
+  expect(axisLabel("2025-03-24", "weekly", range2)).toBe("Week of 24 Mar");
+});
+
+test("ranges on exact week and month boundaries leave every bucket whole", () => {
+  const week = { start: "2025-01-06", end: "2025-04-06" }; // Monday to Sunday
+  expect(bucketCoverage("2025-01-06", "weekly", week)?.partial).toBe(false);
+  expect(bucketCoverage("2025-03-31", "weekly", week)?.partial).toBe(false);
+  const month = { start: "2024-01-01", end: "2025-12-31" };
+  expect(bucketCoverage("2024-01-01", "monthly", month)?.partial).toBe(false);
+  expect(bucketCoverage("2025-12-01", "monthly", month)?.partial).toBe(false);
+  expect(axisLabel("2025-12-01", "monthly", month)).toBe("Dec 2025");
+});
+
+test("one day short of a month on either side makes it partial", () => {
+  expect(coverage("2025-03-01", "monthly", "2025-03-02", "2025-05-31")?.partial).toBe(true);
+  expect(coverage("2025-05-01", "monthly", "2025-03-01", "2025-05-30")?.partial).toBe(true);
+  expect(coverage("2025-04-01", "monthly", "2025-03-02", "2025-05-30")?.partial).toBe(false);
+});
+
+test("monthly: a partial month shows its dates with the year, the leap day counts", () => {
+  const range2 = { start: "2024-02-10", end: "2026-02-28" };
+  expect(axisLabel("2024-02-01", "monthly", range2)).toBe("10–29 Feb 2024");
+  expect(axisLabel("2026-02-01", "monthly", range2)).toBe("Feb 2026"); // 28 Feb 2026 is the month's last day
+  expect(axisLabel("2026-02-01", "monthly", { ...range2, end: "2026-02-27" })).toBe("1–27 Feb 2026");
+  expect(coverage("2026-02-01", "monthly", "2024-02-10", "2026-02-28")?.partial).toBe(false);
+  expect(coverage("2024-02-01", "monthly", "2024-02-01", "2024-02-29")?.partial).toBe(false);
+});
+
+test("a one-day daily bucket is whole, a one-day slice of a week or month is partial", () => {
+  expect(coverage("2025-03-05", "daily", "2025-03-05", "2025-03-05")?.partial).toBe(false);
+  expect(coverage("2025-03-03", "weekly", "2025-03-05", "2025-03-05")?.partial).toBe(true);
+  expect(coverage("2025-03-01", "monthly", "2025-03-05", "2025-03-05")?.partial).toBe(true);
+  expect(coverageLabel(coverage("2025-03-03", "weekly", "2025-03-05", "2025-03-05")!, true)).toBe("5 Mar 2025");
+  expect(axisLabel("2025-03-05", "daily", { start: "2025-03-05", end: "2025-03-05" })).toBe("5 Mar");
+});
+
+test("a range inside one week or month shows that sole bucket as partial", () => {
+  expect(coverageLabel(coverage("2025-03-03", "weekly", "2025-03-04", "2025-03-06")!, false)).toBe("4–6 Mar");
+  expect(coverageLabel(coverage("2025-03-01", "monthly", "2025-03-10", "2025-03-20")!, true)).toBe("10–20 Mar 2025");
+});
+
+test("a bucket entirely outside the range has no coverage", () => {
+  expect(coverage("2025-04-01", "monthly", "2025-03-01", "2025-03-31")).toBeNull();
+});
+
+test("an unreadable date gives no coverage and the plain label", () => {
+  expect(bucketCoverage("March", "weekly", range)).toBeNull();
+  expect(axisLabel("March", "weekly", range)).toBe("March");
+});
+
+test("a partial bucket's tooltip has the year and Partial period, a whole one does not", () => {
+  const range2 = { start: "2025-12-31", end: "2026-01-11" };
+  const { container } = render(
+    <TrendChart
+      granularity="weekly"
+      buckets={[
+        { bucket_start: "2025-12-29", gross_sales: "10.0000" },
+        { bucket_start: "2026-01-05", gross_sales: "20.0000" },
+        { bucket_start: "2026-01-12", gross_sales: "5.0000" },
+      ]}
+      range={{ start: range2.start, end: "2026-01-18" }}
+      currency="USD"
+    />,
+  );
+  expect(screen.getByText(/Partial period: the range cuts the first or last week/)).toBeInTheDocument();
+  expect(xLabels(container)[0]).toBe("31 Dec–4 Jan");
+
+  const surface = container.querySelector(".recharts-surface") as SVGElement;
+  fireEvent.focus(surface);
+  const tooltip = container.querySelector(".recharts-tooltip-wrapper") as HTMLElement;
+  expect(tooltip).toHaveTextContent("Week of 29 Dec 2025");
+  expect(tooltip).toHaveTextContent("Partial period: 31 Dec 2025–4 Jan 2026");
+
+  fireEvent.keyDown(surface, { key: "ArrowRight" });
+  expect(tooltip).toHaveTextContent("Week of 5 Jan 2026");
+  expect(tooltip).not.toHaveTextContent("Partial period");
+});
+
+test("a range of whole weeks shows no partial note and a daily chart never does", () => {
+  const { unmount } = render(
+    <TrendChart
+      granularity="weekly"
+      buckets={[{ bucket_start: "2025-03-03", gross_sales: "10.0000" }]}
+      range={{ start: "2025-03-03", end: "2025-03-09" }}
+      currency="USD"
+    />,
+  );
+  expect(screen.queryByText(/Partial period/)).toBeNull();
+  unmount();
+  renderChart("daily", [{ bucket_start: "2025-03-01", gross_sales: "10.0000" }]);
+  expect(screen.queryByText(/Partial period/)).toBeNull();
 });

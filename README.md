@@ -157,6 +157,23 @@ Warnings do not reject the file. They come back in the `warnings` list of the `2
 Download a valid sample file at <http://localhost:8000/api/sample.csv> (the upload screen links it as **Download
 sample CSV**). **Try sample data** on the upload screen imports the same file in USD without any upload.
 
+## Trend buckets
+
+The trend groups gross sales by calendar bucket. The granularity depends only on the selected range, counting both
+end dates: up to 90 days is daily, over 90 days through 730 days is weekly, longer is monthly. The API returns
+`bucket_start` per bucket (the bucket's first day) and no coverage field.
+
+- The range is inclusive: the start date and the end date are both in it.
+- Weeks run Monday to Sunday; a weekly bucket's `bucket_start` is its Monday. Months are calendar months.
+- A bucket the range cuts (a first week or month that starts before the start date, a last one that ends after the
+  end date) is a partial period. The chart works this out from the range and the calendar, so a day with no sales still
+  counts as covered. A one-day daily bucket is always whole (the data holds dates only); a one-day slice of a week or
+  month is partial. A range inside one week or month shows that bucket as partial.
+- Partial presentation: the axis label of a partial week or month shows the dates it covers (`29–31 Dec`,
+  `10–31 Mar 2025`) instead of `Week of 29 Dec` or the month name, the point is hollow, a note under the chart says
+  so, and the tooltip adds the year and `Partial period: <covered dates>`. A whole bucket has none of these.
+- Only rows inside the range are summed, so a partial bucket holds the sales of the dates it covers.
+
 ## Currencies
 
 The currency is chosen in the upload form: USD, EUR, GBP, TRY, CAD, AUD, JPY, CHF, SEK, PLN. It is only a label for
