@@ -15,7 +15,7 @@ Frontend: `frontend/src/**/<name>.test.ts` or `.test.tsx` next to the code (Vite
 `npm test` (all, single run), `npx vitest run src/App.test.tsx` (one file), `npm run lint`, `npm run typecheck`, `npm run build`.
 
 CI (`.github/workflows/ci.yml`) runs pytest, `ruff check`, `ruff format --check`, `mypy backend/app`, and in `frontend/` `npm test`, `npm run lint`,
-`npm run typecheck`, then the browser suite on the built container.
+`npm run typecheck`, `npm run build`, a dependency scan of both lockfiles (policy in the README), then the browser suite on the built container.
 Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm test` 308 tests in about 9 s (re-measured 2026-10-04 in #46).
 
 ## Levels (plan section 12)

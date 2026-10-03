@@ -251,6 +251,15 @@ uv run ruff format --check backend   # `uv run ruff format backend` fixes it
 uv run mypy backend/app
 ```
 
+Dependency scan (the same two commands the CI `dependency-scan` job runs; `uvx` runs `pip-audit` without making it a
+project dependency):
+
+```sh
+uv export --locked --no-emit-project --format requirements-txt -o /tmp/requirements.txt
+uvx pip-audit@2.10.1 -r /tmp/requirements.txt --no-deps --disable-pip
+(cd frontend && npm audit --audit-level=high)
+```
+
 Start the backend (serves on http://127.0.0.1:8000):
 
 ```sh
@@ -271,10 +280,25 @@ npm run dev       # dev server on http://localhost:5173
 npm test          # Vitest, single run
 npm run lint      # ESLint
 npm run typecheck # tsc --noEmit (TypeScript 7)
-npm run build     # writes frontend/dist
+npm run build     # type check, then the production bundle in frontend/dist
 ```
 
 `npm run dev` proxies `/api` to the backend on port 8000, so start the backend too.
+
+### Dependency scanning
+
+CI scans both lockfiles on every pull request and every push to `main`:
+
+| Ecosystem | Tool and input | Fails CI on |
+| --- | --- | --- |
+| Python | `pip-audit` over `uv.lock` (runtime and dev packages) | any known vulnerability (pip-audit has no severity filter) |
+| npm | `npm audit --audit-level=high` over `frontend/package-lock.json` | high and critical advisories; low and moderate are shown in the log but do not fail |
+
+A scanner that errors (no network, bad input) also fails the job; the steps have no `|| true` and no
+`continue-on-error`. There is no ignore list. If an advisory has no fix yet, the way out is a reviewed pull request
+that pins an exception in the scan command with the advisory ID and the reason next to it (`pip-audit --ignore-vuln ID`
+or removing the package); it is never a silent skip. Caches hold package downloads and the Playwright browser only;
+no dataset, upload, secret or DuckDB file is cached or uploaded as an artifact.
 
 ### Browser test
 
@@ -298,3 +322,5 @@ E2E_BASE_URL=http://localhost:8000 npm run e2e
 ```
 
 On failure a trace and a screenshot are saved in `frontend/test-results/` (open a trace with `npx playwright show-trace`).
+With `CI` set (as on GitHub Actions) no trace is recorded, because a trace contains the network responses, and CI uploads
+only the failure screenshots.
