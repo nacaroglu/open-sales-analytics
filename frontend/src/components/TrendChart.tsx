@@ -1,5 +1,5 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatMoney } from "../lib/format";
+import { formatDay, formatMonthYear, formatMoney } from "../lib/format";
 import type { Granularity, Summary } from "../lib/types";
 
 // Colours from _docs/design-system.md (Charts). Recharts takes hex values, so
@@ -20,14 +20,6 @@ const NOUN: Record<Granularity, string> = { daily: "Daily", weekly: "Weekly", mo
 
 // Every date is formatted from its YYYY-MM-DD text as a UTC instant, so the
 // browser's time zone can never move it to the neighbouring day.
-const dayFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
-const dayYearFormat = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "UTC",
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
-const monthFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", month: "short", year: "numeric" });
 
 // Reads "2025-03-01" as a UTC date. Anything else is null.
 export function parseBucketDate(text: string): Date | null {
@@ -40,8 +32,8 @@ export function parseBucketDate(text: string): Date | null {
 export function bucketLabel(text: string, granularity: Granularity): string {
   const date = parseBucketDate(text);
   if (date === null) return text;
-  if (granularity === "monthly") return monthFormat.format(date);
-  const day = dayFormat.format(date);
+  if (granularity === "monthly") return formatMonthYear(date);
+  const day = formatDay(date, false);
   return granularity === "weekly" ? `Week of ${day}` : day;
 }
 
@@ -49,8 +41,8 @@ export function bucketLabel(text: string, granularity: Granularity): string {
 export function bucketLabelWithYear(text: string, granularity: Granularity): string {
   const date = parseBucketDate(text);
   if (date === null) return text;
-  if (granularity === "monthly") return monthFormat.format(date);
-  const day = dayYearFormat.format(date);
+  if (granularity === "monthly") return formatMonthYear(date);
+  const day = formatDay(date, true);
   return granularity === "weekly" ? `Week of ${day}` : day;
 }
 

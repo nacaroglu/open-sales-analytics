@@ -111,6 +111,8 @@ export default function UploadPage({
   const showForm = !config.isPending && limits?.public_demo_mode !== true;
 
   const problem = fileProblem(file, limits?.max_upload_bytes ?? null);
+  // Upload is unavailable only because of the selection (not because of a request in flight).
+  const needsSelection = (file === null || problem !== null || currency === "") && !busy;
   const canUpload = file !== null && problem === null && currency !== "" && !busy;
 
   async function run(start: () => Promise<Created>, context: "upload" | "sample") {
@@ -277,6 +279,7 @@ export default function UploadPage({
             <button
               type="button"
               className={PRIMARY}
+              aria-describedby={needsSelection ? "upload-help" : undefined}
               disabled={!canUpload}
               onClick={() =>
                 file !== null && run(() => createDatasetFromUpload(file, currency), "upload")
@@ -294,6 +297,11 @@ export default function UploadPage({
             Try sample data
           </button>
         </div>
+        {showForm && needsSelection && (
+          <p id="upload-help" className="text-sm text-slate-600">
+            Select a CSV file and currency to continue.
+          </p>
+        )}
         {limits?.public_demo_mode === true && (
           <p className="text-sm text-slate-600">
             Uploads are available in the self-hosted version.
