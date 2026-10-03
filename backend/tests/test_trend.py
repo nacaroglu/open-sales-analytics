@@ -198,7 +198,10 @@ def test_weekly_range_crossing_a_year_starts_the_week_in_the_old_year(tmp_path):
     rows = [row("a", date(2025, 12, 31), 1, "5.00"), row("b", date(2026, 1, 1), 1, "7.00")]
     result = trend_for(tmp_path, rows, start, end)
     assert result["granularity"] == "weekly"
-    assert result["buckets"][0] == {"bucket_start": date(2025, 12, 29), "gross_sales": Decimal("12")}
+    assert result["buckets"][0] == {
+        "bucket_start": date(2025, 12, 29),
+        "gross_sales": Decimal("12"),
+    }
 
 
 def test_daily_range_across_a_leap_day_has_a_bucket_for_29_february(tmp_path):
