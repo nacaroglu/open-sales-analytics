@@ -63,9 +63,9 @@ jobs:
         run: npm run typecheck
 
   # The container from the Dockerfile is built and started once; the health check and the
-  # browser test both run against it, on port 8000.
+  # browser suite both run against it, on port 8000.
   docker-smoke:
-    name: Container (build, smoke, browser test)
+    name: Container (build, smoke, browser tests)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -108,7 +108,7 @@ jobs:
       - name: Install Chromium system libraries
         run: npx playwright install-deps chromium
         working-directory: frontend
-      - name: Run browser test against the container
+      - name: Run browser tests against the container
         run: npm run e2e
         working-directory: frontend
         env:

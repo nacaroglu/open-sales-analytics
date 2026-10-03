@@ -272,7 +272,8 @@ npm run build     # writes frontend/dist
 
 ### Browser test
 
-One Playwright test (Chromium) covers the happy path: load the sample, see the dashboard, change the date range.
+A small Playwright suite (Chromium, `frontend/e2e/`) covers the primary journeys: Try sample data, a valid upload,
+an invalid upload, the date range and Reset, Analyze another file, and an expired dataset.
 Install the browser once (about 150 MB, stored outside the repository), then run it from `frontend/`:
 
 ```sh
