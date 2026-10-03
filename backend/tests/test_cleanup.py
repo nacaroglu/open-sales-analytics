@@ -459,3 +459,140 @@ def test_invalid_interval_stops_startup(monkeypatch, tmp_path):
                 pass
     finally:
         get_settings.cache_clear()
+
+
+# --- lifecycle with the default 24-hour TTL (issue 45) ---
+
+T0 = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def api(tmp_path):
+    from app.auth import get_now
+
+    clock = {"now": T0}
+    settings = Settings(DATASET_DIR=tmp_path / "life")
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_now] = lambda: clock["now"]
+    yield TestClient(app), settings, clock
+    app.dependency_overrides.clear()
+
+
+def upload_at(client):
+    response = client.post(
+        "/api/datasets",
+        data={"currency": "EUR"},
+        files={
+            "file": (
+                "a.csv",
+                b"order_id,order_date,product_id,product_name,quantity,unit_price\n"
+                b"o1,2025-01-02,p1,Mug,1,2.00\n",
+                "text/csv",
+            )
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def read_status(client, created, suffix=""):
+    headers = {"Authorization": f"Bearer {created['token']}"}
+    return client.get(f"/api/datasets/{created['dataset_id']}{suffix}", headers=headers).status_code
+
+
+def test_default_ttl_is_24_hours_and_sweep_removes_exactly_at_expiry(api):
+    client, settings, clock = api
+    created = upload_at(client)
+    path = settings.dataset_dir / f"{created['dataset_id']}.duckdb"
+    assert created["meta"]["expires_at"] == "2026-03-02T08:00:00Z"
+
+    sweep(settings, T0 + timedelta(hours=24) - timedelta(seconds=1))
+    clock["now"] = T0 + timedelta(hours=24) - timedelta(seconds=1)
+    assert path.exists() and read_status(client, created, "/analytics") == 200
+
+    clock["now"] = T0 + timedelta(hours=24)
+    assert read_status(client, created) == 404  # inaccessible before any sweep ran
+    assert path.exists()
+    assert sweep(settings, clock["now"]).datasets_removed == 1
+    assert not path.exists()
+
+
+def test_periodic_cleanup_uses_the_configured_interval_and_keeps_earlier_datasets_usable(
+    tmp_path, monkeypatch
+):
+    from app.auth import get_now
+
+    clock = {"now": T0}
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock["now"]
+
+    monkeypatch.setattr(cleanup, "datetime", FrozenDatetime)
+    settings = Settings(DATASET_DIR=tmp_path / "timer", CLEANUP_INTERVAL_MINUTES=720)
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_now] = lambda: clock["now"]
+    try:
+        client = TestClient(app)
+        first = upload_at(client)
+        clock["now"] = T0 + timedelta(hours=12)
+        second = upload_at(client)
+        sleeps = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 3:
+                raise asyncio.CancelledError
+            clock["now"] = T0 + timedelta(hours=12 * len(sleeps))
+
+        states = []
+
+        original_sweep = cleanup.sweep
+
+        def recording_sweep(s, now):
+            result = original_sweep(s, now)
+            states.append((now, read_status(client, first), read_status(client, second)))
+            return result
+
+        monkeypatch.setattr(cleanup, "sweep", recording_sweep)
+        with pytest.raises(asyncio.CancelledError):
+            run(run_cleanup_loop(settings, sleep=fake_sleep))
+    finally:
+        app.dependency_overrides.clear()
+
+    assert sleeps == [720 * 60] * 3
+    # tick 1 at T0+12h: both datasets usable. tick 2 at T0+24h: the first expired exactly now,
+    # the second (made 12 h later) is still usable.
+    assert states == [
+        (T0 + timedelta(hours=12), 200, 200),
+        (T0 + timedelta(hours=24), 404, 200),
+    ]
+    assert not (settings.dataset_dir / f"{first['dataset_id']}.duckdb").exists()
+    assert (settings.dataset_dir / f"{second['dataset_id']}.duckdb").exists()
+
+
+def test_startup_sweep_removes_expired_and_keeps_earlier_datasets_usable(env_dir, monkeypatch):
+    from app.auth import get_now
+
+    monkeypatch.delenv("DATASET_TTL_HOURS", raising=False)
+    get_settings.cache_clear()
+    real_now = datetime.now(UTC)
+    clock = {"now": real_now - timedelta(hours=25)}
+    app.dependency_overrides[get_now] = lambda: clock["now"]
+    try:
+        client = TestClient(app)
+        stale = upload_at(client)  # made 25 h ago: expired one hour ago
+        clock["now"] = real_now - timedelta(hours=23)
+        recent = upload_at(client)  # made 23 h ago: one hour left
+        stale_path = env_dir / f"{stale['dataset_id']}.duckdb"
+        assert stale_path.exists()
+        app.dependency_overrides.clear()
+
+        with TestClient(app) as running:
+            assert not stale_path.exists()
+            assert read_status(running, stale) == 404
+            assert read_status(running, recent) == 200
+            assert read_status(running, recent, "/analytics") == 200
+    finally:
+        app.dependency_overrides.clear()

@@ -307,3 +307,68 @@ def test_sample_dataset_full_range_and_sub_range(client):
         part["kpis"]["gross_sales"]
     )
     assert Decimal(part["kpis"]["gross_sales"]) < Decimal(body["kpis"]["gross_sales"])
+
+
+# --- one inclusive range, three views ---
+
+
+def _expected_for_range(start, end):
+    """KPI, trend total and ranking worked out in Python from ROWS, both ends inclusive."""
+    lines = [r.split(",") for r in ROWS if start <= r.split(",")[1] <= end]
+    gross = sum((Decimal(q) * Decimal(p) for _, _, _, _, q, p in lines), Decimal(0))
+    orders = {line[0] for line in lines}
+    per_product: dict[str, Decimal] = {}
+    for _, _, product_id, _, quantity, price in lines:
+        per_product[product_id] = per_product.get(product_id, Decimal(0)) + Decimal(
+            quantity
+        ) * Decimal(price)
+    ranking = [p for p, _ in sorted(per_product.items(), key=lambda item: -item[1])]
+    units = sum(int(line[4]) for line in lines)
+    return gross, len(orders), units, ranking
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        ("2025-01-02", "2025-01-20"),  # whole dataset
+        ("2025-01-02", "2025-01-02"),  # first day only
+        ("2025-01-20", "2025-01-20"),  # last day only
+        ("2025-01-10", "2025-01-20"),  # both ends are sale days
+        ("2025-01-02", "2025-01-10"),
+        ("2025-01-03", "2025-01-09"),  # no sales at all
+    ],
+)
+def test_kpis_trend_and_top_products_agree_for_the_same_inclusive_range(
+    client, dataset, start, end
+):
+    gross, orders, units, ranking = _expected_for_range(start, end)
+
+    body = analytics(client, dataset, f"?start={start}&end={end}").json()
+
+    assert body["range"] == {"start": start, "end": end}
+    assert Decimal(body["kpis"]["gross_sales"]) == gross
+    assert body["kpis"]["orders"] == orders
+    assert body["kpis"]["units_sold"] == units
+    assert sum(Decimal(b["gross_sales"]) for b in body["trend"]) == gross
+    assert body["trend"][0]["bucket_start"] == start
+    assert body["trend"][-1]["bucket_start"] == end
+    top = body["top_products"]
+    assert [p["product_id"] for p in top] == ranking
+    assert sum(Decimal(p["gross_sales"]) for p in top) == gross
+    assert sum(p["units_sold"] for p in top) == units
+    gross_values = [Decimal(p["gross_sales"]) for p in top]
+    assert gross_values == sorted(gross_values, reverse=True)
+    average = Decimal(body["kpis"]["average_order_value"])
+    assert average == (gross / orders if orders else Decimal(0)).quantize(Decimal("0.0001"))
+
+
+def test_no_sales_range_is_all_zero_in_every_view_and_a_bad_range_is_only_an_error(client, dataset):
+    quiet = analytics(client, dataset, "?start=2025-01-03&end=2025-01-09").json()
+    assert Decimal(quiet["kpis"]["gross_sales"]) == 0
+    assert quiet["kpis"]["orders"] == 0 and quiet["kpis"]["units_sold"] == 0
+    assert all(Decimal(b["gross_sales"]) == 0 for b in quiet["trend"])
+    assert quiet["top_products"] == []
+
+    bad = analytics(client, dataset, "?start=2025-01-09&end=2025-01-03")
+    assert_invalid_range(bad)
+    assert not {"kpis", "trend", "top_products", "range"} & set(bad.json())
