@@ -18,23 +18,23 @@ test("Analyze another file returns to upload and the prior dataset is gone", asy
   await expect(page.getByRole("link", { name: "Go to the upload screen" })).toBeVisible();
 });
 
-// The server's clock cannot be moved from the browser (and a container's settings cannot be
-// changed), and DATASET_TTL_HOURS is whole hours, so a real expiry would take an hour at least.
-// The dataset is real; once it is open the server's own answer for an expired dataset (404
-// not_found, the same body as backend/tests/test_auth.py checks) is served for every call about it.
+// A real expiry: the server under test runs with DATASET_TTL_SECONDS=60 (see playwright.config.ts;
+// start a container with `-e DATASET_TTL_SECONDS=60`). The dataset is created for real and the page
+// is reloaded, bounded, until the server itself answers 404 for it. No fixed sleep.
 test("an expired dataset shows the expired experience", async ({ page }) => {
+  test.setTimeout(150_000);
   await openSample(page);
+  await expect(
+    page.getByRole("region", { name: "Date range" }),
+    "the server must run with DATASET_TTL_SECONDS=60",
+  ).toContainText("Expires in less than a minute");
 
-  await page.route("**/api/datasets/*/**", (route) =>
-    route.fulfill({
-      status: 404,
-      contentType: "application/json",
-      body: JSON.stringify({ error: { code: "not_found", message: "The dataset was not found." } }),
-    }),
-  );
-  await page.reload();
+  const expired = page.getByRole("heading", { name: "This dataset has expired or was deleted" });
+  await expect(async () => {
+    await page.reload();
+    await expect(expired).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 120_000, intervals: [2_000] });
 
-  await expect(page.getByRole("heading", { name: "This dataset has expired or was deleted" })).toBeVisible();
   await expect(page.getByText("Upload a file or try the sample data again.")).toBeVisible();
   await page.getByRole("link", { name: "Go to the upload screen" }).click();
   await expect(page.getByRole("button", { name: "Try sample data" })).toBeVisible();

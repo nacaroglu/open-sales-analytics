@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 VARIABLES = [
     "DATASET_DIR",
     "DATASET_TTL_HOURS",
+    "DATASET_TTL_SECONDS",
     "MAX_UPLOAD_BYTES",
     "MAX_ROWS",
     "CLEANUP_INTERVAL_MINUTES",
@@ -30,6 +32,8 @@ def test_defaults_with_empty_environment():
 
     assert settings.dataset_dir == Path("./tmp_datasets")
     assert settings.dataset_ttl_hours == 24
+    assert settings.dataset_ttl_seconds is None
+    assert settings.dataset_ttl == timedelta(hours=24)
     assert settings.max_upload_bytes == 52_428_800
     assert settings.max_rows == 500_000
     assert settings.max_datasets == 200
@@ -82,7 +86,8 @@ def test_invalid_public_demo_mode_names_the_variable(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "variable", ["DATASET_TTL_HOURS", "MAX_UPLOAD_BYTES", "MAX_ROWS", "MAX_DATASETS"]
+    "variable",
+    ["DATASET_TTL_HOURS", "DATASET_TTL_SECONDS", "MAX_UPLOAD_BYTES", "MAX_ROWS", "MAX_DATASETS"],
 )
 @pytest.mark.parametrize("raw", ["0", "-1", "-5", "abc", "1.5"])
 def test_invalid_integers_name_the_variable(monkeypatch, variable, raw):
@@ -131,3 +136,16 @@ def test_only_config_reads_the_environment():
     ]
 
     assert offenders == []
+
+
+def test_ttl_seconds_overrides_ttl_hours(monkeypatch):
+    monkeypatch.setenv("DATASET_TTL_HOURS", "6")
+    monkeypatch.setenv("DATASET_TTL_SECONDS", "45")
+
+    assert Settings().dataset_ttl == timedelta(seconds=45)
+
+
+def test_ttl_hours_alone_is_the_lifetime(monkeypatch):
+    monkeypatch.setenv("DATASET_TTL_HOURS", "6")
+
+    assert Settings().dataset_ttl == timedelta(hours=6)

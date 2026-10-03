@@ -38,6 +38,8 @@ export default defineConfig({
           env: {
             DATASET_DIR: process.env.E2E_DATASET_DIR ?? "",
             PUBLIC_DEMO_MODE: "false",
+            // Datasets live one minute so the expiry journey sees a real expiry.
+            DATASET_TTL_SECONDS: "60",
           },
         },
         {

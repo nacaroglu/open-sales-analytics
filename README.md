@@ -46,6 +46,7 @@ The server reads these environment variables when it starts. Every variable is o
 | --- | --- | --- | --- |
 | `DATASET_DIR` | path | `./tmp_datasets` (`/data` in the Docker image) | Directory that holds one DuckDB file per dataset. Created with private permissions if missing. |
 | `DATASET_TTL_HOURS` | integer > 0 | `24` | Hours after which a dataset expires and is deleted. |
+| `DATASET_TTL_SECONDS` | integer > 0 | unset | Test-only. When set, the lifetime in seconds, instead of `DATASET_TTL_HOURS`. The browser tests use it to see a real expiry. Leave it unset in production. |
 | `MAX_UPLOAD_BYTES` | integer > 0 | `52428800` (50 MB) | Largest accepted upload, in bytes. A larger file is rejected with `file_too_large`. |
 | `MAX_ROWS` | integer > 0 | `500000` | Most data rows (header not counted) in one upload. More is rejected with `too_many_rows`. |
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | How often the server removes expired datasets (it also does so once at startup). |
@@ -283,9 +284,11 @@ npm run e2e
 
 `npm run e2e` starts the backend (port 8000) and the Vite dev server (port 5173) itself, with a temporary dataset
 directory, and stops them afterwards. Both ports must be free. To test an app that is already running (for example
-the container), set `E2E_BASE_URL`; no server is started then:
+the container), set `E2E_BASE_URL`; no server is started then. That app must run with `DATASET_TTL_SECONDS=60`, because
+the expiry journey waits (bounded polling) for a real expiry:
 
 ```sh
+docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
 E2E_BASE_URL=http://localhost:8000 npm run e2e
 ```
 

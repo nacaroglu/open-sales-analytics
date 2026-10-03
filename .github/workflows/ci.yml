@@ -73,7 +73,8 @@ jobs:
       - name: Build image
         run: docker build -t open-sales-analytics .
       - name: Start container
-        run: docker run -d --name oca -p 8000:8000 open-sales-analytics
+        # The one-minute lifetime lets the browser suite see a real expiry.
+        run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
       - name: Wait for /api/health
         run: |
           for i in $(seq 1 30); do
