@@ -32,6 +32,11 @@ With the volume, datasets survive `docker restart` and re-creating the container
 still expires after `DATASET_TTL_HOURS`. If you mount a host directory at `/data` instead of a named volume, it must
 be writable by the container's non-root user (UID 10001), for example `sudo chown 10001 /path/to/dir`.
 
+The image checks itself: `docker ps` shows `healthy` a few seconds after start, and `unhealthy` when `/api/health`
+stops answering (checked every 10 s, 3 s timeout, 3 failures, 10 s start period). `docker stop` ends the server in
+under a second with exit code 0, after stopping the background cleanup. The server sets no request timeout of its own
+(uvicorn defaults apply), so a very slow upload ends only when the client gives up.
+
 Pass a setting with `-e`, using a variable from the [table below](#configuration):
 
 ```sh
