@@ -289,6 +289,22 @@ npm run build     # type check, then the production bundle in frontend/dist
 
 `npm run dev` proxies `/api` to the backend on port 8000, so start the backend too.
 
+### Required CI checks
+
+Merging to `main` is meant to require these four checks, spelled exactly as GitHub shows them on a pull request
+(Settings, Branches or Rules, "Require status checks to pass", then pick each name):
+
+- `Backend (tests, ruff, mypy)`
+- `Frontend (tests, lint, type check, build)`
+- `Dependency scan (Python, npm) / Dependency scan (Python, npm)`
+- `Container (build, smoke, browser tests)`
+
+The dependency scan is a call to the reusable workflow `.github/workflows/dependency-scan.yml`, so GitHub shows its
+name twice, as `<calling job> / <called job>`. In branch protection select that full, doubled name; the plain
+`Dependency scan (Python, npm)` does not match a check run. If you rename a job in `.github/workflows/`, update this
+list and the protection setting in the same change, because a required check that no longer exists blocks every merge.
+Compare with `gh pr checks <number>` on any pull request.
+
 ### Dependency scanning
 
 CI scans both lockfiles on every pull request and every push to `main`, and again every Monday at 05:17 UTC
