@@ -65,34 +65,11 @@ jobs:
       - name: Production build
         run: npm run build
 
-  # Dependency scan of both lockfiles. The policy is in README.md (Dependency scanning). Neither
-  # step is allowed to fail silently: no `|| true`, no continue-on-error, so a finding or a scanner
-  # error turns the job, and the run, red.
+  # The scan lives in dependency-scan.yml so the scheduled run (dependency-scan-scheduled.yml)
+  # runs exactly the same commands. Policy: README.md (Dependency scanning).
   dependency-scan:
     name: Dependency scan (Python, npm)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
-        with:
-          python-version: "3.12"
-          enable-cache: true
-      # uvx runs the scanner in a throwaway environment; it is not a project dependency.
-      # Every locked package, dev tools included, is checked; any known vulnerability fails.
-      - name: Audit Python dependencies (uv.lock)
-        run: |
-          uv export --locked --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/requirements.txt"
-          uvx pip-audit@2.10.1 -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      # high and critical advisories fail; low and moderate are listed in the log only.
-      - name: Audit npm dependencies (package-lock.json)
-        run: npm audit --audit-level=high
-        working-directory: frontend
+    uses: ./.github/workflows/dependency-scan.yml
 
   # The container from the Dockerfile is built and started once; the health check and the
   # browser suite both run against it, on port 8000.
