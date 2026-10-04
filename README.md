@@ -308,6 +308,14 @@ that pins an exception in the scan command with the advisory ID and the reason n
 or removing the package); it is never a silent skip. Caches hold package downloads and the Playwright browser only;
 no dataset, upload, secret or DuckDB file is cached or uploaded as an artifact.
 
+Dependabot (`.github/dependabot.yml`) opens a pull request on Mondays for outdated Python (`uv.lock`, from
+`pyproject.toml`) and npm (`frontend/package-lock.json`) dependencies, at most 5 open per ecosystem. Dependabot only
+bumps dependencies that already exist; it never adds one. Its pull requests run the same CI as any other, with no
+secrets (Dependabot pull requests get a read-only token), so the dependency scan, tests, build and browser suite all
+run on the bumped lockfile. Review one like any change: read the release notes and the diff of the lockfile, merge only
+when every check is green, and for a major version bump also run the app once by hand. A red check is a reason to
+close or fix the pull request, never to merge it.
+
 A failed scheduled run shows as a red run named "Dependency scan (scheduled)" on the repository's Actions tab
 (filter by the workflow name or `event:schedule`). GitHub also emails the repository owner: for scheduled workflows it
 notifies the user who last changed the `cron` line, so if someone else edits the schedule, check that their
