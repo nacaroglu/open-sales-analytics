@@ -15,8 +15,8 @@ Frontend: `frontend/src/**/<name>.test.ts` or `.test.tsx` next to the code (Vite
 `npm test` (all, single run), `npx vitest run src/App.test.tsx` (one file), `npm run lint`, `npm run typecheck`, `npm run build`.
 
 CI (`.github/workflows/ci.yml`) runs pytest, `ruff check`, `ruff format --check`, `mypy backend/app`, and in `frontend/` `npm test`, `npm run lint`,
-`npm run typecheck`, then the browser test on the built container.
-Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm test` 273 tests in about 11 s.
+`npm run typecheck`, `npm run build`, a dependency scan of both lockfiles (policy in the README), then the browser suite on the built container.
+Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm test` 308 tests in about 9 s (re-measured 2026-10-04 in #46).
 
 ## Levels (plan section 12)
 
@@ -25,7 +25,10 @@ Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm tes
 - Integration: a request through `TestClient(app)` with settings overridden (`test_upload_endpoint.py`,
   `test_analytics_endpoint.py`). A real `uvicorn` subprocess only for what an in-process client cannot
   see: startup failure and log output on the real stream (`test_startup.py`, `test_logging.py`).
-- Browser: exactly one (Playwright, Chromium, `frontend/e2e/happy-path.spec.ts`, `npm run e2e`; CI runs it on the container). No other browser test.
+- Browser: a small suite of journeys (Playwright, Chromium, `frontend/e2e/*.spec.ts`, `npm run e2e`; CI runs all of it on the
+  container). One spec per journey, selectors by role or label, CSVs written inline (`e2e/helpers.ts`), no fixed sleeps.
+  `npm run e2e` starts its own backend and Vite on a temporary `DATASET_DIR`; with `E2E_BASE_URL` it tests a running app
+  instead. On Linux the browser needs its system libraries once: `npx playwright install-deps chromium` (CI runs it). The server under test runs with `DATASET_TTL_SECONDS=60` (set in `playwright.config.ts` and in the CI `docker run`; a container started by hand needs `-e DATASET_TTL_SECONDS=60`), and `lifecycle.spec.ts` waits, by bounded polling (reload, at most 120 s), until the real server expires a real dataset. No browser test beyond the journeys.
 
 Plan section 12 rules and their tests: validation rules `test_validation_structure.py`, `_rows.py`,
 `_cross_row.py`; metrics, granularity, date boundaries `test_kpis.py`, `test_top_products.py`,
@@ -33,7 +36,7 @@ Plan section 12 rules and their tests: validation rules `test_validation_structu
 "rejected upload leaves nothing" `test_upload_endpoint.py`; filtered analytics
 `test_analytics_endpoint.py`; missing or invalid token `test_auth.py`, `test_delete_endpoint.py`,
 `test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
-demo mode `test_demo_mode.py`; the browser happy path `frontend/e2e/happy-path.spec.ts`.
+demo mode `test_demo_mode.py`; the browser journeys `frontend/e2e/*.spec.ts` (`happy-path`, `upload`, `dashboard`, `lifecycle`).
 
 ## Isolation and settings
 Tests never read or write the real `DATASET_DIR` (default `./tmp_datasets`). Two patterns:
@@ -57,7 +60,7 @@ limit and one second either side: `test_cleanup.py::test_expiry_exactly_now_is_e
 `test_auth.py::test_one_second_before_expiry_is_accepted`,
 `test_validation_rows.py::test_today_is_accepted_and_tomorrow_is_the_future`.
 The one accepted real wait is a bounded poll (100 tries, 0.1 s apart) until a spawned server answers
-`/api/health`, in `test_logging.py`. Any new wait must be bounded and poll a condition, never a fixed sleep.
+`/api/health`, in `test_logging.py`. The browser expiry journey is the other: a bounded poll (reload every 2 s, at most 120 s) against a server whose `DATASET_TTL_SECONDS=60` (test-only setting, `test_config.py`). Any new wait must be bounded and poll a condition, never a fixed sleep.
 
 ## Fixtures
 

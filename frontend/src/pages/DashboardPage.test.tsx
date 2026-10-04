@@ -95,8 +95,8 @@ test("loaded state shows period as received, currency, grouped rows and local ex
   expect(await within(region).findByText("2025-03-01 to 2025-03-31")).toBeInTheDocument();
   expect(within(region).getByText("EUR")).toBeInTheDocument();
   expect(within(region).getByText("1,234,567")).toBeInTheDocument();
-  // 12:19 UTC is 8:19 AM in New York
-  expect(within(region).getByText(/Sep 30, 2026.*8:19\sAM/)).toBeInTheDocument();
+  // 12:19 UTC is 08:19 in New York, in English day-first form
+  expect(within(region).getByText(/^30 Sep 2026, 08:19/)).toBeInTheDocument();
   for (const label of ["Period", "Currency", "Rows", "Expires"]) {
     expect(within(region).getByText(label)).toBeInTheDocument();
   }
@@ -114,8 +114,42 @@ test("the expiry date follows local time across midnight, dates are never shifte
   });
   renderAt("/d/d1");
 
-  expect(await screen.findByText(/Sep 30, 2026.*10:30\sPM/)).toBeInTheDocument();
+  expect(await screen.findByText(/^30 Sep 2026, 22:30/)).toBeInTheDocument();
   expect(screen.getByText("2025-03-01 to 2025-03-01")).toBeInTheDocument();
+});
+
+describe("Expires fact (#42)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  test("relative time is the primary text, the exact local time is secondary and the tooltip", async () => {
+    // Fixed clock, no sleeping: 23 hours before the 12:19:11Z expiry.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-29T13:19:11Z") });
+    renderAt("/d/d1");
+
+    const primary = await screen.findByText("Expires in 23 hours");
+    expect(primary).toHaveAttribute("title", expect.stringMatching(/^30 Sep 2026, 08:19/));
+    const fact = primary.closest("dd") as HTMLElement;
+    expect(fact.lastElementChild).toHaveTextContent(/^30 Sep 2026, 08:19/);
+    expect(fact.firstElementChild).toBe(primary);
+  });
+
+  test("text does not depend on the browser's Turkish locale", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-29T13:19:11Z") });
+    const language = vi.spyOn(window.navigator, "language", "get").mockReturnValue("tr-TR");
+    const languages = vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["tr-TR", "tr"]);
+    const browserLocale = vi.spyOn(Date.prototype, "toLocaleString");
+    renderAt("/d/d1");
+
+    expect(await screen.findByText("Expires in 23 hours")).toBeInTheDocument();
+    expect(screen.getByText(/^30 Sep 2026, 08:19/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Eyl|Ekim|saat|GMT-4.*Eyl/);
+    expect(browserLocale).not.toHaveBeenCalled();
+    expect(language).toBeDefined();
+    expect(languages).toBeDefined();
+  });
 });
 
 test("the four regions exist and the h1 is the product name", async () => {

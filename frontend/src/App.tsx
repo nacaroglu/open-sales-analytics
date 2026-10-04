@@ -9,18 +9,29 @@ import type { Created, Issue } from "./lib/types";
 interface Notice {
   id: string;
   warnings: Issue[];
+  success: boolean;
 }
 
 function Dashboard({
   notice,
-  onDismiss,
+  onDismissWarnings,
+  onDismissSuccess,
 }: {
   notice: Notice | null;
-  onDismiss: () => void;
+  onDismissWarnings: () => void;
+  onDismissSuccess: () => void;
 }) {
   const { datasetId = "" } = useParams();
-  const warnings = notice !== null && notice.id === datasetId ? notice.warnings : [];
-  return <DashboardPage datasetId={datasetId} warnings={warnings} onDismissWarnings={onDismiss} />;
+  const mine = notice !== null && notice.id === datasetId ? notice : null;
+  return (
+    <DashboardPage
+      datasetId={datasetId}
+      warnings={mine?.warnings ?? []}
+      onDismissWarnings={onDismissWarnings}
+      justCreated={mine?.success ?? false}
+      onDismissSuccess={onDismissSuccess}
+    />
+  );
 }
 
 export default function App() {
@@ -28,11 +39,7 @@ export default function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
 
   function onCreated(created: Created) {
-    setNotice(
-      created.warnings.length > 0
-        ? { id: created.dataset_id, warnings: created.warnings }
-        : null,
-    );
+    setNotice({ id: created.dataset_id, warnings: created.warnings, success: true });
     navigate(`/d/${encodeURIComponent(created.dataset_id)}`);
   }
 
@@ -43,7 +50,17 @@ export default function App() {
           <Route path="/" element={<UploadPage onCreated={onCreated} />} />
           <Route
             path="/d/:datasetId"
-            element={<Dashboard notice={notice} onDismiss={() => setNotice(null)} />}
+            element={
+              <Dashboard
+                notice={notice}
+                onDismissWarnings={() =>
+                  setNotice((current) => (current === null ? null : { ...current, warnings: [] }))
+                }
+                onDismissSuccess={() =>
+                  setNotice((current) => (current === null ? null : { ...current, success: false }))
+                }
+              />
+            }
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

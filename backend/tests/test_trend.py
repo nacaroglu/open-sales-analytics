@@ -180,3 +180,53 @@ def test_dates_are_bound_parameters():
     source = inspect.getsource(trend)
     assert "BETWEEN ? AND ?" in source
     assert 'f"' not in source and "f'" not in source and ".format(" not in source
+
+
+def test_weekly_range_on_exact_week_boundaries_has_no_extra_bucket(tmp_path):
+    # Monday 2025-01-06 .. Sunday 2025-04-06 is 91 days: weekly, 13 whole weeks.
+    start, end = date(2025, 1, 6), date(2025, 4, 6)
+    rows = [row("a", date(2025, 1, 6)), row("b", date(2025, 4, 6))]
+    buckets = trend_for(tmp_path, rows, start, end)["buckets"]
+    assert len(buckets) == 13
+    assert buckets[0] == {"bucket_start": start, "gross_sales": Decimal("1")}
+    assert buckets[-1] == {"bucket_start": date(2025, 3, 31), "gross_sales": Decimal("1")}
+
+
+def test_weekly_range_crossing_a_year_starts_the_week_in_the_old_year(tmp_path):
+    # Wednesday 2025-12-31 is in the week of Monday 2025-12-29; 2026-01-01 is Thursday.
+    start, end = date(2025, 12, 31), date(2026, 4, 1)
+    rows = [row("a", date(2025, 12, 31), 1, "5.00"), row("b", date(2026, 1, 1), 1, "7.00")]
+    result = trend_for(tmp_path, rows, start, end)
+    assert result["granularity"] == "weekly"
+    assert result["buckets"][0] == {
+        "bucket_start": date(2025, 12, 29),
+        "gross_sales": Decimal("12"),
+    }
+
+
+def test_daily_range_across_a_leap_day_has_a_bucket_for_29_february(tmp_path):
+    start, end = date(2024, 2, 28), date(2024, 3, 1)
+    buckets = trend_for(tmp_path, [row("a", date(2024, 2, 29))], start, end)["buckets"]
+    assert [b["bucket_start"] for b in buckets] == [
+        date(2024, 2, 28),
+        date(2024, 2, 29),
+        date(2024, 3, 1),
+    ]
+
+
+def test_monthly_range_on_exact_month_boundaries_and_across_a_year(tmp_path):
+    # 2024-01-01 .. 2025-12-31 is 731 days: monthly, 24 whole months, no extra bucket.
+    start, end = date(2024, 1, 1), date(2025, 12, 31)
+    buckets = trend_for(tmp_path, [row("a", end)], start, end)["buckets"]
+    assert len(buckets) == 24
+    assert buckets[0]["bucket_start"] == date(2024, 1, 1)
+    assert buckets[12]["bucket_start"] == date(2025, 1, 1)
+    assert buckets[-1] == {"bucket_start": date(2025, 12, 1), "gross_sales": Decimal("1")}
+
+
+def test_range_inside_one_week_or_month_still_has_one_daily_bucket_per_day(tmp_path):
+    # Short ranges are daily, so a one-week slice is whole days, never one weekly bucket.
+    start, end = date(2025, 3, 5), date(2025, 3, 7)
+    result = trend_for(tmp_path, [], start, end)
+    assert result["granularity"] == "daily"
+    assert len(result["buckets"]) == 3

@@ -22,8 +22,9 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 | Primary action | `bg-indigo-700 text-white enabled:hover:bg-indigo-800` | 8.1 |
 | Error | `bg-red-50 border-red-700 text-red-900` | 9.2 |
 | Warning | `bg-amber-50 border-amber-700 text-amber-900` | 8.8 |
+| Success | `bg-emerald-50 border-emerald-700 text-emerald-900` | 9.0 (emerald-900 on emerald-50) |
 
-Control borders use `border-slate-500` (4.8:1 on white, 4.6 on slate-50, above the 3:1 needed for controls); decorative borders `border-slate-200`. No success or neutral role: no task needs one.
+Control borders use `border-slate-500` (4.8:1 on white, 4.6 on slate-50, above the 3:1 needed for controls); decorative borders `border-slate-200`. Success (added in #42, for a finished upload) is in the States table; there is no neutral role.
 
 ## Type and spacing
 
@@ -48,7 +49,7 @@ Key figures: `grid grid-cols-2 lg:grid-cols-4 gap-4`. At 768 px the cards are ~3
 
 Date range section (#27 + #31) is one card `rounded-lg border border-slate-200 bg-white p-4 space-y-4`, top to bottom: right-aligned primary **Analyze another file**;
 the dataset facts `<dl className="grid grid-cols-2 lg:grid-cols-4 gap-4">`, each a `<dt>` (card-label classes) over a `<dd className="mt-1 text-base font-semibold tabular-nums wrap-anywhere">`,
-labelled "Period" (`2025-01-01 to 2025-03-31`, as received), "Currency" (ISO code), "Rows" (`1,234`), "Expires" (local date and time), loading as `h-6 w-24` pulse blocks;
+labelled "Period" (`2025-01-01 to 2025-03-31`, as received), "Currency" (ISO code), "Rows" (`1,234`), "Expires" (relative text first, "Expires in 23 hours", with the exact local date and time as `mt-1 block text-sm font-normal text-slate-600` below and as `title`), loading as `h-6 w-24` pulse blocks;
 then `<div className="flex flex-wrap items-end gap-3 border-t border-slate-200 pt-4">` with two `<div className="w-44">` (label "Start date" / "End date" over a date input, inline error `mt-1` below it) and a secondary **Reset** button, in that order.
 Wide content scrolls or wraps in its own box (`overflow-x-auto`, `wrap-anywhere`), never the page.
 
@@ -86,6 +87,14 @@ File input: `block w-full text-sm file:mr-3 file:h-10 file:rounded-md file:borde
 Inline field error: `mt-1 text-sm font-medium text-red-800` with the same "✕" icon, `role="alert"`, under the field.
 Warnings from an accepted upload are a dismissible notice: warning look plus a link-style `<button aria-label="Dismiss notice">Dismiss</button>` at the right; it is a status (`role="status"`), not an alert.
 
+## Dates and times
+
+Every date the application writes is English and fixed to one locale (day first, month names from `en-US`: "5 Mar 2025", "30 Sep 2026, 08:19 EDT"), never the browser's (`lib/format.ts`, `TrendChart.tsx`); a Turkish and an English browser show the same words. Calendar dates (period, range) are shown as received, `YYYY-MM-DD`, and never converted. Only an instant (expiry) is shown in the browser's time zone. Relative text is English with whole units rounded down ("Expires in 23 hours", "Expires in 2 days").
+
+## Helper text
+
+A disabled primary action whose cause is the user's selection gets a `text-sm text-slate-600` line below the buttons, tied to the button with `aria-describedby`; it disappears when the action is enabled. Upload: "Select a CSV file and currency to continue."
+
 ## States
 
 | State | Look |
@@ -95,6 +104,7 @@ Warnings from an accepted upload are a dismissible notice: warning look plus a l
 | Refresh over old data | Old data stays, unchanged; add `text-sm text-slate-600` "Updating…" (`role="status"`) beside the section heading |
 | Refresh after a date-range change | One "Updating…" (`role="status"`, `text-sm text-slate-600`) beside **Reset** in the Date range card, for all three sections, because Key figures has no heading |
 | Empty chart / table | Inside the same box, same height (`h-72`): `flex h-72 items-center justify-center text-center text-slate-600`: "No sales in this range" / "No products sold in this range". A range with no sales also shows the warning notice "No sales in the selected range" with a secondary **Reset** |
+| Success (upload or sample data ready) | `rounded-md border border-l-4 border-emerald-700 bg-emerald-50 p-3 text-sm text-emerald-900`, `role="status"`: `<span aria-hidden>✓</span>` + bold "Success" + message, link-style Dismiss at the right. Solid border like Error, so the word and icon (✓ vs ✕ vs ⚠) tell the three apart, plus Warning's dashed border |
 | Section failed | Error look (above), text "Something went wrong loading this data" and a primary **Retry** |
 | Full page (expired, no session) | `mx-auto max-w-md rounded-lg border border-slate-200 bg-white p-6 text-center` with an h2 message and one button or link; the h1 stays |
 
@@ -109,6 +119,8 @@ Chart area `h-72` in a `ResponsiveContainer`, on a white card. One series colour
 | Axis lines | `#62748e` (slate-500) |
 | Tick labels | `#45556c` (slate-600), font size 12 |
 | Tooltip | white background, `1px solid #cad5e2` (slate-300) border, radius 6, text `#0f172b`, size 14 |
+
+Partial trend bucket (a first or last week or month the range cuts, #43): hollow point (`#ffffff` fill, `#432dd7` stroke, so it differs by shape, not only by label); axis label is the covered dates ("29–31 Dec", "10–31 Mar 2025") instead of "Week of ..." or the month name; one `text-sm text-slate-600` note under the range sentence starting "Partial period:"; the tooltip adds a bold "Partial period: <dates with year>" line. A whole bucket and every daily bucket look as before.
 
 The line and bars are saturated violet-blue (8.1 on white; axis 4.8, grid 1.2) and the axes, ticks and grid are grey slate, so hue and lightness both differ. One series is safe for colour-blind readers. A second series would need a dash pattern or marker too (add a line here first).
 

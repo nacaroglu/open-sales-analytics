@@ -23,11 +23,12 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
     DATASET_DIR=/data
 
-# Non-root user. /data is created owned by it, so a named volume mounted at /data is
+# Non-root user. /data is created owned by it with private permissions (0700, as the README promises), so a named volume mounted at /data is
 # writable. A host directory mounted at /data must be writable by this user (UID 10001).
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir /data \
-    && chown app:app /data
+    && chown app:app /data \
+    && chmod 700 /data
 
 WORKDIR /app
 COPY --from=backend-deps /app/.venv /app/.venv

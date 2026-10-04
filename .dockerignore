@@ -12,3 +12,21 @@ _docs
 .ruff_cache
 .mypy_cache
 *.duckdb
+frontend/test-results
+frontend/playwright-report
+deploy
+# Credentials and secrets must never reach the build context.
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+.aws
+.npmrc
+.netrc
+**/*credentials*
+**/*secret*
+*:Zone.Identifier

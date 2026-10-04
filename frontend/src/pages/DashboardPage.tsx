@@ -20,6 +20,7 @@ import {
   describeError,
   errorKind,
 } from "../lib/errors";
+import { formatExpiry, formatRelativeExpiry } from "../lib/format";
 import { clearSession, readSession, tokenFor } from "../lib/session";
 import type { Issue, Meta } from "../lib/types";
 
@@ -31,21 +32,6 @@ const SECONDARY = `${BUTTON} bg-white text-slate-900 border border-slate-500 ena
 const LINK = `text-indigo-700 underline underline-offset-2 hover:text-indigo-900 ${FOCUS}`;
 const LABEL = "text-sm font-medium text-slate-600";
 const VALUE = "mt-1 text-base font-semibold tabular-nums wrap-anywhere";
-
-// The expiry is a UTC instant, shown in the browser's local time zone. The two
-// dates are calendar dates and are shown exactly as received, never converted.
-function formatExpiry(utc: string): string {
-  const date = new Date(utc);
-  if (Number.isNaN(date.getTime())) return utc;
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-}
 
 function Header() {
   return <h1 className="text-3xl font-bold text-indigo-700">Open Sales Analytics</h1>;
@@ -88,6 +74,29 @@ function NoSalesNotice({ onReset }: { onReset: () => void }) {
       </p>
       <button type="button" className={`shrink-0 ${SECONDARY}`} onClick={onReset}>
         Reset
+      </button>
+    </div>
+  );
+}
+
+// Success look (design-system.md, "Success"): solid left bar, check icon and the word "Success".
+function SuccessNotice({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start justify-between gap-3 rounded-md border border-l-4 border-emerald-700 bg-emerald-50 p-3 text-sm text-emerald-900"
+    >
+      <p>
+        <span aria-hidden>✓</span> <strong>Success</strong> Your data is ready. The figures below
+        are from the uploaded dataset.
+      </p>
+      <button
+        type="button"
+        aria-label="Dismiss success notice"
+        onClick={onDismiss}
+        className={`shrink-0 ${LINK}`}
+      >
+        Dismiss
       </button>
     </div>
   );
@@ -187,7 +196,14 @@ function DateRangeCard({
           </div>
           <div>
             <dt className={LABEL}>Expires</dt>
-            <dd className={VALUE}>{formatExpiry(data.expires_at)}</dd>
+            <dd className={VALUE}>
+              <span title={formatExpiry(data.expires_at)}>
+                {formatRelativeExpiry(data.expires_at, new Date())}
+              </span>
+              <span className="mt-1 block text-sm font-normal text-slate-600">
+                {formatExpiry(data.expires_at)}
+              </span>
+            </dd>
           </div>
         </dl>
       )}
@@ -200,10 +216,14 @@ export default function DashboardPage({
   datasetId,
   warnings,
   onDismissWarnings,
+  justCreated = false,
+  onDismissSuccess = () => {},
 }: {
   datasetId: string;
   warnings: Issue[];
   onDismissWarnings: () => void;
+  justCreated?: boolean;
+  onDismissSuccess?: () => void;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -306,6 +326,7 @@ export default function DashboardPage({
     <div className="space-y-8">
       <Header />
 
+      {justCreated && <SuccessNotice onDismiss={onDismissSuccess} />}
       {warnings.length > 0 && <WarningNotice warnings={warnings} onDismiss={onDismissWarnings} />}
 
       <section aria-label="Date range">

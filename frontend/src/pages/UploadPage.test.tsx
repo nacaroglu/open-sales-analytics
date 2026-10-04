@@ -873,3 +873,96 @@ test("the capacity block goes away when another file is picked or a new attempt 
   finish(created);
   await waitFor(() => expect(onCreated).toHaveBeenCalled());
 });
+
+// ---- Helper text and states (#42) ----
+
+test("the disabled Upload button is described by the helper, which goes away once both are chosen", async () => {
+  renderPage();
+  const button = await screen.findByRole("button", { name: "Upload" });
+  expect(button).toBeDisabled();
+  const helper = screen.getByText("Select a CSV file and currency to continue.");
+  expect(button).toHaveAccessibleDescription("Select a CSV file and currency to continue.");
+  expect(button.getAttribute("aria-describedby")).toBe(helper.id);
+
+  fireEvent.change(screen.getByLabelText("CSV file"), {
+    target: { files: [new File(["x"], "sales.csv", { type: "text/csv" })] },
+  });
+  expect(screen.getByText("Select a CSV file and currency to continue.")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "EUR" } });
+
+  expect(button).toBeEnabled();
+  expect(button).not.toHaveAttribute("aria-describedby");
+  expect(screen.queryByText("Select a CSV file and currency to continue.")).not.toBeInTheDocument();
+});
+
+test("the file input is the native one: no custom text or locale on it", async () => {
+  renderPage();
+  const input = await screen.findByLabelText("CSV file");
+  expect(input).toHaveAttribute("type", "file");
+  expect(input).not.toHaveAttribute("lang");
+  expect(input).not.toHaveAttribute("title");
+});
+
+// ---- Selection feedback: clearing and replacing (#46) ----
+
+const HELP = "Select a CSV file and currency to continue.";
+
+test("clearing the chosen file disables Upload again and brings the helper back", async () => {
+  await renderForm();
+  choose(csv());
+  expect(uploadButton()).toBeEnabled();
+  expect(screen.queryByText(HELP)).not.toBeInTheDocument();
+
+  fireEvent.change(input(), { target: { files: [] } });
+
+  expect(uploadButton()).toBeDisabled();
+  expect(uploadButton()).toHaveAccessibleDescription(HELP);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(select().value).toBe("USD");
+  fireEvent.click(uploadButton());
+  expect(upload).not.toHaveBeenCalled();
+});
+
+test("going back to the placeholder currency disables Upload and shows the helper again", async () => {
+  await renderForm();
+  choose(csv(), "EUR");
+  expect(uploadButton()).toBeEnabled();
+
+  fireEvent.change(select(), { target: { value: "" } });
+
+  expect(uploadButton()).toBeDisabled();
+  expect(screen.getByText(HELP)).toBeInTheDocument();
+});
+
+test("replacing a refused file with a good one clears the message and enables Upload, which sends the new file", async () => {
+  await renderForm();
+  choose(csv("notes.txt"), "GBP");
+  expect(screen.getByRole("alert")).toHaveTextContent("The file must be a .csv file.");
+  expect(uploadButton()).toBeDisabled();
+  expect(screen.getByText(HELP)).toBeInTheDocument();
+
+  const good = csv("march.csv");
+  fireEvent.change(input(), { target: { files: [good] } });
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(input()).not.toHaveAttribute("aria-invalid");
+  expect(input()).not.toHaveAttribute("aria-describedby");
+  expect(uploadButton()).toBeEnabled();
+  fireEvent.click(uploadButton());
+  await waitFor(() => expect(upload).toHaveBeenCalledWith(good, "GBP"));
+});
+
+test("replacing a good file with a refused one disables Upload and ties the message to the input", async () => {
+  await renderForm();
+  choose(csv("march.csv"));
+  expect(uploadButton()).toBeEnabled();
+
+  fireEvent.change(input(), { target: { files: [csv("march.xlsx")] } });
+
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("The file must be a .csv file.");
+  expect(input()).toHaveAttribute("aria-invalid", "true");
+  expect(input()).toHaveAccessibleDescription("The file must be a .csv file.");
+  expect(alert.id).toBe(input().getAttribute("aria-describedby"));
+  expect(uploadButton()).toBeDisabled();
+});

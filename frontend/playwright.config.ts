@@ -23,7 +23,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: externalUrl ?? `http://127.0.0.1:${frontendPort}`,
-    trace: "retain-on-failure",
+    // A trace stores every network response, dataset figures included, so CI records none.
+    trace: process.env.CI ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
@@ -38,6 +39,8 @@ export default defineConfig({
           env: {
             DATASET_DIR: process.env.E2E_DATASET_DIR ?? "",
             PUBLIC_DEMO_MODE: "false",
+            // Datasets live one minute so the expiry journey sees a real expiry.
+            DATASET_TTL_SECONDS: "60",
           },
         },
         {

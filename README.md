@@ -32,6 +32,11 @@ With the volume, datasets survive `docker restart` and re-creating the container
 still expires after `DATASET_TTL_HOURS`. If you mount a host directory at `/data` instead of a named volume, it must
 be writable by the container's non-root user (UID 10001), for example `sudo chown 10001 /path/to/dir`.
 
+The image checks itself: `docker ps` shows `healthy` a few seconds after start, and `unhealthy` when `/api/health`
+stops answering (checked every 10 s, 3 s timeout, 3 failures, 10 s start period). `docker stop` ends the server in
+under a second with exit code 0, after stopping the background cleanup. The server sets no request timeout of its own
+(uvicorn defaults apply), so a very slow upload ends only when the client gives up.
+
 Pass a setting with `-e`, using a variable from the [table below](#configuration):
 
 ```sh
@@ -46,6 +51,7 @@ The server reads these environment variables when it starts. Every variable is o
 | --- | --- | --- | --- |
 | `DATASET_DIR` | path | `./tmp_datasets` (`/data` in the Docker image) | Directory that holds one DuckDB file per dataset. Created with private permissions if missing. |
 | `DATASET_TTL_HOURS` | integer > 0 | `24` | Hours after which a dataset expires and is deleted. |
+| `DATASET_TTL_SECONDS` | integer > 0 | unset | Test-only. When set, the lifetime in seconds, instead of `DATASET_TTL_HOURS`. The browser tests use it to see a real expiry. Leave it unset in production. |
 | `MAX_UPLOAD_BYTES` | integer > 0 | `52428800` (50 MB) | Largest accepted upload, in bytes. A larger file is rejected with `file_too_large`. |
 | `MAX_ROWS` | integer > 0 | `500000` | Most data rows (header not counted) in one upload. More is rejected with `too_many_rows`. |
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | How often the server removes expired datasets (it also does so once at startup). |
@@ -157,6 +163,23 @@ Warnings do not reject the file. They come back in the `warnings` list of the `2
 Download a valid sample file at <http://localhost:8000/api/sample.csv> (the upload screen links it as **Download
 sample CSV**). **Try sample data** on the upload screen imports the same file in USD without any upload.
 
+## Trend buckets
+
+The trend groups gross sales by calendar bucket. The granularity depends only on the selected range, counting both
+end dates: up to 90 days is daily, over 90 days through 730 days is weekly, longer is monthly. The API returns
+`bucket_start` per bucket (the bucket's first day) and no coverage field.
+
+- The range is inclusive: the start date and the end date are both in it.
+- Weeks run Monday to Sunday; a weekly bucket's `bucket_start` is its Monday. Months are calendar months.
+- A bucket the range cuts (a first week or month that starts before the start date, a last one that ends after the
+  end date) is a partial period. The chart works this out from the range and the calendar, so a day with no sales still
+  counts as covered. A one-day daily bucket is always whole (the data holds dates only); a one-day slice of a week or
+  month is partial. A range inside one week or month shows that bucket as partial.
+- Partial presentation: the axis label of a partial week or month shows the dates it covers (`29–31 Dec`,
+  `10–31 Mar 2025`) instead of `Week of 29 Dec` or the month name, the point is hollow, a note under the chart says
+  so, and the tooltip adds the year and `Partial period: <covered dates>`. A whole bucket has none of these.
+- Only rows inside the range are summed, so a partial bucket holds the sales of the dates it covers.
+
 ## Currencies
 
 The currency is chosen in the upload form: USD, EUR, GBP, TRY, CAD, AUD, JPY, CHF, SEK, PLN. It is only a label for
@@ -228,6 +251,15 @@ uv run ruff format --check backend   # `uv run ruff format backend` fixes it
 uv run mypy backend/app
 ```
 
+Dependency scan (the same two commands the CI `dependency-scan` job runs; `uvx` runs `pip-audit` without making it a
+project dependency):
+
+```sh
+uv export --locked --no-emit-project --format requirements-txt -o /tmp/requirements.txt
+uvx pip-audit@2.10.1 -r /tmp/requirements.txt --no-deps --disable-pip
+(cd frontend && npm audit --audit-level=high)
+```
+
 Start the backend (serves on http://127.0.0.1:8000):
 
 ```sh
@@ -248,27 +280,52 @@ npm run dev       # dev server on http://localhost:5173
 npm test          # Vitest, single run
 npm run lint      # ESLint
 npm run typecheck # tsc --noEmit (TypeScript 7)
-npm run build     # writes frontend/dist
+npm run build     # type check, then the production bundle in frontend/dist
 ```
 
 `npm run dev` proxies `/api` to the backend on port 8000, so start the backend too.
 
+### Dependency scanning
+
+CI scans both lockfiles on every pull request and every push to `main`:
+
+| Ecosystem | Tool and input | Fails CI on |
+| --- | --- | --- |
+| Python | `pip-audit` over `uv.lock` (runtime and dev packages) | any known vulnerability (pip-audit has no severity filter) |
+| npm | `npm audit --audit-level=high` over `frontend/package-lock.json` | high and critical advisories; low and moderate are shown in the log but do not fail |
+
+A scanner that errors (no network, bad input) also fails the job; the steps have no `|| true` and no
+`continue-on-error`. There is no ignore list. If an advisory has no fix yet, the way out is a reviewed pull request
+that pins an exception in the scan command with the advisory ID and the reason next to it (`pip-audit --ignore-vuln ID`
+or removing the package); it is never a silent skip. Caches hold package downloads and the Playwright browser only;
+no dataset, upload, secret or DuckDB file is cached or uploaded as an artifact.
+
 ### Browser test
 
-One Playwright test (Chromium) covers the happy path: load the sample, see the dashboard, change the date range.
+A small Playwright suite (Chromium, `frontend/e2e/`) covers the primary journeys: Try sample data, a valid upload,
+an invalid upload, the date range and Reset, Analyze another file, and an expired dataset.
 Install the browser once (about 150 MB, stored outside the repository), then run it from `frontend/`:
 
 ```sh
 npx playwright install chromium
+npx playwright install-deps chromium   # Linux only: system libraries, needs sudo; CI runs it too
 npm run e2e
 ```
 
 `npm run e2e` starts the backend (port 8000) and the Vite dev server (port 5173) itself, with a temporary dataset
 directory, and stops them afterwards. Both ports must be free. To test an app that is already running (for example
-the container), set `E2E_BASE_URL`; no server is started then:
+the container), set `E2E_BASE_URL`; no server is started then. That app must run with `DATASET_TTL_SECONDS=60`, because
+the expiry journey waits (bounded polling) for a real expiry:
 
 ```sh
+docker build -t open-sales-analytics .   # from the repository root
+docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
+curl -f http://localhost:8000/api/health   # answers {"status":"ok"}; repeat for a few seconds until it does
+curl -f http://localhost:8000/d/anything | grep -i '<div id="root"'   # the single-page app
 E2E_BASE_URL=http://localhost:8000 npm run e2e
+docker rm -f oca
 ```
 
 On failure a trace and a screenshot are saved in `frontend/test-results/` (open a trace with `npx playwright show-trace`).
+With `CI` set (as on GitHub Actions) no trace is recorded, because a trace contains the network responses, and CI uploads
+only the failure screenshots.
