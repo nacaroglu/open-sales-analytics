@@ -291,7 +291,11 @@ npm run build     # type check, then the production bundle in frontend/dist
 
 ### Dependency scanning
 
-CI scans both lockfiles on every pull request and every push to `main`:
+CI scans both lockfiles on every pull request and every push to `main`, and again every Monday at 05:17 UTC
+(`.github/workflows/dependency-scan-scheduled.yml`), so a new advisory against an unchanged lockfile turns a run red
+without waiting for the next pull request. Both call one shared definition,
+`.github/workflows/dependency-scan.yml`, so the commands and the policy below are identical. The scheduled run has
+`contents: read` and no secrets, and can also be started by hand from the Actions tab ("Run workflow").
 
 | Ecosystem | Tool and input | Fails CI on |
 | --- | --- | --- |
@@ -303,6 +307,12 @@ A scanner that errors (no network, bad input) also fails the job; the steps have
 that pins an exception in the scan command with the advisory ID and the reason next to it (`pip-audit --ignore-vuln ID`
 or removing the package); it is never a silent skip. Caches hold package downloads and the Playwright browser only;
 no dataset, upload, secret or DuckDB file is cached or uploaded as an artifact.
+
+A failed scheduled run shows as a red run named "Dependency scan (scheduled)" on the repository's Actions tab
+(filter by the workflow name or `event:schedule`). GitHub also emails the repository owner: for scheduled workflows it
+notifies the user who last changed the `cron` line, so if someone else edits the schedule, check that their
+notification settings (Settings, Notifications, Actions) are on. Scheduled workflows run on the default branch only,
+and GitHub pauses them after 60 days without repository activity; re-enable one from the Actions tab if that happens.
 
 ### Browser test
 
