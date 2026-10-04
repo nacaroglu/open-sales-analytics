@@ -1,13 +1,29 @@
-# open-sales-analytics
+# Open Sales Analytics
 
-Open Sales Analytics is a small self-hosted web application. You upload a CSV of completed sales lines and it shows
-gross sales, orders, units, average order value, a sales trend and the top products, with a date range you can change.
-Gross sales is quantity times unit price, summed over the lines in the chosen period. It has no refunds, discounts,
-taxes or shipping in it.
+You have a CSV of sales lines and want to know how the business is doing, without setting up a BI tool. Open Sales
+Analytics is a small self-hosted web application for that: upload the file and see gross sales, orders, units, average
+order value, a sales trend and the top products, for a date range you can change. It reads one file at a time and
+keeps it for 24 hours by default; it is not a data warehouse or a reporting suite.
 
-Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) |
-[Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
-[Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
+Contents: [Run it with Docker](#run-it-with-docker) | [Scope](#scope) | [Configuration](#configuration) |
+[Dataset contract](#dataset-contract) | [Metrics](#metrics) | [Trend buckets](#trend-buckets) |
+[Currencies](#currencies) | [Privacy](#privacy) | [Demo mode](#demo-mode) | [Limitations](#limitations) |
+[Architecture](#architecture) | [Roadmap](#roadmap) | [Development](#development) | [Contributing](#contributing)
+
+## Scope
+
+In:
+
+- Gross sales, orders, units sold and average order value for a date range.
+- A sales trend (daily, weekly or monthly, chosen from the range) and the top 10 products.
+- One CSV of completed sales lines per dataset, with one currency, validated strictly (see
+  [Dataset contract](#dataset-contract)).
+
+Out:
+
+- Refunds and cancellations, discounts, taxes and shipping: gross sales only.
+- Accounts, sharing and saved dashboards: a dataset is reachable only with its token.
+- Multi-currency: one currency per file, with no conversion.
 
 ## Run it with Docker
 
@@ -163,6 +179,26 @@ Warnings do not reject the file. They come back in the `warnings` list of the `2
 Download a valid sample file at <http://localhost:8000/api/sample.csv> (the upload screen links it as **Download
 sample CSV**). **Try sample data** on the upload screen imports the same file in USD without any upload.
 
+## Metrics
+
+The dashboard shows these, using the same labels as the screen. All of them cover the selected date range only.
+
+- **Gross sales**: the sum of `quantity` times `unit_price` over the lines in the range.
+- **Orders**: the number of distinct `order_id` values in the range.
+- **Units sold**: the sum of `quantity` in the range.
+- **Average order value**: gross sales divided by orders; 0 when the range has no orders. It is rounded to four
+  decimal places (half up) and shown in the dataset's currency.
+- **Top products**: the 10 products with the most gross sales in the range, ranked by gross sales (ties by
+  `product_id`). A bar chart shows gross sales; the table next to it adds units and distinct orders per product.
+
+Date filter:
+
+- The dashboard starts on the dataset's full range, from its first to its last order date.
+- Start and end are both inclusive: a line dated on either day counts.
+- **Reset** returns to the full range.
+- Every KPI, the trend and the top products use the same range. How the trend is bucketed, and how partial periods are
+  shown, is in [Trend buckets](#trend-buckets).
+
 ## Trend buckets
 
 The trend groups gross sales by calendar bucket. The granularity depends only on the selected range, counting both
@@ -229,11 +265,52 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  subgraph container["One container, port 8000"]
+    api["FastAPI: JSON API and built front end"]
+    files[("One DuckDB file per dataset in DATASET_DIR")]
+    cleanup["Cleanup task: removes expired datasets"]
+    api --> files
+    cleanup --> files
+  end
+  browser["Browser (React, Vite, Recharts)"] -->|"HTTP, bearer token"| api
+```
+
 A React (Vite) front end with Recharts talks JSON to a FastAPI back end. Each dataset is one DuckDB file under
 `DATASET_DIR`; validation and analytics are SQL over that file. An in-process background task removes expired
 datasets. The Docker image is a single container in which FastAPI serves both the API and the built front end from one
 origin on port 8000. The full specification is in [`_docs/plan.md`](_docs/plan.md) (architecture in section 7), and the
 backlog is in [`_docs/tasks.md`](_docs/tasks.md).
+
+## Roadmap
+
+Done:
+
+- MVP: CSV upload with strict validation, the four KPIs, the sales trend, top products, the date range, 24-hour
+  expiry, a self-hosting Docker image and the demo mode setting.
+- Phase 2: visible UX and formatting fixes (#42), explicit partial trend buckets (#43), backend validation and metrics
+  unit tests (#44), API and dataset lifecycle tests (#45), frontend component and accessibility tests (#46),
+  Playwright tests of the primary journeys (#47), and the one-container distribution (#48).
+
+Not finished yet: the CI and security quality gates (#49), the sample-only screen for the public demo (#50) and this
+documentation (#51).
+
+Candidates, not built and not promised (from the post-MVP list in [`_docs/plan.md`](_docs/plan.md), section 15):
+
+1. Period-over-period comparison.
+2. A manual day, week or month trend selector.
+3. A downloadable aggregate CSV or PDF report.
+4. Returns and cancellations, through an expanded schema.
+5. Preset adapters for common Shopify or WooCommerce exports.
+6. Durable authenticated workspaces and saved dashboards.
+7. Background processing for substantially larger files.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the setup, the checks to run before a pull request and how to report a
+problem. Bugs and feature ideas go in
+[GitHub issues](https://github.com/nacaroglu/open-sales-analytics/issues/new/choose).
 
 ## Development
 

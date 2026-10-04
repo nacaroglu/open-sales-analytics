@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as the README says it should.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach real customer data. Reproduce the problem with the sample file or a small made-up CSV, and
+        remove tokens, file paths and personal data from anything you paste.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, in order. Say whether you used Docker or the dev server.
+      placeholder: |
+        1. docker run -p 8000:8000 open-sales-analytics
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: What happened instead. Include the error text or code (for example `validation_failed`).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The output of `git rev-parse --short HEAD`, or the image you built from.
+    validations:
+      required: true

@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a change. Describe the problem first.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/nacaroglu/open-sales-analytics#roadmap) first: its candidates are ideas,
+        not promises. Do not attach real customer data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way? Leave the solution for the next field.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: Optional. What would you change?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today
+      description: Optional. Any workaround you use now.
