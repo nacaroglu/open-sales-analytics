@@ -324,11 +324,38 @@ that pins an exception in the scan command with the advisory ID and the reason n
 or removing the package); it is never a silent skip. Caches hold package downloads and the Playwright browser only;
 no dataset, upload, secret or DuckDB file is cached or uploaded as an artifact.
 
+Dependabot (`.github/dependabot.yml`) opens a pull request on Mondays for outdated Python (`uv.lock`, from
+`pyproject.toml`) and npm (`frontend/package-lock.json`) dependencies, at most 5 open per ecosystem. Dependabot only
+bumps dependencies that already exist; it never adds one. Its pull requests run the same CI as any other, with no
+secrets (Dependabot pull requests get a read-only token), so the dependency scan, tests, build and browser suite all
+run on the bumped lockfile. Review one like any change: read the release notes and the diff of the lockfile, merge only
+when every check is green, and for a major version bump also run the app once by hand. A red check is a reason to
+close or fix the pull request, never to merge it.
+
 A failed scheduled run shows as a red run named "Dependency scan (scheduled)" on the repository's Actions tab
 (filter by the workflow name or `event:schedule`). GitHub also emails the repository owner: for scheduled workflows it
 notifies the user who last changed the `cron` line, so if someone else edits the schedule, check that their
 notification settings (Settings, Notifications, Actions) are on. Scheduled workflows run on the default branch only,
 and GitHub pauses them after 60 days without repository activity; re-enable one from the Actions tab if that happens.
+
+### Container image pinning
+
+Decision: the base images in the `Dockerfile` (`node:22`, `python:3.12-slim`) are pinned by digest
+(`FROM image:tag@sha256:...`, the multi-architecture index digest). Reason: a tag moves, so two builds of the same
+commit could differ and an unreviewed upstream change could break or compromise the build; a digest makes the build
+reproducible and every base image change a reviewed pull request. Dependabot (`docker` entry in
+`.github/dependabot.yml`, Mondays) bumps the tag and the digest together, and the `docker-smoke` CI job builds and
+starts the container on the new image before anyone merges. To update by hand, look up the digest of the tag you want
+and replace both parts of the `FROM` line. The `uv` image copied in with `COPY --from=ghcr.io/astral-sh/uv:0.8` stays
+on its tag for now.
+
+### Pinned actions
+
+The `pinned-actions` job in `.github/workflows/ci.yml` fails when any `uses:` under `.github` is neither a local path
+(`./.github/workflows/...`) nor `owner/repo@<40 hex characters>`; the error annotation names the file and line. Write
+pins as `uses: owner/repo@<sha> # vX.Y.Z`; Dependabot keeps the SHA and the comment current. The check is a shell
+step with `contents: read`, no secret and no third-party action besides `actions/checkout`, so it also runs on pull
+requests from forks and from Dependabot.
 
 ### Browser test
 
