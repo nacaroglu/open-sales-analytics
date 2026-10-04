@@ -1,0 +1,19 @@
+name: Dependency scan (scheduled)
+
+# A new advisory can land against a lockfile that has not changed. This reruns the same audits as
+# the CI dependency-scan job (shared in dependency-scan.yml) every Monday, so it turns red without
+# waiting for the next pull request. Scheduled runs only ever use the default branch.
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  # Manual run from the Actions tab.
+  workflow_dispatch:
+
+# No write access, no secrets.
+permissions:
+  contents: read
+
+jobs:
+  dependency-scan:
+    name: Dependency scan (Python, npm)
+    uses: ./.github/workflows/dependency-scan.yml

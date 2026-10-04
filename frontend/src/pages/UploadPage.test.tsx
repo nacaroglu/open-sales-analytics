@@ -619,7 +619,7 @@ async function show(scenario: Scenario) {
   if (scenario === "loading") config.mockReturnValue(new Promise(() => {}));
   if (scenario === "failed") config.mockRejectedValue(new ApiError(0, "network_error", "down"));
   renderPage();
-  if (scenario === "demo") await screen.findByText("Uploads are available in the self-hosted version.");
+  if (scenario === "demo") await screen.findByText(/^Uploads are available in the self-hosted version\./);
   else if (scenario === "loading") await screen.findByText("Loading…");
   else await screen.findByLabelText("CSV file");
 }
@@ -635,24 +635,68 @@ test("demo mode shows only Try sample data and the self-hosted sentence, with no
   expect(limitsBullet()).not.toBeInTheDocument();
   expect(loadingBlock()).not.toBeInTheDocument();
   expect(sampleButton()).toBeEnabled();
-  const help = screen.getByText("Uploads are available in the self-hosted version.");
+  const help = screen.getByText(/^Uploads are available in the self-hosted version\./);
   expect(help).toHaveClass("text-sm", "text-slate-600");
   const section = screen.getByRole("region", { name: "Start an analysis" });
   expect(section).toContainElement(help);
   expect(within(section).getByRole("heading", { level: 2, name: "Start an analysis" })).toBeInTheDocument();
 });
 
-test("demo mode leaves the header paragraph and the File format section as they are", async () => {
+test("demo mode replaces the intro with a sample-only sentence near the top and leaves the File format section as it is", async () => {
   await show("demo");
 
   expect(screen.getByRole("heading", { level: 1, name: "Open Sales Analytics" })).toBeInTheDocument();
-  expect(screen.getByText(/gross sales, orders and top products/)).toBeInTheDocument();
+  const intro = screen.getByText(/This demo accepts sample data only/);
+  expect(intro).toHaveTextContent("Click Try sample data to see gross sales, orders and top products.");
+  const header = screen.getByRole("heading", { level: 1 }).parentElement as HTMLElement;
+  expect(header).toContainElement(intro);
+  expect(header.compareDocumentPosition(screen.getByRole("region", { name: "File format" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByText(/Upload a CSV/)).not.toBeInTheDocument();
   const format = screen.getByRole("region", { name: "File format" });
   expect(within(format).getByText("order_id")).toBeInTheDocument();
   expect(within(format).getByText(/whole file is rejected/)).toBeInTheDocument();
   expect(within(format).getByText(/Extra columns are ignored/)).toBeInTheDocument();
-  expect(within(format).getByRole("link", { name: "Download sample CSV" })).toBeInTheDocument();
+  expect(within(format).getByRole("link", { name: "Download sample CSV" })).toHaveAttribute("href", "/api/sample.csv");
   expect(document.body.textContent).not.toMatch(/revenue/i);
+});
+
+test("demo mode links the self-hosting text to the README Docker section with an absolute, focusable link", async () => {
+  await show("demo");
+
+  const link = screen.getByRole("link", { name: "Run it yourself with Docker" });
+  expect(link).toHaveAttribute("href", "https://github.com/nacaroglu/open-sales-analytics#run-it-with-docker");
+  expect(screen.getByRole("region", { name: "Start an analysis" })).toContainElement(link);
+  expect(link).toHaveClass("underline", "text-indigo-700", "focus-visible:outline-2", "focus-visible:outline-indigo-700");
+  link.focus();
+  expect(document.activeElement).toBe(link);
+  expect(link).not.toHaveAttribute("tabindex");
+});
+
+test("demo mode: Try sample data is the only way to start and Download sample CSV is still offered", async () => {
+  await show("demo");
+
+  expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Try sample data"]);
+  expect(screen.getByRole("link", { name: "Download sample CSV" })).toBeInTheDocument();
+});
+
+test("self-hosted default shows the upload intro and neither the sample-only nor the self-hosting text", async () => {
+  await show("defaults");
+
+  expect(screen.getByText(/Upload a CSV of completed sales lines/)).toBeInTheDocument();
+  expect(screen.queryByText(/sample data only/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Run it yourself with Docker" })).not.toBeInTheDocument();
+});
+
+test("config failed and the server refuses the upload: the message with the self-hosting hint shows", async () => {
+  upload.mockRejectedValue(DISABLED());
+  await show("failed");
+  choose(csv());
+  fireEvent.click(uploadButton());
+
+  const block = await screen.findByRole("alert");
+  expect(block).toHaveTextContent("Uploads are disabled on this demo. Upload your own file with the self-hosted version.");
+  expect(block).toHaveTextContent("You can still use Try sample data.");
+  expect(screen.queryByRole("link", { name: "Run it yourself with Docker" })).not.toBeInTheDocument();
 });
 
 test("demo off with the real default payload shows the full form and the old limits text", async () => {

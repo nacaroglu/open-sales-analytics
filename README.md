@@ -202,12 +202,16 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 
 ## Demo mode
 
+A hosted demo is a public instance run with `PUBLIC_DEMO_MODE=true`: visitors can explore the bundled sample data
+only and cannot upload a file. Its datasets expire like any other (`DATASET_TTL_SECONDS`), and it runs as a single
+instance. To analyze your own files, [run it yourself](#run-it-with-docker).
+
 `PUBLIC_DEMO_MODE=true` is for a public server that should not take other people's files:
 
 - `POST /api/datasets` answers 403 `upload_disabled` without reading the body.
 - **Try sample data** and the sample download keep working.
-- The upload screen shows the file format and **Try sample data** only, no file or currency field, and says that
-  uploads are available in the self-hosted version.
+- The upload screen shows the file format and **Try sample data** only, no file or currency field. It says that it
+  accepts sample data only and links to [Run it with Docker](#run-it-with-docker) for uploads.
 - `GET /api/config` returns `{"public_demo_mode":true,...}`, which is how the screen knows.
 - `MAX_DATASETS` protects the disk on a public server: every click on **Try sample data** creates a dataset, and at the
   cap it answers 503 `capacity_reached`.
@@ -287,7 +291,11 @@ npm run build     # type check, then the production bundle in frontend/dist
 
 ### Dependency scanning
 
-CI scans both lockfiles on every pull request and every push to `main`:
+CI scans both lockfiles on every pull request and every push to `main`, and again every Monday at 05:17 UTC
+(`.github/workflows/dependency-scan-scheduled.yml`), so a new advisory against an unchanged lockfile turns a run red
+without waiting for the next pull request. Both call one shared definition,
+`.github/workflows/dependency-scan.yml`, so the commands and the policy below are identical. The scheduled run has
+`contents: read` and no secrets, and can also be started by hand from the Actions tab ("Run workflow").
 
 | Ecosystem | Tool and input | Fails CI on |
 | --- | --- | --- |
@@ -299,6 +307,12 @@ A scanner that errors (no network, bad input) also fails the job; the steps have
 that pins an exception in the scan command with the advisory ID and the reason next to it (`pip-audit --ignore-vuln ID`
 or removing the package); it is never a silent skip. Caches hold package downloads and the Playwright browser only;
 no dataset, upload, secret or DuckDB file is cached or uploaded as an artifact.
+
+A failed scheduled run shows as a red run named "Dependency scan (scheduled)" on the repository's Actions tab
+(filter by the workflow name or `event:schedule`). GitHub also emails the repository owner: for scheduled workflows it
+notifies the user who last changed the `cron` line, so if someone else edits the schedule, check that their
+notification settings (Settings, Notifications, Actions) are on. Scheduled workflows run on the default branch only,
+and GitHub pauses them after 60 days without repository activity; re-enable one from the Actions tab if that happens.
 
 ### Browser test
 
