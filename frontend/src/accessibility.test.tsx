@@ -150,6 +150,23 @@ test("upload screen: keyboard order is sample link, file, currency, then Upload 
   focusEach();
 });
 
+test("demo upload screen: no form controls, one h1, link and Try sample data are labelled keyboard stops", async () => {
+  config.mockResolvedValue({ public_demo_mode: true, max_upload_bytes: 52428800, max_rows: 500000 });
+  renderApp("/");
+  await screen.findByRole("link", { name: "Run it yourself with Docker" });
+
+  expect(screen.queryByLabelText("CSV file")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Currency")).not.toBeInTheDocument();
+  expect(document.querySelectorAll("h1")).toHaveLength(1);
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Open Sales Analytics");
+  for (const section of ["File format", "Start an analysis"]) {
+    expect(screen.getByRole("region", { name: section })).toBeInTheDocument();
+  }
+  expect(tabStops()).toEqual(["Download sample CSV", "Try sample data", "Run it yourself with Docker"]);
+  expect(document.querySelector("[tabindex]:not([tabindex='-1'])")).toBeNull();
+  focusEach();
+});
+
 test("upload screen: Try sample data, focused and activated, opens the dashboard", async () => {
   renderApp("/");
   const button = await screen.findByRole("button", { name: "Try sample data" });

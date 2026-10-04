@@ -202,12 +202,16 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 
 ## Demo mode
 
+A hosted demo is a public instance run with `PUBLIC_DEMO_MODE=true`: visitors can explore the bundled sample data
+only and cannot upload a file. Its datasets expire like any other (`DATASET_TTL_SECONDS`), and it runs as a single
+instance. To analyze your own files, [run it yourself](#run-it-with-docker).
+
 `PUBLIC_DEMO_MODE=true` is for a public server that should not take other people's files:
 
 - `POST /api/datasets` answers 403 `upload_disabled` without reading the body.
 - **Try sample data** and the sample download keep working.
-- The upload screen shows the file format and **Try sample data** only, no file or currency field, and says that
-  uploads are available in the self-hosted version.
+- The upload screen shows the file format and **Try sample data** only, no file or currency field. It says that it
+  accepts sample data only and links to [Run it with Docker](#run-it-with-docker) for uploads.
 - `GET /api/config` returns `{"public_demo_mode":true,...}`, which is how the screen knows.
 - `MAX_DATASETS` protects the disk on a public server: every click on **Try sample data** creates a dataset, and at the
   cap it answers 503 `capacity_reached`.
