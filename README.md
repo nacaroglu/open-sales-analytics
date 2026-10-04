@@ -308,6 +308,7 @@ Install the browser once (about 150 MB, stored outside the repository), then run
 
 ```sh
 npx playwright install chromium
+npx playwright install-deps chromium   # Linux only: system libraries, needs sudo; CI runs it too
 npm run e2e
 ```
 
@@ -317,8 +318,12 @@ the container), set `E2E_BASE_URL`; no server is started then. That app must run
 the expiry journey waits (bounded polling) for a real expiry:
 
 ```sh
+docker build -t open-sales-analytics .   # from the repository root
 docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
+curl -f http://localhost:8000/api/health   # answers {"status":"ok"}; repeat for a few seconds until it does
+curl -f http://localhost:8000/d/anything | grep -i '<div id="root"'   # the single-page app
 E2E_BASE_URL=http://localhost:8000 npm run e2e
+docker rm -f oca
 ```
 
 On failure a trace and a screenshot are saved in `frontend/test-results/` (open a trace with `npx playwright show-trace`).

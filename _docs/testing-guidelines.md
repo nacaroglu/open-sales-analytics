@@ -28,7 +28,7 @@ Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm tes
 - Browser: a small suite of journeys (Playwright, Chromium, `frontend/e2e/*.spec.ts`, `npm run e2e`; CI runs all of it on the
   container). One spec per journey, selectors by role or label, CSVs written inline (`e2e/helpers.ts`), no fixed sleeps.
   `npm run e2e` starts its own backend and Vite on a temporary `DATASET_DIR`; with `E2E_BASE_URL` it tests a running app
-  instead. The server under test runs with `DATASET_TTL_SECONDS=60` (set in `playwright.config.ts` and in the CI `docker run`; a container started by hand needs `-e DATASET_TTL_SECONDS=60`), and `lifecycle.spec.ts` waits, by bounded polling (reload, at most 120 s), until the real server expires a real dataset. No browser test beyond the journeys.
+  instead. On Linux the browser needs its system libraries once: `npx playwright install-deps chromium` (CI runs it). The server under test runs with `DATASET_TTL_SECONDS=60` (set in `playwright.config.ts` and in the CI `docker run`; a container started by hand needs `-e DATASET_TTL_SECONDS=60`), and `lifecycle.spec.ts` waits, by bounded polling (reload, at most 120 s), until the real server expires a real dataset. No browser test beyond the journeys.
 
 Plan section 12 rules and their tests: validation rules `test_validation_structure.py`, `_rows.py`,
 `_cross_row.py`; metrics, granularity, date boundaries `test_kpis.py`, `test_top_products.py`,
