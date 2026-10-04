@@ -322,6 +322,17 @@ notifies the user who last changed the `cron` line, so if someone else edits the
 notification settings (Settings, Notifications, Actions) are on. Scheduled workflows run on the default branch only,
 and GitHub pauses them after 60 days without repository activity; re-enable one from the Actions tab if that happens.
 
+### Container image pinning
+
+Decision: the base images in the `Dockerfile` (`node:22`, `python:3.12-slim`) are pinned by digest
+(`FROM image:tag@sha256:...`, the multi-architecture index digest). Reason: a tag moves, so two builds of the same
+commit could differ and an unreviewed upstream change could break or compromise the build; a digest makes the build
+reproducible and every base image change a reviewed pull request. Dependabot (`docker` entry in
+`.github/dependabot.yml`, Mondays) bumps the tag and the digest together, and the `docker-smoke` CI job builds and
+starts the container on the new image before anyone merges. To update by hand, look up the digest of the tag you want
+and replace both parts of the `FROM` line. The `uv` image copied in with `COPY --from=ghcr.io/astral-sh/uv:0.8` stays
+on its tag for now.
+
 ### Browser test
 
 A small Playwright suite (Chromium, `frontend/e2e/`) covers the primary journeys: Try sample data, a valid upload,
