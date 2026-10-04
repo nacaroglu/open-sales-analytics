@@ -65,6 +65,33 @@ jobs:
       - name: Production build
         run: npm run build
 
+  # Fails on any `uses:` that is not a local path and not pinned to a 40-character commit SHA.
+  # Plain shell, no secret, no third-party action beyond checkout; runs on fork and Dependabot pull requests.
+  # Policy: README.md (Pinned actions).
+  pinned-actions:
+    name: Actions are pinned to commit SHAs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check every uses is a local path or a commit SHA
+        run: |
+          status=0
+          while IFS= read -r hit; do
+            file=${hit%%:*}; rest=${hit#*:}; line=${rest%%:*}; text=${rest#*:}
+            ref=$(printf '%s' "$text" | sed -E 's/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*//; s/[[:space:]]+#.*$//; s/^["'"'"']//; s/["'"'"']$//; s/[[:space:]]+$//')
+            case "$ref" in
+              ./*) continue ;;
+            esac
+            if ! printf '%s' "$ref" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$'; then
+              echo "::error file=$file,line=$line::Unpinned action '$ref': pin it to a 40-character commit SHA (uses: owner/repo@<sha> # vX.Y.Z)"
+              status=1
+            fi
+          done < <(grep -rnE '^[[:space:]]*(-[[:space:]]+)?uses:' .github --include='*.yml' --include='*.yaml')
+          exit $status
+
   # The scan lives in dependency-scan.yml so the scheduled run (dependency-scan-scheduled.yml)
   # runs exactly the same commands. Policy: README.md (Dependency scanning).
   dependency-scan:
