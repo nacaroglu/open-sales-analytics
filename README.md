@@ -333,6 +333,14 @@ starts the container on the new image before anyone merges. To update by hand, l
 and replace both parts of the `FROM` line. The `uv` image copied in with `COPY --from=ghcr.io/astral-sh/uv:0.8` stays
 on its tag for now.
 
+### Pinned actions
+
+The `pinned-actions` job in `.github/workflows/ci.yml` fails when any `uses:` under `.github` is neither a local path
+(`./.github/workflows/...`) nor `owner/repo@<40 hex characters>`; the error annotation names the file and line. Write
+pins as `uses: owner/repo@<sha> # vX.Y.Z`; Dependabot keeps the SHA and the comment current. The check is a shell
+step with `contents: read`, no secret and no third-party action besides `actions/checkout`, so it also runs on pull
+requests from forks and from Dependabot.
+
 ### Browser test
 
 A small Playwright suite (Chromium, `frontend/e2e/`) covers the primary journeys: Try sample data, a valid upload,
