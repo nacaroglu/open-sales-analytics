@@ -22,6 +22,10 @@ const CURRENCIES = [
   "PLN",
 ];
 
+// Relative README links do not work from the served app, so this one is absolute.
+const SELF_HOSTING_URL =
+  "https://github.com/nacaroglu/open-sales-analytics#run-it-with-docker";
+
 const COLUMNS: { name: string; type: string; rule: string }[] = [
   {
     name: "order_id",
@@ -108,9 +112,12 @@ export default function UploadPage({
   // The limits are known only once the config loaded; until then, and if it
   // failed, nothing is shown or checked here and the server decides.
   const limits = config.data ?? null;
-  const showForm = !config.isPending && limits?.public_demo_mode !== true;
+  const isDemo = limits?.public_demo_mode === true;
+  const showForm = !config.isPending && !isDemo;
 
   const problem = fileProblem(file, limits?.max_upload_bytes ?? null);
+  // Upload is unavailable only because of the selection (not because of a request in flight).
+  const needsSelection = (file === null || problem !== null || currency === "") && !busy;
   const canUpload = file !== null && problem === null && currency !== "" && !busy;
 
   async function run(start: () => Promise<Created>, context: "upload" | "sample") {
@@ -156,10 +163,17 @@ export default function UploadPage({
     <div className="space-y-8">
       <header className="space-y-2">
         <h1 className="text-3xl font-bold text-indigo-700">Open Sales Analytics</h1>
-        <p className="text-base">
-          Upload a CSV of completed sales lines and see gross sales, orders and
-          top products.
-        </p>
+        {isDemo ? (
+          <p className="text-base">
+            This demo accepts sample data only. Click Try sample data to see gross
+            sales, orders and top products.
+          </p>
+        ) : (
+          <p className="text-base">
+            Upload a CSV of completed sales lines and see gross sales, orders and
+            top products.
+          </p>
+        )}
       </header>
 
       <section
@@ -277,6 +291,7 @@ export default function UploadPage({
             <button
               type="button"
               className={PRIMARY}
+              aria-describedby={needsSelection ? "upload-help" : undefined}
               disabled={!canUpload}
               onClick={() =>
                 file !== null && run(() => createDatasetFromUpload(file, currency), "upload")
@@ -294,9 +309,21 @@ export default function UploadPage({
             Try sample data
           </button>
         </div>
-        {limits?.public_demo_mode === true && (
+        {showForm && needsSelection && (
+          <p id="upload-help" className="text-sm text-slate-600">
+            Select a CSV file and currency to continue.
+          </p>
+        )}
+        {isDemo && (
           <p className="text-sm text-slate-600">
-            Uploads are available in the self-hosted version.
+            Uploads are available in the self-hosted version.{" "}
+            <a
+              href={SELF_HOSTING_URL}
+              className={`text-indigo-700 underline underline-offset-2 hover:text-indigo-900 ${FOCUS}`}
+            >
+              Run it yourself with Docker
+            </a>
+            .
           </p>
         )}
         {failure !== null && <ErrorBlock message={failure} />}

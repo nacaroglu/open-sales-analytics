@@ -21,9 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -39,16 +39,16 @@ jobs:
         run: uv run mypy backend/app
 
   frontend:
-    name: Frontend (tests, lint, type check)
+    name: Frontend (tests, lint, type check, build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -61,19 +61,56 @@ jobs:
         run: npm run lint
       - name: Type check
         run: npm run typecheck
+      # Its own step: a bundle that does not build fails here, whatever the other steps said.
+      - name: Production build
+        run: npm run build
+
+  # Fails on any `uses:` that is not a local path and not pinned to a 40-character commit SHA.
+  # Plain shell, no secret, no third-party action beyond checkout; runs on fork and Dependabot pull requests.
+  # Policy: README.md (Pinned actions).
+  pinned-actions:
+    name: Actions are pinned to commit SHAs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check every uses is a local path or a commit SHA
+        run: |
+          status=0
+          while IFS= read -r hit; do
+            file=${hit%%:*}; rest=${hit#*:}; line=${rest%%:*}; text=${rest#*:}
+            ref=$(printf '%s' "$text" | sed -E 's/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*//; s/[[:space:]]+#.*$//; s/^["'"'"']//; s/["'"'"']$//; s/[[:space:]]+$//')
+            case "$ref" in
+              ./*) continue ;;
+            esac
+            if ! printf '%s' "$ref" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$'; then
+              echo "::error file=$file,line=$line::Unpinned action '$ref': pin it to a 40-character commit SHA (uses: owner/repo@<sha> # vX.Y.Z)"
+              status=1
+            fi
+          done < <(grep -rnE '^[[:space:]]*(-[[:space:]]+)?uses:' .github --include='*.yml' --include='*.yaml')
+          exit $status
+
+  # The scan lives in dependency-scan.yml so the scheduled run (dependency-scan-scheduled.yml)
+  # runs exactly the same commands. Policy: README.md (Dependency scanning).
+  dependency-scan:
+    name: Dependency scan (Python, npm)
+    uses: ./.github/workflows/dependency-scan.yml
 
   # The container from the Dockerfile is built and started once; the health check and the
-  # browser test both run against it, on port 8000.
+  # browser suite both run against it, on port 8000.
   docker-smoke:
-    name: Container (build, smoke, browser test)
+    name: Container (build, smoke, browser tests)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
         run: docker build -t open-sales-analytics .
       - name: Start container
-        run: docker run -d --name oca -p 8000:8000 open-sales-analytics
+        # The one-minute lifetime lets the browser suite see a real expiry.
+        run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
       - name: Wait for /api/health
         run: |
           for i in $(seq 1 30); do
@@ -86,7 +123,7 @@ jobs:
           curl -f http://localhost:8000/api/health
           curl -f http://localhost:8000/d/anything | grep -qi '<div id="root"'
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -96,7 +133,7 @@ jobs:
         working-directory: frontend
       - name: Cache Playwright browser
         id: playwright-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
@@ -108,17 +145,19 @@ jobs:
       - name: Install Chromium system libraries
         run: npx playwright install-deps chromium
         working-directory: frontend
-      - name: Run browser test against the container
+      - name: Run browser tests against the container
         run: npm run e2e
         working-directory: frontend
         env:
           E2E_BASE_URL: http://localhost:8000
-      - name: Upload traces and screenshots
+      # Screenshots only. Traces hold every network response, so with CI set Playwright records none
+      # (playwright.config.ts). Nothing from the container's /data directory is ever uploaded.
+      - name: Upload failure screenshots
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-test-results
-          path: frontend/test-results/
+          name: playwright-screenshots
+          path: frontend/test-results/**/*.png
           retention-days: 5
           if-no-files-found: ignore
       - name: Show container logs on failure

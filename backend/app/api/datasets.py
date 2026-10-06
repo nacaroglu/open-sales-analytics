@@ -291,7 +291,7 @@ async def create_dataset(
         await _receive(request, upload)
         # _receive raised unless both the file part and the currency were present.
         assert upload.path is not None and upload.currency is not None
-        outcome = await run_in_threadpool(ingest_csv, upload.path, upload.currency, settings)
+        outcome = await run_in_threadpool(ingest_csv, upload.path, upload.currency, settings, now)
         summary = (
             await run_in_threadpool(_full_range_summary, settings, outcome)
             if isinstance(outcome, CreatedDataset)

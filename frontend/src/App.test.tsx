@@ -169,3 +169,41 @@ test("Analyze another file returns to the upload screen and the dataset is gone"
   expect(remove).toHaveBeenCalledWith("d1");
   expect(readSession()).toBeNull();
 });
+
+// ---- Distinct feedback states (#42) ----
+
+test("a finished upload shows a Success notice with its own word and icon, and a reload does not", async () => {
+  renderApp("/");
+  fireEvent.click(screen.getByRole("button", { name: "Try sample data" }));
+
+  const success = await screen.findByText("Success");
+  const notice = success.closest("[role=status]") as HTMLElement;
+  expect(notice).toHaveTextContent("✓");
+  expect(notice).toHaveClass("border-emerald-700");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss success notice" }));
+  expect(screen.queryByText("Success")).not.toBeInTheDocument();
+  cleanup();
+
+  renderApp("/d/d1");
+  await screen.findByText("2025-01-01 to 2025-03-31");
+  expect(screen.queryByText("Success")).not.toBeInTheDocument();
+});
+
+test("warning and success are different words, icons and borders, and dismissing warnings keeps Success", async () => {
+  sample.mockResolvedValue(
+    created([{ code: "zero_price", reason: "3 lines have a unit price of 0.", row_number: null, field: null }]),
+  );
+  renderApp("/");
+  fireEvent.click(screen.getByRole("button", { name: "Try sample data" }));
+
+  const warning = (await screen.findByText("Warning")).closest("[role=status]") as HTMLElement;
+  const success = screen.getByText("Success").closest("[role=status]") as HTMLElement;
+  expect(warning).toHaveTextContent("⚠");
+  expect(warning).toHaveClass("border-dashed");
+  expect(success).not.toHaveClass("border-dashed");
+  expect(screen.queryByText("Error")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss notice" }));
+  expect(screen.queryByText("Warning")).not.toBeInTheDocument();
+  expect(screen.getByText("Success")).toBeInTheDocument();
+});

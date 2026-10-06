@@ -1,5 +1,5 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatMoney } from "../lib/format";
+import { formatDay, formatMonthYear, formatMoney } from "../lib/format";
 import type { Granularity, Summary } from "../lib/types";
 
 // Colours from _docs/design-system.md (Charts). Recharts takes hex values, so
@@ -20,14 +20,6 @@ const NOUN: Record<Granularity, string> = { daily: "Daily", weekly: "Weekly", mo
 
 // Every date is formatted from its YYYY-MM-DD text as a UTC instant, so the
 // browser's time zone can never move it to the neighbouring day.
-const dayFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" });
-const dayYearFormat = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "UTC",
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
-const monthFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", month: "short", year: "numeric" });
 
 // Reads "2025-03-01" as a UTC date. Anything else is null.
 export function parseBucketDate(text: string): Date | null {
@@ -40,8 +32,8 @@ export function parseBucketDate(text: string): Date | null {
 export function bucketLabel(text: string, granularity: Granularity): string {
   const date = parseBucketDate(text);
   if (date === null) return text;
-  if (granularity === "monthly") return monthFormat.format(date);
-  const day = dayFormat.format(date);
+  if (granularity === "monthly") return formatMonthYear(date);
+  const day = formatDay(date, false);
   return granularity === "weekly" ? `Week of ${day}` : day;
 }
 
@@ -49,9 +41,64 @@ export function bucketLabel(text: string, granularity: Granularity): string {
 export function bucketLabelWithYear(text: string, granularity: Granularity): string {
   const date = parseBucketDate(text);
   if (date === null) return text;
-  if (granularity === "monthly") return monthFormat.format(date);
-  const day = dayYearFormat.format(date);
+  if (granularity === "monthly") return formatMonthYear(date);
+  const day = formatDay(date, true);
   return granularity === "weekly" ? `Week of ${day}` : day;
+}
+
+const DAY_MS = 86_400_000;
+
+// What part of its calendar bucket (a day, a Monday-Sunday week, a calendar
+// month) the inclusive range covers. `from` and `to` are the covered dates as UTC
+// dates; `partial` is true when the range cuts the bucket. Coverage comes from
+// the range and the calendar alone, so a day with zero sales still counts as
+// covered. A day is always whole (the data holds dates only). Null for text
+// that is not a date.
+export interface Coverage {
+  from: Date;
+  to: Date;
+  partial: boolean;
+}
+
+export function bucketCoverage(
+  bucketStart: string,
+  granularity: Granularity,
+  range: { start: string; end: string },
+): Coverage | null {
+  const first = parseBucketDate(bucketStart);
+  const start = parseBucketDate(range.start);
+  const end = parseBucketDate(range.end);
+  if (first === null || start === null || end === null) return null;
+  let last = first;
+  if (granularity === "weekly") {
+    last = new Date(first.getTime() + 6 * DAY_MS);
+  } else if (granularity === "monthly") {
+    last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+  }
+  const from = new Date(Math.max(first.getTime(), start.getTime()));
+  const to = new Date(Math.min(last.getTime(), end.getTime()));
+  if (from.getTime() > to.getTime()) return null; // a bucket outside the range: nothing to say about it
+  return { from, to, partial: from.getTime() !== first.getTime() || to.getTime() !== last.getTime() };
+}
+
+// "29–31 Dec", "29 Dec–4 Jan", "29 Dec 2024–4 Jan 2025" (with the year), "5 Mar" for one day.
+export function coverageLabel(coverage: Coverage, withYear: boolean): string {
+  const { from, to } = coverage;
+  if (from.getTime() === to.getTime()) return formatDay(from, withYear);
+  const sameMonth = from.getUTCFullYear() === to.getUTCFullYear() && from.getUTCMonth() === to.getUTCMonth();
+  if (sameMonth) return `${from.getUTCDate()}–${formatDay(to, withYear)}`;
+  return `${formatDay(from, withYear)}–${formatDay(to, withYear)}`;
+}
+
+// Axis label of a bucket for this range: a partial week or month shows the
+// dates it covers ("29–31 Dec", "10–31 Mar 2025") instead of "Week of 29 Dec"
+// or the month name, which would hide the truncation.
+export function axisLabel(text: string, granularity: Granularity, range: { start: string; end: string }): string {
+  const coverage = bucketCoverage(text, granularity, range);
+  if (coverage !== null && coverage.partial && granularity !== "daily") {
+    return coverageLabel(coverage, granularity === "monthly");
+  }
+  return bucketLabel(text, granularity);
 }
 
 const compactFormats = new Map<string, Intl.NumberFormat>();
@@ -109,7 +156,9 @@ export default function TrendChart({
     bucket_start: bucket.bucket_start,
     sales: Number(bucket.gross_sales),
     exact: bucket.gross_sales,
+    coverage: bucketCoverage(bucket.bucket_start, granularity, range),
   }));
+  const hasPartial = data.some((point) => point.coverage?.partial);
 
   return (
     <div className={CARD}>
@@ -117,6 +166,12 @@ export default function TrendChart({
         Gross sales — {granularity}
       </h2>
       <p className="text-sm text-slate-600">{sentence}</p>
+      {hasPartial && (
+        <p className="text-sm text-slate-600">
+          Partial period: the range cuts the first or last {granularity === "weekly" ? "week" : "month"}, so
+          its label shows the dates it covers and its point is hollow.
+        </p>
+      )}
       {noSales ? (
         <div className={EMPTY}>No sales in this range</div>
       ) : (
@@ -126,7 +181,7 @@ export default function TrendChart({
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis
                 dataKey="bucket_start"
-                tickFormatter={(value: string) => bucketLabel(value, granularity)}
+                tickFormatter={(value: string) => axisLabel(value, granularity, range)}
                 interval="preserveStartEnd"
                 minTickGap={16}
                 stroke={AXIS}
@@ -139,7 +194,20 @@ export default function TrendChart({
                 tick={{ fill: TICK, fontSize: 12 }}
               />
               <Tooltip
-                labelFormatter={(value) => bucketLabelWithYear(String(value), granularity)}
+                labelFormatter={(value) => {
+                  const text = String(value);
+                  const coverage = bucketCoverage(text, granularity, range);
+                  return (
+                    <>
+                      <span>{bucketLabelWithYear(text, granularity)}</span>
+                      {coverage !== null && coverage.partial && (
+                        <span className="block font-semibold">
+                          Partial period: {coverageLabel(coverage, true)}
+                        </span>
+                      )}
+                    </>
+                  );
+                }}
                 formatter={(_value, _name, item) => [
                   formatMoney((item.payload as { exact: string }).exact, currency),
                   "Gross sales",
@@ -159,7 +227,13 @@ export default function TrendChart({
                 name="Gross sales"
                 stroke={LINE}
                 strokeWidth={2}
-                dot={{ r: 3, fill: LINE, stroke: LINE }}
+                dot={(props: { key?: React.Key | null; cx?: number; cy?: number; payload?: { coverage: Coverage | null } }) => {
+                  const { key, cx, cy, payload } = props;
+                  if (cx === undefined || cy === undefined) return <g key={key ?? undefined} />;
+                  // A partial bucket gets a hollow point (white fill), so it differs by shape, not only by label.
+                  const partial = payload?.coverage?.partial === true;
+                  return <circle key={key ?? undefined} cx={cx} cy={cy} r={3} fill={partial ? "#ffffff" : LINE} stroke={LINE} strokeWidth={2} />;
+                }}
                 activeDot={{ r: 5, fill: LINE, stroke: LINE }}
                 isAnimationActive={false}
               />

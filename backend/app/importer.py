@@ -1,5 +1,5 @@
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -74,7 +74,7 @@ def import_dataset(
                 currency,
                 token_hash,
                 created_at,
-                created_at + timedelta(hours=settings.dataset_ttl_hours),
+                created_at + settings.dataset_ttl,
             )
             working.rename(target)
         except BaseException:

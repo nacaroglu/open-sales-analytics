@@ -467,3 +467,83 @@ def test_api_error_uses_the_shared_body_and_headers():
     assert response.status_code == 429
     assert response.headers["retry-after"] == "5"
     assert response.json() == error_body("slow_down", "Try later.")
+
+
+# --- lifecycle through the API (issue 45) ---
+
+MARKER = "UNIQUE-MARKER-PRODUCT"
+
+
+@pytest.fixture
+def system_tmp(tmp_path, monkeypatch):
+    """Point the system temp directory at an empty folder so strays are visible."""
+    import tempfile
+
+    folder = tmp_path / "systmp"
+    folder.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(folder))
+    return folder
+
+
+def files_under(*roots):
+    return sorted(p for root in roots if root.exists() for p in root.rglob("*") if p.is_file())
+
+
+def test_created_dataset_is_readable_through_the_api_with_the_returned_token(client):
+    created = upload(client).json()
+    headers = {"Authorization": f"Bearer {created['token']}"}
+    base = f"/api/datasets/{created['dataset_id']}"
+
+    metadata = client.get(base, headers=headers)
+    summary = client.get(f"{base}/analytics", headers=headers)
+    narrowed = client.get(f"{base}/analytics?start=2025-03-04&end=2025-03-04", headers=headers)
+
+    assert metadata.status_code == 200
+    assert metadata.json() == created["meta"]
+    assert summary.status_code == 200
+    assert summary.json() == created["initial_summary"]
+    assert narrowed.json()["kpis"]["gross_sales"] == "4.5000"
+    assert created["initial_summary"]["kpis"]["gross_sales"] == "44.4800"
+    assert created["initial_summary"]["currency"] == "USD"
+
+
+def test_no_raw_csv_remains_after_a_successful_upload(client, data_dir, system_tmp):
+    response = upload(client, csv_text(f"o1,2025-01-02,p1,{MARKER},2,19.99"))
+
+    assert response.status_code == 201
+    dataset_id = response.json()["dataset_id"]
+    assert [p.name for p in files_under(data_dir, system_tmp)] == [f"{dataset_id}.duckdb"]
+    assert not list(data_dir.rglob("*.csv"))
+    assert not (data_dir / "uploads").exists() or not any((data_dir / "uploads").iterdir())
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        csv_text(f"o1,2025-01-02,p1,{MARKER},0,19.99"),  # row error
+        csv_text(f"o1,2025-01-02,p1,{MARKER},1", header=HEADER.rsplit(",", 1)[0]),  # structure
+        csv_text(f"o1,2025-01-02,p1,{MARKER},1,1", f"o1,2025-01-02,p1,{MARKER},1,1"),  # cross-row
+    ],
+    ids=["row_error", "structure_error", "cross_row_error"],
+)
+def test_invalid_upload_leaves_no_dataset_duckdb_or_csv_and_nothing_to_read(
+    client, data_dir, system_tmp, content
+):
+    earlier = upload(client).json()
+    before = files_under(data_dir)
+
+    response = upload(client, content)
+
+    assert response.status_code == 422
+    assert "dataset_id" not in response.text and "token" not in response.text
+    assert files_under(data_dir) == before == [data_dir / f"{earlier['dataset_id']}.duckdb"]
+    assert not files_under(system_tmp)
+    assert not list(data_dir.rglob("*.csv")) and not list(data_dir.rglob("*.importing*"))
+    assert not list(data_dir.rglob("*.wal"))
+    assert not any((data_dir / "uploads").iterdir())
+    # the earlier dataset is untouched
+    ok = client.get(
+        f"/api/datasets/{earlier['dataset_id']}",
+        headers={"Authorization": f"Bearer {earlier['token']}"},
+    )
+    assert ok.status_code == 200

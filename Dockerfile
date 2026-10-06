@@ -1,7 +1,8 @@
 # One image: FastAPI serves the API and the built React app from the same origin on port 8000.
 
 # Stage 1: build the frontend (Node is not part of the final image).
-FROM node:22 AS frontend
+# Base images are pinned by digest (policy: README, Container image pinning); Dependabot bumps tag and digest together.
+FROM node:22@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -10,7 +11,7 @@ RUN npm run build
 
 # Stage 2: build the virtual environment from uv.lock, without the dev group.
 # `--locked` fails the build if uv.lock does not match pyproject.toml.
-FROM python:3.12-slim AS backend-deps
+FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d AS backend-deps
 COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
 ENV UV_PYTHON_DOWNLOADS=0 UV_LINK_MODE=copy
 WORKDIR /app
@@ -18,16 +19,17 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
 # Stage 3: runtime. Only the virtual environment, backend/app and the built frontend.
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
     DATASET_DIR=/data
 
-# Non-root user. /data is created owned by it, so a named volume mounted at /data is
+# Non-root user. /data is created owned by it with private permissions (0700, as the README promises), so a named volume mounted at /data is
 # writable. A host directory mounted at /data must be writable by this user (UID 10001).
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir /data \
-    && chown app:app /data
+    && chown app:app /data \
+    && chmod 700 /data
 
 WORKDIR /app
 COPY --from=backend-deps /app/.venv /app/.venv

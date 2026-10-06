@@ -198,3 +198,81 @@ def test_dependency_closes_its_connection(client, dataset, settings):
     assert get(client, dataset_id, f"Bearer {token}").status_code == 200
     # a read-write open fails if a read-only connection is still held in-process
     duckdb.connect(str(dataset_path(settings, dataset_id))).close()
+
+
+# --- the real metadata and analytics endpoints (issue 45) ---
+
+
+@pytest.fixture
+def api(settings, now):
+    from app.main import app as real_app
+
+    real_app.dependency_overrides[get_settings] = lambda: settings
+    real_app.dependency_overrides[get_now] = lambda: now["value"]
+    yield TestClient(real_app)
+    real_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def two_datasets(settings, tmp_path):
+    made = []
+    for name in ("a", "b"):
+        token, dataset_id = new_token(), new_dataset_id()
+        csv_path = tmp_path / f"{name}.csv"
+        csv_path.write_text(HEADER + "\no1,2025-01-02,p1,Mug,2,19.99\n", encoding="utf-8")
+        import_dataset(
+            stage_csv(csv_path), csv_path, dataset_id, "USD", hash_token(token), settings, CREATED
+        )
+        made.append((dataset_id, token))
+    return made
+
+
+def read_api(api, suffix, dataset_id, authorization=None):
+    headers = {} if authorization is None else {"Authorization": authorization}
+    return api.get(f"/api/datasets/{dataset_id}{suffix}", headers=headers)
+
+
+@pytest.mark.parametrize("suffix", ["", "/analytics"])
+def test_wrong_id_absent_malformed_or_foreign_token_cannot_read_but_the_right_one_can(
+    api, two_datasets, suffix
+):
+    (id_a, token_a), (id_b, token_b) = two_datasets
+
+    def denied(response, status):
+        assert response.status_code == status
+        body = response.json()
+        assert list(body) == ["error"]
+        assert not {"id", "currency", "kpis", "trend", "top_products"} & set(body)
+
+    denied(read_api(api, suffix, new_dataset_id(), f"Bearer {token_a}"), 404)  # wrong id
+    denied(read_api(api, suffix, "not-an-id", f"Bearer {token_a}"), 404)
+    denied(read_api(api, suffix, id_a), 401)  # absent token
+    for malformed in ["Bearer", "Bearer ", "Basic abc", "abc", f"Token {token_a}", "Bearer x y"]:
+        denied(read_api(api, suffix, id_a, malformed), 401)
+    denied(read_api(api, suffix, id_a, f"Bearer {token_a[:-1]}"), 401)  # truncated token
+    denied(read_api(api, suffix, id_a, f"Bearer {token_b}"), 401)  # other dataset's token
+    denied(read_api(api, suffix, id_b, f"Bearer {token_a}"), 401)
+
+    assert read_api(api, suffix, id_a, f"Bearer {token_a}").status_code == 200
+    assert read_api(api, suffix, id_b, f"Bearer {token_b}").status_code == 200
+
+
+@pytest.mark.parametrize("suffix", ["", "/analytics"])
+def test_expiry_instant_and_one_second_either_side_through_the_api(api, two_datasets, now, suffix):
+    dataset_id, token = two_datasets[0]
+    bearer = f"Bearer {token}"
+    outcomes = {}
+    for label, instant in {
+        "before": EXPIRES - timedelta(seconds=1),
+        "at": EXPIRES,
+        "after": EXPIRES + timedelta(seconds=1),
+    }.items():
+        now["value"] = instant
+        response = read_api(api, suffix, dataset_id, bearer)
+        outcomes[label] = (response.status_code, response.json().get("error", {}).get("code"))
+
+    assert outcomes == {
+        "before": (200, None),
+        "at": (404, "not_found"),
+        "after": (404, "not_found"),
+    }
