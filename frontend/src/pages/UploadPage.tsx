@@ -65,7 +65,11 @@ const BUTTON = `inline-flex h-10 items-center justify-center rounded-md px-4 tex
 const PRIMARY = `${BUTTON} bg-indigo-700 text-white enabled:hover:bg-indigo-800`;
 const SECONDARY = `${BUTTON} bg-white text-slate-900 border border-slate-500 enabled:hover:bg-slate-100`;
 const SELECT = `block h-10 w-full rounded-md border border-slate-500 bg-white px-3 text-base text-slate-900 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed aria-[invalid=true]:border-2 aria-[invalid=true]:border-red-700 ${FOCUS}`;
-const FILE_INPUT = `block w-full text-sm file:mr-3 file:h-10 file:rounded-md file:border file:border-slate-500 file:bg-white file:px-3 file:font-medium hover:file:bg-slate-100 ${FOCUS}`;
+// The native input is visually hidden: its button and "No file chosen" text come from the
+// browser's own language, so a styled label and a filename span stand in for them.
+const FILE_INPUT = "peer sr-only";
+const FILE_BUTTON =
+  "inline-flex h-10 shrink-0 cursor-pointer items-center rounded-md border border-slate-500 bg-white px-3 text-sm font-medium text-slate-900 hover:bg-slate-100 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-indigo-700 peer-disabled:cursor-not-allowed peer-disabled:border-dashed peer-disabled:border-slate-400 peer-disabled:bg-slate-200 peer-disabled:text-slate-600";
 
 // Megabytes to three significant digits, written as the server writes them
 // (Python's "{:.3g}"): "1.5 MB", "0.000954 MB", "1e+03 MB".
@@ -245,16 +249,24 @@ export default function UploadPage({
               <label htmlFor="csv-file" className="block text-sm font-medium">
                 CSV file
               </label>
-              <input
-                id="csv-file"
-                type="file"
-                accept=".csv"
-                onChange={onFile}
-                disabled={busy}
-                aria-invalid={problem !== null ? "true" : undefined}
-                aria-describedby={problem !== null ? "csv-file-error" : undefined}
-                className={`mt-1 ${FILE_INPUT}`}
-              />
+              <div className="mt-1 flex items-center gap-3">
+                <input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={onFile}
+                  disabled={busy}
+                  aria-invalid={problem !== null ? "true" : undefined}
+                  aria-describedby={problem !== null ? "csv-file-error" : undefined}
+                  className={FILE_INPUT}
+                />
+                <label htmlFor="csv-file" aria-hidden className={FILE_BUTTON}>
+                  Choose file
+                </label>
+                <span aria-hidden className="min-w-0 text-sm text-slate-600 wrap-anywhere">
+                  {file?.name ?? "No file chosen"}
+                </span>
+              </div>
               {problem !== null && (
                 <p
                   id="csv-file-error"
