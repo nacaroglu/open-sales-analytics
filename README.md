@@ -5,7 +5,7 @@ gross sales, orders, units, average order value, a sales trend and the top produ
 Gross sales is quantity times unit price, summed over the lines in the chosen period. It has no refunds, discounts,
 taxes or shipping in it.
 
-Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) |
+Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) | [Demo walkthrough](#demo-walkthrough) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
 [Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
 
@@ -42,6 +42,83 @@ Pass a setting with `-e`, using a variable from the [table below](#configuration
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
 ```
+
+## Demo walkthrough
+
+A step-by-step run with generated sample data, from a fresh checkout to the dashboard.
+Steps 1 needs [uv](https://docs.astral.sh/uv/); the rest needs only Docker.
+
+### 1. Generate the sample data
+
+```bash
+uv run python backend/scripts/generate_sample.py --seed 20260101
+```
+
+This writes `backend/app/sample/sample_sales.csv`. The seed makes the file deterministic,
+so everyone who runs this gets the same data and the same numbers in step 6.
+Run it before `docker build`: the file is copied into the image.
+
+Check the first lines:
+
+```bash
+head -n 4 backend/app/sample/sample_sales.csv
+```
+
+```
+order_id,order_date,product_id,product_name,quantity,unit_price
+ORD-000001,2025-01-01,P034,Sunglasses,1,46.00
+ORD-000002,2025-01-01,P009,Leather Wallet,2,45.00
+ORD-000003,2025-01-01,P001,Ceramic Mug,1,13.20
+```
+
+### 2. Build the image
+
+```bash
+docker build -t open-sales-analytics .
+```
+
+### 3. Run the container
+
+```bash
+docker run -p 8000:8000 open-sales-analytics
+```
+
+The server is ready when the log shows `Uvicorn running on http://0.0.0.0:8000`.
+
+### 4. Open the web interface
+
+Open <http://localhost:8000>. The upload screen shows the file format and the upload form.
+
+### 5. Upload the sample data
+
+Choose `backend/app/sample/sample_sales.csv`, select **USD** and click **Upload**.
+(**Try sample data** imports the same file without choosing it.)
+
+![Upload form with the sample file and USD selected](_docs/images/demo-upload.png)
+
+### 6. Explore the results
+
+The dashboard opens on the full period of the data, 2025-01-01 to 2025-12-31:
+
+| Metric              | Expected value |
+| ------------------- | -------------- |
+| Rows                | 14,229         |
+| Gross sales         | $677,997.40    |
+| Orders              | 10,000         |
+| Units sold          | 24,183         |
+| Average order value | $67.80         |
+
+![Dashboard with KPIs and the weekly gross sales trend](_docs/images/demo-dashboard.png)
+
+The last point of the weekly chart drops and is hollow: 29–31 Dec is a partial week
+(see [Trend buckets](#trend-buckets)), not a fall in sales.
+
+Change **Start date** and **End date** to filter every figure; **Reset** returns to the full period.
+Below the trend, the top 10 products by gross sales:
+
+![Top 10 products by gross sales](_docs/images/demo-top-products.png)
+
+**Analyze another file** deletes this dataset and returns to the upload screen.
 
 ## Configuration
 
