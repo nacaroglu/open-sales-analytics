@@ -18,7 +18,7 @@ test("Try sample data opens a populated dashboard", async ({ page }) => {
 
   const trend = page.getByRole("region", { name: "Sales trend" });
   await expect(trend.getByRole("heading", { name: "Gross sales — weekly" })).toBeVisible();
-  await expect(trend.getByRole("img")).toBeVisible();
+  await expect(trend.getByRole("img", { name: /^(Daily|Weekly) gross sales from/ })).toBeVisible();
 
   const topProducts = page.getByRole("region", { name: "Top products" });
   await expect(topProducts.getByRole("img")).toBeVisible();

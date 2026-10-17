@@ -28,6 +28,10 @@ test("in demo mode the sample dashboard opens and the page offers no upload cont
   await page.getByRole("button", { name: "Try sample data" }).click();
   await expect(page).toHaveURL(/\/d\/[^/]+$/);
   await expect(keyFigures(page).grossSales).toHaveText(SAMPLE_KPIS.grossSales);
-  await expect(page.getByRole("region", { name: "Sales trend" }).getByRole("img")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Sales trend" })
+      .getByRole("img", { name: /^(Daily|Weekly) gross sales from/ }),
+  ).toBeVisible();
   await expect(page.getByRole("region", { name: "Top products" }).getByRole("table")).toBeVisible();
 });

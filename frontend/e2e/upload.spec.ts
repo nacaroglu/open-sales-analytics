@@ -19,7 +19,7 @@ test("a valid CSV with a currency opens the dashboard with the expected figures"
 
   const trend = page.getByRole("region", { name: "Sales trend" });
   await expect(trend.getByRole("heading", { name: "Gross sales — daily" })).toBeVisible();
-  await expect(trend.getByRole("img")).toBeVisible();
+  await expect(trend.getByRole("img", { name: /^(Daily|Weekly) gross sales from/ })).toBeVisible();
   const topProducts = page.getByRole("region", { name: "Top products" });
   await expect(topProducts.getByRole("img")).toBeVisible();
   // Mug (3 units, 30.00) leads Hat (3 units, 12.00) and Bag (1 unit, 5.50).
