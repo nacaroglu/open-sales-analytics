@@ -1,4 +1,4 @@
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatDay, formatMonthYear, formatMoney } from "../lib/format";
 import type { Granularity, Summary } from "../lib/types";
 
@@ -129,11 +129,15 @@ export default function TrendChart({
   buckets,
   range,
   currency,
+  comparisonBuckets,
+  comparisonRange,
 }: {
   granularity: Granularity | undefined;
   buckets: Bucket[] | undefined;
   range: { start: string; end: string } | undefined;
   currency: string | undefined;
+  comparisonBuckets?: Bucket[] | null;
+  comparisonRange?: { start: string; end: string };
 }) {
   if (
     granularity === undefined ||
@@ -151,11 +155,14 @@ export default function TrendChart({
   }
 
   const sentence = rangeSentence(granularity, range);
+  const comparisonSentence = comparisonRange === undefined ? null : rangeSentence(granularity, comparisonRange);
   const noSales = buckets.every((bucket) => Number(bucket.gross_sales) === 0);
-  const data = buckets.map((bucket) => ({
+  const data = buckets.map((bucket, index) => ({
     bucket_start: bucket.bucket_start,
     sales: Number(bucket.gross_sales),
     exact: bucket.gross_sales,
+    comparison: comparisonBuckets?.[index]?.gross_sales === undefined ? null : Number(comparisonBuckets[index].gross_sales),
+    comparison_exact: comparisonBuckets?.[index]?.gross_sales ?? null,
     coverage: bucketCoverage(bucket.bucket_start, granularity, range),
   }));
   const hasPartial = data.some((point) => point.coverage?.partial);
@@ -165,7 +172,7 @@ export default function TrendChart({
       <h2 className="text-xl font-semibold text-slate-900">
         Gross sales — {granularity}
       </h2>
-      <p className="text-sm text-slate-600">{sentence}</p>
+      <p className="text-sm text-slate-600">{sentence}{comparisonSentence === null ? "" : `; ${comparisonSentence}`}</p>
       {hasPartial && (
         <p className="text-sm text-slate-600">
           Partial period: the range cuts the first or last {granularity === "weekly" ? "week" : "month"}, so
@@ -175,7 +182,7 @@ export default function TrendChart({
       {noSales ? (
         <div className={EMPTY}>No sales in this range</div>
       ) : (
-        <div role="img" aria-label={sentence} className="h-72 w-full">
+        <div role="img" aria-label={comparisonSentence === null ? sentence : `${sentence}; ${comparisonSentence}`} className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={GRID} vertical={false} />
@@ -210,7 +217,7 @@ export default function TrendChart({
                 }}
                 formatter={(_value, _name, item) => [
                   formatMoney((item.payload as { exact: string }).exact, currency),
-                  "Gross sales",
+                  comparisonSentence === null ? "Gross sales" : "Current period",
                 ]}
                 contentStyle={{
                   background: "#ffffff",
@@ -221,6 +228,7 @@ export default function TrendChart({
                 }}
                 itemStyle={{ color: TOOLTIP_TEXT }}
               />
+              {comparisonSentence !== null && <Legend formatter={(value) => value === "comparison" ? "Comparison period" : "Current period"} />}
               <Line
                 type="linear"
                 dataKey="sales"
@@ -237,6 +245,7 @@ export default function TrendChart({
                 activeDot={{ r: 5, fill: LINE, stroke: LINE }}
                 isAnimationActive={false}
               />
+              {comparisonSentence !== null && <Line type="linear" dataKey="comparison" name="comparison" stroke={AXIS} strokeDasharray="6 4" strokeWidth={2} dot={false} isAnimationActive={false} />}
             </LineChart>
           </ResponsiveContainer>
         </div>
