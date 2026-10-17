@@ -66,10 +66,29 @@ class ProductRankingsResponse(BaseModel):
     by_orders: list[RankingProduct]
 
 
+class ShareProduct(BaseModel):
+    product_id: str
+    product_name: str
+    gross_sales: str
+    gross_sales_share: str | None
+    cumulative_share: str | None
+
+
+class ProductShareResponse(BaseModel):
+    products: list[ShareProduct]
+    product_count: int
+    total_gross_sales: str
+    top_20_percent_product_count: int | None
+    top_20_percent_share: str | None
+    products_to_80_percent: int | None
+    availability: AvailabilityResponse
+
+
 class ProductsResponse(ModuleEnvelope):
     product_count: int
     availability: AvailabilityResponse
     rankings: ProductRankingsResponse
+    share: ProductShareResponse
 
 
 class OverviewKpis(BaseModel):
