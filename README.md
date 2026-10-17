@@ -135,6 +135,7 @@ The server reads these environment variables when it starts. Every variable is o
 | `DATASET_TTL_SECONDS` | integer > 0 | unset | Test-only. When set, the lifetime in seconds, instead of `DATASET_TTL_HOURS`. The browser tests use it to see a real expiry. Leave it unset in production. |
 | `MAX_UPLOAD_BYTES` | integer > 0 | `52428800` (50 MB) | Largest accepted upload, in bytes. A larger file is rejected with `file_too_large`. |
 | `MAX_ROWS` | integer > 0 | `500000` | Most data rows (header not counted) in one upload. More is rejected with `too_many_rows`. |
+| `CUSTOMER_ID_MAX_LENGTH` | integer > 0 | `128` | Maximum Unicode character count for a non-blank `customer_id`; longer values are rejected with `customer_id_too_long`. |
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | How often the server removes expired datasets (it also does so once at startup). |
 | `PUBLIC_DEMO_MODE` | boolean | `false` | `true` turns uploads off, see [Demo mode](#demo-mode). |
 | `MAX_DATASETS` | integer > 0 | `200` | Most unexpired datasets the server holds. Creating one more (an upload or **Try sample data**) answers 503 `capacity_reached` until one expires or is deleted. |
@@ -160,7 +161,7 @@ column (the same table is on the upload screen):
 | `product_name` | String | Required and non-empty. One `product_id` must map to exactly one name within an upload. |
 | `quantity` | Integer | Required and greater than zero. Zero and negative quantities are invalid. |
 | `unit_price` | Decimal | Required and non-negative. A zero price is accepted with a warning; a negative price is invalid. |
-| `customer_id` | String | Optional. Blank allowed; up to 128 characters by default; use a hashed identifier, UUID or non-personal internal key. Never an email address, phone number, name or other direct identifier. |
+| `customer_id` | String | Optional. Blank allowed; up to `CUSTOMER_ID_MAX_LENGTH` Unicode characters (128 by default); use a hashed identifier, UUID or non-personal internal key. Never an email address, phone number, name or other direct identifier. |
 
 File-level rules:
 
@@ -241,6 +242,15 @@ The report lists the first 100 errors and gives the total count (`error_count`).
 | `duplicate_line` | The same `order_id` and `product_id` appear on an earlier row. |
 | `conflicting_product_name` | One `product_id` has more than one `product_name`. |
 | `conflicting_customer_id` | One order has more than one non-blank `customer_id`. |
+| `customer_id_too_long` | A non-blank `customer_id` exceeds `CUSTOMER_ID_MAX_LENGTH` Unicode characters. |
+| `customer_id_looks_like_email` | A non-blank `customer_id` matches the obvious email heuristic. |
+| `customer_id_looks_like_phone` | A non-blank `customer_id` matches the obvious phone heuristic. |
+
+The three `customer_id` checks are a best-effort guardrail, not anonymization and not a compliance guarantee. The email
+check looks for `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}` anywhere in the value. The phone check requires only digits, spaces,
+`+ - . ( )`, 7–15 digits, and either a leading `+`, visible spacing/parentheses, or at least two `-`/`.` separators.
+These heuristics intentionally have known misses: an all-digit phone number such as `05321234567` is accepted, while
+digit groups with two dashes such as `2024-01-000123` are rejected. An accepted ID is not thereby anonymous.
 
 A request can also fail before the file is read: a currency that is not in the list answers `400 invalid_request`.
 
@@ -288,6 +298,8 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 - Customer IDs are pseudonymous data, not anonymous data. They are kept for the dataset's 24-hour lifetime. Use a hashed
   identifier, UUID or non-personal internal key; never upload a direct identifier such as an email address, phone number
   or name.
+- The customer-ID length, email and phone checks are best-effort guardrails only. They are not anonymization and are not
+  a compliance guarantee; automated checks cannot find every kind of personal data.
 - A dataset is deleted after `DATASET_TTL_HOURS` (24 by default) by a cleanup at startup and then every
   `CLEANUP_INTERVAL_MINUTES`, or at once when you click **Analyze another file**.
 - Access needs a random bearer token. The browser keeps it in `sessionStorage`, so it is gone when the tab closes.

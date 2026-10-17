@@ -213,6 +213,22 @@ def test_rejected_customer_ids_and_order_ids_are_not_logged(client, log):
     assert "SECRET-X" not in text and "SECRET-Y" not in text
 
 
+def test_customer_guardrail_values_are_not_logged(client, log):
+    email = "private.person@example.com"
+    phone = "+15551234567"
+    response = upload(
+        client,
+        HEADER
+        + ",customer_id\n"
+        + f"o1,2025-01-02,p1,Mug,1,1,{email}\n"
+        + f"o2,2025-01-02,p2,Cup,1,1,{phone}\n",
+    )
+
+    assert response.status_code == 422
+    text = log.read()
+    assert email not in text and phone not in text
+
+
 def test_dataset_id_is_null_for_a_failed_upload(client, log):
     assert upload(client, good_csv(), currency="XXX").status_code == 400
     assert upload(client, HEADER + "\no1,2025-01-02,p1,Mug,abc,19.99\n").status_code == 422
