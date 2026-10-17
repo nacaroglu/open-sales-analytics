@@ -184,6 +184,101 @@ def test_cross_row_errors_are_returned(client):
     assert [e["code"] for e in error["errors"]] == ["duplicate_line"]
 
 
+def test_customer_conflict_rejects_upload_without_creating_a_dataset(client, data_dir):
+    content = csv_text(
+        "B-1,2025-01-02,p1,Mug,1,1,SECRET-X",
+        "B-1,2025-01-02,p2,Cup,1,1,SECRET-Y",
+        header=HEADER + ",customer_id",
+    )
+
+    response = upload(client, content)
+
+    assert response.status_code == 422
+    error = error_of(response)
+    assert error["code"] == "validation_failed"
+    assert [(e["code"], e["field"], e["row_number"]) for e in error["errors"]] == [
+        ("conflicting_customer_id", "customer_id", 3)
+    ]
+    assert error["errors"][0]["reason"] == "Order 'B-1' has 2 different customer IDs."
+    assert "SECRET-X" not in response.text and "SECRET-Y" not in response.text
+    assert_clean(data_dir)
+
+
+def test_customer_conflicts_are_capped_but_error_count_is_true(client):
+    rows = []
+    for number in range(150):
+        rows.extend(
+            [
+                f"o{number},2025-01-02,p{number}a,Mug,1,1,C1",
+                f"o{number},2025-01-02,p{number}b,Cup,1,1,C2",
+            ]
+        )
+
+    error = error_of(upload(client, csv_text(*rows, header=HEADER + ",customer_id")))
+
+    assert len(error["errors"]) == 100
+    assert error["error_count"] == 150
+
+
+def test_customer_guardrails_reject_values_without_leaking_them(client, data_dir):
+    email = "jane@example.com"
+    phone = "+15551234567"
+    content = csv_text(
+        f"o1,2025-01-02,p1,Mug,1,1,{email}",
+        f"o2,2025-01-02,p2,Cup,1,1,{phone}",
+        header=HEADER + ",customer_id",
+    )
+
+    response = upload(client, content)
+
+    assert response.status_code == 422
+    error = error_of(response)
+    assert [(item["code"], item["field"], item["row_number"]) for item in error["errors"]] == [
+        ("customer_id_looks_like_email", "customer_id", 2),
+        ("customer_id_looks_like_phone", "customer_id", 3),
+    ]
+    assert email not in response.text and phone not in response.text
+    assert_clean(data_dir)
+
+
+def test_customer_guardrail_errors_are_capped_but_error_count_is_true(client):
+    rows = [f"o{i},2025-01-02,p{i},Item,1,1,user{i}@example.com" for i in range(150)]
+
+    error = error_of(upload(client, csv_text(*rows, header=HEADER + ",customer_id")))
+
+    assert len(error["errors"]) == 100
+    assert error["error_count"] == 150
+
+
+def test_customer_guardrails_run_before_customer_fill(client, data_dir):
+    content = csv_text(
+        "o1,2025-01-02,p1,Mug,1,1,",
+        "o1,2025-01-02,p2,Cup,1,1,jane@example.com",
+        header=HEADER + ",customer_id",
+    )
+
+    response = upload(client, content)
+
+    assert response.status_code == 422
+    assert error_of(response)["errors"][0]["code"] == "customer_id_looks_like_email"
+    assert_clean(data_dir)
+
+
+def test_ingest_passes_customer_id_limit_from_settings(settings, tmp_path):
+    path = tmp_path / "upload.csv"
+    path.write_text(
+        HEADER + ",customer_id\no1,2025-01-02,p1,Mug,1,1,123456\n",
+        encoding="utf-8",
+    )
+    settings.customer_id_max_length = 5
+
+    result = ingest_module.ingest_csv(path, "USD", settings)
+
+    assert result.error_count == 1
+    assert result.errors[0].code == "customer_id_too_long"
+    assert_clean(settings.dataset_dir)
+
+
 def test_errors_are_capped_but_error_count_is_true(client, settings):
     rows = [f"o{i},2025-01-02,p{i},Item,0,1" for i in range(150)]
 

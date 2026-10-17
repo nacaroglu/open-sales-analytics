@@ -105,7 +105,7 @@ def test_capabilities_contain_fact_counts_and_dataset_comparison_states(client, 
     }
 
 
-def test_customer_id_is_ignored_and_metadata_does_not_leak_identifiers(client):
+def test_customer_id_is_stored_without_exposing_identifiers_in_metadata(client):
     csv = (
         "order_id,order_date,product_id,product_name,quantity,unit_price,customer_id\n"
         "secret-order,2025-01-01,secret-product,Secret Product,1,9.99,secret-customer\n"
@@ -118,7 +118,7 @@ def test_customer_id_is_ignored_and_metadata_does_not_leak_identifiers(client):
 
     assert response.status_code == 201
     body = response.json()
-    assert {warning["code"] for warning in body["warnings"]} == {"extra_column"}
+    assert body["warnings"] == []
     assert body["meta"]["capabilities"]["columns"] == {"customer_id": False}
     metadata_text = json.dumps(body["meta"])
     assert all(value not in metadata_text for value in ("secret-order", "secret-product"))
