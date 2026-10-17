@@ -1,0 +1,7 @@
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+A-1,2025-01-02,p1,Mug,1,9.99,C1
+A-1,2025-01-02,p2,Cup,1,4.50,
+A-1,2025-01-02,p3,Plate,1,2.50, C1 
+D-1,2025-01-02,p4,Hat,1,3.00,
+D-1,2025-01-02,p5,Bag,1,5.00,   
+E-1,2025-01-02,p6,Shoe,1,8.00,C2

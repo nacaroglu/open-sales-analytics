@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS line_items (
     product_id   VARCHAR       NOT NULL,
     product_name VARCHAR       NOT NULL,
     quantity     INTEGER       NOT NULL,
-    unit_price   DECIMAL(18,4) NOT NULL
+    unit_price   DECIMAL(18,4) NOT NULL,
+    customer_id  VARCHAR
 )
 """
 
@@ -44,7 +45,11 @@ CREATE TABLE IF NOT EXISTS dataset_meta (
     created_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     token_hash VARCHAR     NOT NULL,
-    row_count  BIGINT      NOT NULL
+    row_count  BIGINT      NOT NULL,
+    has_customer_id BOOLEAN NOT NULL DEFAULT FALSE,
+    identified_orders BIGINT NOT NULL DEFAULT 0,
+    unidentified_orders BIGINT NOT NULL DEFAULT 0,
+    total_orders BIGINT NOT NULL DEFAULT 0
 )
 """
 

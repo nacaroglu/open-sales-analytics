@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     dataset_ttl_seconds: int | None = Field(None, gt=0, validation_alias="DATASET_TTL_SECONDS")
     max_upload_bytes: int = Field(52_428_800, gt=0, validation_alias="MAX_UPLOAD_BYTES")
     max_rows: int = Field(500_000, gt=0, validation_alias="MAX_ROWS")
+    customer_id_max_length: int = Field(128, gt=0, validation_alias="CUSTOMER_ID_MAX_LENGTH")
     cleanup_interval_minutes: int = Field(15, gt=0, validation_alias="CLEANUP_INTERVAL_MINUTES")
     max_datasets: int = Field(200, gt=0, validation_alias="MAX_DATASETS")
     response_cache_max_entries: int = Field(
