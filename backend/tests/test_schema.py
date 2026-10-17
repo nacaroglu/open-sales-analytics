@@ -14,6 +14,7 @@ LINE_ITEMS = [
     ("product_name", "VARCHAR"),
     ("quantity", "INTEGER"),
     ("unit_price", "DECIMAL(18,4)"),
+    ("customer_id", "VARCHAR"),
 ]
 DATASET_META = [
     ("id", "VARCHAR"),
@@ -22,6 +23,20 @@ DATASET_META = [
     ("expires_at", "TIMESTAMP WITH TIME ZONE"),
     ("token_hash", "VARCHAR"),
     ("row_count", "BIGINT"),
+    ("has_customer_id", "BOOLEAN"),
+    ("identified_orders", "BIGINT"),
+    ("unidentified_orders", "BIGINT"),
+    ("total_orders", "BIGINT"),
+]
+CUSTOMER_FACTS = [
+    ("customer_id", "VARCHAR"),
+    ("first_order_date", "DATE"),
+    ("acquisition_month", "DATE"),
+    ("first_day_orders", "INTEGER"),
+    ("last_order_date", "DATE"),
+    ("lifetime_orders", "INTEGER"),
+    ("lifetime_units", "BIGINT"),
+    ("lifetime_gross_sales", "DECIMAL(18,4)"),
 ]
 
 
@@ -47,6 +62,7 @@ def test_creates_the_canonical_and_fact_tables(dataset_path):
     ).fetchall()
     connection.close()
     assert tables == [
+        ("customer_facts",),
         ("dataset_meta",),
         ("line_items",),
         ("order_facts",),
@@ -60,18 +76,22 @@ def test_columns_names_types_and_not_null(dataset_path):
     connection = open_dataset_readonly(dataset_path)
     line_items = columns(connection, "line_items")
     dataset_meta = columns(connection, "dataset_meta")
+    customer_facts = columns(connection, "customer_facts")
     connection.close()
 
     assert [(name, kind) for name, kind, _ in line_items] == LINE_ITEMS
     assert [(name, kind) for name, kind, _ in dataset_meta] == DATASET_META
-    assert all(nullable == "NO" for *_, nullable in line_items)
+    assert [(name, kind) for name, kind, _ in customer_facts] == CUSTOMER_FACTS
+    assert all(nullable == "NO" for *_, nullable in line_items[:-1])
+    assert line_items[-1][-1] == "YES"
+    assert all(nullable == "NO" for *_, nullable in customer_facts)
 
 
 def test_unit_price_round_trips_as_exact_decimal(dataset_path):
     create_dataset(dataset_path)
     connection = duckdb.connect(str(dataset_path))
     connection.execute(
-        "INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 1, 19.9999)"
+        "INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 1, 19.9999, NULL)"
     )
     (price,) = connection.execute("SELECT unit_price FROM line_items").fetchone()
     connection.close()
@@ -83,7 +103,9 @@ def test_unit_price_round_trips_as_exact_decimal(dataset_path):
 def test_create_twice_keeps_existing_rows(dataset_path):
     create_dataset(dataset_path)
     connection = duckdb.connect(str(dataset_path))
-    connection.execute("INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 2, 5)")
+    connection.execute(
+        "INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 2, 5, NULL)"
+    )
     connection.close()
 
     create_dataset(dataset_path)
@@ -114,7 +136,7 @@ def test_readonly_allows_select_and_rejects_insert(dataset_path):
     assert connection.execute("SELECT count(*) FROM line_items").fetchone() == (0,)
     with pytest.raises(duckdb.Error):
         connection.execute(
-            "INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 1, 1)"
+            "INSERT INTO line_items VALUES ('o1', DATE '2025-01-02', 'p1', 'Mug', 1, 1, NULL)"
         )
     connection.close()
 

@@ -69,10 +69,18 @@ def test_creates_the_dataset_file_with_typed_rows(uploads, settings, data_dir):
     ]
     connection.close()
     assert rows == [
-        ("o1", date(2025, 1, 2), "p1", "Mug", 2, Decimal("19.9900")),
-        ("o2", date(2025, 1, 3), "p2", "Cup", 1, Decimal("4.5000")),
+        ("o1", date(2025, 1, 2), "p1", "Mug", 2, Decimal("19.9900"), None),
+        ("o2", date(2025, 1, 3), "p2", "Cup", 1, Decimal("4.5000"), None),
     ]
-    assert types == ["VARCHAR", "DATE", "VARCHAR", "VARCHAR", "INTEGER", "DECIMAL(18,4)"]
+    assert types == [
+        "VARCHAR",
+        "DATE",
+        "VARCHAR",
+        "VARCHAR",
+        "INTEGER",
+        "DECIMAL(18,4)",
+        "VARCHAR",
+    ]
 
 
 def test_unit_price_reads_back_exactly(uploads, settings):
@@ -114,6 +122,62 @@ def test_extra_columns_are_not_in_the_dataset_file(uploads, settings):
     assert "notes" not in names
 
 
+@pytest.mark.parametrize(
+    ("header", "row", "has_customer_id", "stored"),
+    [
+        (HEADER, "o1,2025-01-02,p1,Mug,1,1", False, None),
+        (HEADER + ",customer_id", "o1,2025-01-02,p1,Mug,1,1,   ", True, None),
+        ("customer_id," + HEADER, "CUST-007,o1,2025-01-02,p1,Mug,1,1", True, "CUST-007"),
+    ],
+)
+def test_customer_id_storage_and_header_presence(
+    uploads, settings, header, row, has_customer_id, stored
+):
+    _, target = run_import(uploads, settings, row, header=header)
+    connection = open_dataset_readonly(target)
+    assert connection.execute("SELECT customer_id FROM line_items").fetchone() == (stored,)
+    assert connection.execute("SELECT has_customer_id FROM dataset_meta").fetchone() == (
+        has_customer_id,
+    )
+    connection.close()
+
+
+def test_customer_id_is_case_sensitive_and_unicode_round_trips(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1,ABC",
+        "o2,2025-01-03,p2,Cup,1,1,abc",
+        "o3,2025-01-04,p3,Plate,1,1, müşteri-ü1 ",
+        header=HEADER + ",customer_id",
+    )
+    connection = open_dataset_readonly(target)
+    assert connection.execute(
+        "SELECT customer_id FROM line_items ORDER BY order_id"
+    ).fetchall() == [("ABC",), ("abc",), ("müşteri-ü1",)]
+    connection.close()
+
+
+def test_customer_id_blanks_are_filled_during_canonical_import(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1,C1",
+        "o1,2025-01-02,p2,Cup,1,1,",
+        "o1,2025-01-02,p3,Plate,1,1, C1 ",
+        "o2,2025-01-02,p4,Hat,1,1,",
+        header=HEADER + ",customer_id",
+    )
+
+    connection = open_dataset_readonly(target)
+    rows = connection.execute(
+        "SELECT order_id, customer_id FROM line_items ORDER BY order_id, product_id"
+    ).fetchall()
+    connection.close()
+
+    assert rows == [("o1", "C1"), ("o1", "C1"), ("o1", "C1"), ("o2", None)]
+
+
 def test_dataset_meta_has_one_row_with_the_expected_values(uploads, settings):
     _, target = run_import(
         uploads,
@@ -134,6 +198,24 @@ def test_dataset_meta_has_one_row_with_the_expected_values(uploads, settings):
 
     created = int(NOW.timestamp())
     assert rows == [("ds-1", "EUR", created, created + 6 * 3600, TOKEN_HASH, 3)]
+
+
+def test_import_persists_order_level_customer_coverage_counts(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1,C1",
+        "o1,2025-01-02,p2,Cup,1,1,C1",
+        "o2,2025-01-02,p3,Plate,1,1,",
+        header=HEADER + ",customer_id",
+    )
+    connection = open_dataset_readonly(target)
+    try:
+        assert connection.execute(
+            "SELECT identified_orders, unidentified_orders, total_orders FROM dataset_meta"
+        ).fetchone() == (1, 1, 2)
+    finally:
+        connection.close()
 
 
 def test_created_at_defaults_to_now_in_utc(uploads, settings):

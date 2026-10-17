@@ -180,6 +180,7 @@ The server reads these environment variables when it starts. Every variable is o
 | `DATASET_TTL_SECONDS` | integer > 0 | unset | Test-only. When set, the lifetime in seconds, instead of `DATASET_TTL_HOURS`. The browser tests use it to see a real expiry. Leave it unset in production. |
 | `MAX_UPLOAD_BYTES` | integer > 0 | `52428800` (50 MB) | Largest accepted upload, in bytes. A larger file is rejected with `file_too_large`. |
 | `MAX_ROWS` | integer > 0 | `500000` | Most data rows (header not counted) in one upload. More is rejected with `too_many_rows`. |
+| `CUSTOMER_ID_MAX_LENGTH` | integer > 0 | `128` | Maximum Unicode character count for a non-blank `customer_id`; longer values are rejected with `customer_id_too_long`. |
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | How often the server removes expired datasets (it also does so once at startup). |
 | `PUBLIC_DEMO_MODE` | boolean | `false` | `true` turns uploads off, see [Demo mode](#demo-mode). |
 | `MAX_DATASETS` | integer > 0 | `200` | Most unexpired datasets the server holds. Creating one more (an upload or **Try sample data**) answers 503 `capacity_reached` until one expires or is deleted. |
@@ -194,8 +195,8 @@ example, `MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` exits with `
 
 ## Dataset contract
 
-One row is one product line within one completed order. The file must have these six columns (the same table is on the
-upload screen):
+One row is one product line within one completed order. The file must have these six required columns plus one optional
+column (the same table is on the upload screen):
 
 | Column | Type | Rule |
 | --- | --- | --- |
@@ -205,14 +206,17 @@ upload screen):
 | `product_name` | String | Required and non-empty. One `product_id` must map to exactly one name within an upload. |
 | `quantity` | Integer | Required and greater than zero. Zero and negative quantities are invalid. |
 | `unit_price` | Decimal | Required and non-negative. A zero price is accepted with a warning; a negative price is invalid. |
+| `customer_id` | String | Optional. Blank allowed; up to `CUSTOMER_ID_MAX_LENGTH` Unicode characters (128 by default); use a hashed identifier, UUID or non-personal internal key. Never an email address, phone number, name or other direct identifier. |
 
 File-level rules:
 
 - UTF-8, comma-separated, one header row. The header is row 1 in error reports, so the first data row is row 2.
-- Column names are matched after trimming spaces. Order does not matter. A column that is not one of the six is
+- Column names are matched after trimming spaces. Order does not matter. A column that is not one of the six required columns or `customer_id` is
   ignored, with a warning (`extra_column`).
 - `(order_id, product_id)` is unique: the same product appears at most once per order.
 - One name per `product_id` in the whole file.
+- Within each order, blank `customer_id` values are filled from its one non-blank ID; conflicting IDs reject the
+  upload, while orders with all blanks remain unidentified.
 - One currency per upload, chosen in the upload form (see [Currencies](#currencies)).
 - Any invalid row rejects the whole file. Nothing is stored.
 - At most 50 MB and 500,000 rows by default (the `MAX_UPLOAD_BYTES` and `MAX_ROWS` variables).
@@ -228,6 +232,14 @@ order_id,order_date,product_id,product_name,quantity,unit_price
 A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
 A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
 A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
+```
+
+An optional `customer_id` can be included; blank cells are allowed:
+
+```csv
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
+A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
 ```
 
 With the app running on port 8000, import it through the API:
@@ -274,8 +286,52 @@ The report lists the first 100 errors and gives the total count (`error_count`).
 | `malformed_row` | The row has a different number of values than the header. |
 | `duplicate_line` | The same `order_id` and `product_id` appear on an earlier row. |
 | `conflicting_product_name` | One `product_id` has more than one `product_name`. |
+| `conflicting_customer_id` | One order has more than one non-blank `customer_id`. |
+| `customer_id_too_long` | A non-blank `customer_id` exceeds `CUSTOMER_ID_MAX_LENGTH` Unicode characters. |
+| `customer_id_looks_like_email` | A non-blank `customer_id` matches the obvious email heuristic. |
+| `customer_id_looks_like_phone` | A non-blank `customer_id` matches the obvious phone heuristic. |
+
+The three `customer_id` checks are a best-effort guardrail, not anonymization and not a compliance guarantee. The email
+check looks for `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}` anywhere in the value. The phone check requires only digits, spaces,
+`+ - . ( )`, 7–15 digits, and either a leading `+`, visible spacing/parentheses, or at least two `-`/`.` separators.
+These heuristics intentionally have known misses: an all-digit phone number such as `05321234567` is accepted, while
+digit groups with two dashes such as `2024-01-000123` are rejected. An accepted ID is not thereby anonymous.
 
 A request can also fail before the file is read: a currency that is not in the list answers `400 invalid_request`.
+
+### Customer coverage
+
+When `customer_id` is present, coverage is calculated once during import at order level, after blank IDs have been
+filled from another line in the same order:
+
+`identified distinct orders / all distinct orders`
+
+It is not a row percentage, so a five-line identified order counts once. The dataset metadata reports the counts and
+the rounded ratio, while the tier is decided from exact integer counts over the whole dataset:
+
+- below 50%: `suppressed`; Customer analytics is unavailable;
+- 50% through below 80%: `warning`; Customer analytics is available with a low-coverage warning;
+- 80% or more: `normal`; Customer analytics is available normally.
+
+Files without `customer_id` have tier `missing` and `coverage: null`, rather than zero-percent coverage. Coverage
+metadata contains counts only and never customer identifiers. Date-range coverage uses the same order-level formula
+with inclusive order dates; an empty range has zero counts and `coverage: null`. Tiering remains based on the whole
+dataset, so filtering dates does not make the Customers module appear or disappear.
+
+### Customers API
+
+`GET /api/datasets/{id}/customers` is bearer-token protected and accepts the same optional `start`, `end` and
+`comparison` query parameters as the Overview and Products module endpoints. With no parameters it uses the full
+dataset and the default `previous_period` comparison. Invalid dates, reversed or out-of-range dates return
+`400 invalid_range`; an unknown comparison returns `400 invalid_request`. Missing or malformed credentials return
+`401 unauthorized` with `WWW-Authenticate: Bearer`; an unknown, expired or deleted dataset returns `404 not_found`.
+
+The typed response contains `module`, `range`, `comparison`, `currency`, `availability`, `coverage` and `sections`.
+`coverage.dataset` is the stored whole-dataset coverage and `coverage.range` is the inclusive selected-range coverage;
+both contain the tier, rounded coverage ratio and identified, unidentified and total order counts. `sections` is empty
+until the later customer metric issues add aggregate sections. The endpoint always returns `Cache-Control: no-store`.
+Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
+search, detail, download or export data, and identifiers are not written to logs.
 
 ### Warnings
 
@@ -283,7 +339,7 @@ Warnings do not reject the file. They come back in the `warnings` list of the `2
 
 | Code | Meaning |
 | --- | --- |
-| `extra_column` | The file has a column that is not one of the six, for example a `note` column. It is ignored and not stored. |
+| `extra_column` | The file has a column that is not one of the six required columns or `customer_id`, for example a `note` column. It is ignored and not stored. |
 | `zero_price` | One or more lines have a unit price of 0. They are imported and count as orders and units, with no gross sales. |
 
 ### Sample data
@@ -316,8 +372,13 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 ## Privacy
 
 - The raw CSV is deleted as soon as the import ends, on success and on failure.
-- Only the six columns are stored, in one DuckDB file per dataset under `DATASET_DIR`, with private permissions
+- Only the six required columns and optional `customer_id` are stored, in one DuckDB file per dataset under `DATASET_DIR`, with private permissions
   (`0600` for the file, `0700` for the directories).
+- Customer IDs are pseudonymous data, not anonymous data. They are kept for the dataset's 24-hour lifetime. Use a hashed
+  identifier, UUID or non-personal internal key; never upload a direct identifier such as an email address, phone number
+  or name.
+- The customer-ID length, email and phone checks are best-effort guardrails only. They are not anonymization and are not
+  a compliance guarantee; automated checks cannot find every kind of personal data.
 - A dataset is deleted after `DATASET_TTL_HOURS` (24 by default) by a cleanup at startup and then every
   `CLEANUP_INTERVAL_MINUTES`, or at once when you click **Analyze another file**.
 - Access needs a random bearer token. The browser keeps it in `sessionStorage`, so it is gone when the tab closes.
@@ -327,6 +388,9 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
   never contain tokens, file contents, file names, product names or order IDs. Error logs hold exception class names
   and stack frames, never exception messages.
 - Nothing is sent to other services.
+- When customer IDs are supplied, the per-dataset DuckDB file also contains `customer_facts`: one row per identified
+  customer with full-history first/last order dates, acquisition month, distinct lifetime orders, units and gross
+  sales. It contains no rows for unidentified orders and expires with the dataset; it is not a separate shared database.
 
 ## Demo mode
 
@@ -358,7 +422,8 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 ## Architecture
 
 A React (Vite) front end with Recharts talks JSON to a FastAPI back end. Each dataset is one DuckDB file under
-`DATASET_DIR`; validation and analytics are SQL over that file. An in-process background task removes expired
+`DATASET_DIR`; validation and analytics are SQL over that file. Canonical import builds reusable `order_facts`,
+`product_facts` and, when identified customer data exists, full-history `customer_facts` in the same file. An in-process background task removes expired
 datasets. The Docker image is a single container in which FastAPI serves both the API and the built front end from one
 origin on port 8000. The full specification is in [`_docs/plan.md`](_docs/plan.md) (architecture in section 7), and the
 backlog is in [`_docs/tasks.md`](_docs/tasks.md).

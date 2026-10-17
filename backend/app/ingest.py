@@ -60,7 +60,7 @@ def ingest_csv(
             return _discard(structure, staging, csv_path)
 
         staging = stage_csv(csv_path)
-        rows = validate_rows(staging)
+        rows = validate_rows(staging, customer_id_max_length=settings.customer_id_max_length)
         rows.warnings = structure.warnings + rows.warnings
         if not rows.ok:
             return _discard(rows, staging, csv_path)
