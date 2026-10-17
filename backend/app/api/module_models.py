@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.analytics.shared.availability import AvailabilityState
 
@@ -100,12 +100,41 @@ class ProductGrowthResponse(BaseModel):
     falling: list[GrowthProduct]
 
 
+class DormantProduct(BaseModel):
+    product_id: str
+    product_name: str
+    last_sale_date: str
+    days_inactive: int
+    earlier_gross_sales: str
+    earlier_orders: int
+
+
+class ProductDormancyResponse(BaseModel):
+    window_days: int
+    anchor_date: str
+    availability: AvailabilityResponse
+    products: list[DormantProduct]
+
+
+class PriceHistoryBucket(BaseModel):
+    bucket_start: str
+    weighted_unit_price: str | None
+    units_sold: int
+
+
+class ProductPriceHistoryResponse(BaseModel):
+    granularity: str
+    availability: AvailabilityResponse
+    buckets: list[PriceHistoryBucket]
+
+
 class ProductsResponse(ModuleEnvelope):
     product_count: int
     availability: AvailabilityResponse
     rankings: ProductRankingsResponse
     share: ProductShareResponse
     growth: ProductGrowthResponse
+    dormant: ProductDormancyResponse
 
 
 class OverviewKpis(BaseModel):
@@ -137,4 +166,7 @@ class ProductDetailResponse(ModuleEnvelope):
     product: ProductResponse
     kpis: ProductKpis
     trend: list[dict[str, str]]
+    price_history: ProductPriceHistoryResponse = Field(
+        description="Quantity-weighted realized average unit price by sales-trend bucket."
+    )
     availability: AvailabilityResponse

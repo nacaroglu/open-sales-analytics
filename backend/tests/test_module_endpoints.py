@@ -196,6 +196,44 @@ def test_products_response_contains_three_top_ten_rankings(client):
     assert growth["products"][0]["classification"] is None
 
 
+def test_products_dormancy_uses_anchor_and_cache_option(client):
+    dataset = create(
+        client,
+        [
+            "old,2024-01-01,old,Old Product,1,5.00",
+            "boundary,2024-02-01,boundary,Boundary Product,1,8.00",
+            "current,2024-03-31,current,Current Product,1,2.00",
+        ],
+    )
+    default = request(client, "/products", dataset)
+    assert default.status_code == 200
+    assert default.json()["dormant"]["window_days"] == 60
+    assert default.json()["dormant"]["anchor_date"] == "2024-03-31"
+    assert [row["product_id"] for row in default.json()["dormant"]["products"]] == ["old"]
+
+    thirty = request(client, "/products", dataset, dormancy_days="30")
+    assert thirty.json()["dormant"]["window_days"] == 30
+    assert [row["product_id"] for row in thirty.json()["dormant"]["products"]] == [
+        "boundary",
+        "old",
+    ]
+    repeated = request(client, "/products", dataset, dormancy_days="30")
+    assert repeated.json() == thirty.json()
+
+
+@pytest.mark.parametrize("value", ["0", "45", "-60", "120", "abc", ""])
+def test_products_rejects_invalid_dormancy_days(client, value):
+    dataset = create(client)
+    response = request(client, "/products", dataset, dormancy_days=value)
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "invalid_request",
+            "message": "dormancy_days must be 30, 60 or 90.",
+        }
+    }
+
+
 def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
     dataset = create(client)
     detail = request(
@@ -208,6 +246,12 @@ def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
     )
     assert detail.status_code == 200
     assert detail.json()["kpis"]["gross_sales"]["value"] == "20.0000"
+    assert detail.json()["price_history"]["granularity"] == "daily"
+    assert detail.json()["price_history"]["availability"] == {
+        "state": "available",
+        "reason": None,
+    }
+    assert detail.json()["price_history"]["buckets"][0]["weighted_unit_price"] == "20.0000"
 
     malicious = "missing'/;%"
     response = request(client, "/products/detail", dataset, product_id=malicious)
@@ -286,5 +330,15 @@ def test_module_endpoints_are_documented_with_typed_responses():
     assert "rankings" in schemas["ProductsResponse"]["properties"]
     assert "share" in schemas["ProductsResponse"]["properties"]
     assert "growth" in schemas["ProductsResponse"]["properties"]
+    assert "dormant" in schemas["ProductsResponse"]["properties"]
+    assert "dormancy_days" in {
+        parameter["name"] for parameter in paths["/api/datasets/{id}/products"]["get"]["parameters"]
+    }
     comparison = schemas["ComparisonResponse"]["properties"]["mode"]
     assert comparison["enum"] == ["previous_period", "previous_year"]
+    assert "price_history" in schemas["ProductDetailResponse"]["properties"]
+    description = schemas["ProductDetailResponse"]["properties"]["price_history"]["description"]
+    assert "realized average unit price" in description
+    assert not any(
+        word in description.lower() for word in ("elasticity", "demand", "caused", "because of")
+    )

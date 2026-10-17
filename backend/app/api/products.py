@@ -2,7 +2,9 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 
+from app.analytics.products.dormancy import read_dormant_products
 from app.analytics.products.growth import read_product_growth
+from app.analytics.products.price_history import read_product_price_history
 from app.analytics.products.share import read_product_share
 from app.analytics.products.top_products import (
     read_product_count,
@@ -13,6 +15,7 @@ from app.analytics.products.top_products import (
 )
 from app.analytics.shared.availability import AvailabilityState
 from app.analytics.shared.buckets import choose_granularity
+from app.analytics.shared.metrics import DORMANCY_WINDOWS
 from app.api.module_common import (
     cache_key,
     cached_json,
@@ -128,16 +131,65 @@ def _growth_body(growth: dict) -> dict:
     }
 
 
+def _dormancy_body(dormancy: dict) -> dict:
+    return {
+        "window_days": dormancy["window_days"],
+        "anchor_date": dormancy["anchor_date"].isoformat(),
+        "availability": {
+            "state": dormancy["availability"].state,
+            "reason": dormancy["availability"].reason,
+        },
+        "products": [
+            {
+                **product,
+                "last_sale_date": product["last_sale_date"].isoformat(),
+                "earlier_gross_sales": f"{product['earlier_gross_sales']:.4f}",
+            }
+            for product in dormancy["products"]
+        ],
+    }
+
+
+def _dormancy_window(value: str) -> int:
+    if value not in {str(window) for window in DORMANCY_WINDOWS}:
+        raise ApiError(400, "invalid_request", "dormancy_days must be 30, 60 or 90.")
+    return int(value)
+
+
+def _price_history_body(history: dict) -> dict:
+    return {
+        "granularity": history["granularity"],
+        "availability": {
+            "state": history["availability"].state,
+            "reason": history["availability"].reason,
+        },
+        "buckets": [
+            {
+                "bucket_start": bucket["bucket_start"].isoformat(),
+                "weighted_unit_price": (
+                    None
+                    if bucket["weighted_unit_price"] is None
+                    else f"{bucket['weighted_unit_price']:.4f}"
+                ),
+                "units_sold": bucket["units_sold"],
+            }
+            for bucket in history["buckets"]
+        ],
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
     comparison: str = Query(default="previous_period"),
+    dormancy_days: str = Query(default="60"),
     dataset: AuthorizedDataset = Depends(require_dataset),
     settings: Settings = Depends(get_settings),
     now: datetime = Depends(get_now),
     cache: ResponseCache = Depends(get_response_cache),
 ):
+    window_days = _dormancy_window(dormancy_days)
     first, last = _dates(dataset.meta)
     periods = resolve_periods(start, end, comparison, first, last)
 
@@ -150,6 +202,7 @@ def get_products(
             rankings = read_product_rankings(connection, periods.current.start, periods.current.end)
             share = read_product_share(connection, periods.current.start, periods.current.end)
             growth = read_product_growth(connection, periods.current, periods.comparison)
+            dormancy = read_dormant_products(connection, periods.current, window_days)
         finally:
             connection.close()
         body = envelope(
@@ -165,11 +218,12 @@ def get_products(
         }
         body["share"] = _share_body(share)
         body["growth"] = _growth_body(growth)
+        body["dormant"] = _dormancy_body(dormancy)
         return body
 
     return cached_json(
         cache,
-        cache_key(dataset.id, "products", periods),
+        cache_key(dataset.id, "products", periods, (("dormancy_days", str(window_days)),)),
         now,
         dataset_expiry(dataset.meta),
         compute,
@@ -235,6 +289,15 @@ def get_product_detail(
             }
             body["trend"] = _trend_body(
                 read_product_trend(
+                    connection,
+                    product_id,
+                    periods.current.start,
+                    periods.current.end,
+                    granularity,
+                )
+            )
+            body["price_history"] = _price_history_body(
+                read_product_price_history(
                     connection,
                     product_id,
                     periods.current.start,
