@@ -5,16 +5,31 @@ from typing import Any
 import duckdb
 
 from app.analytics.shared.availability import Availability, AvailabilityState
-from app.analytics.shared.metrics import BASKET_MIN_SHARED_ORDERS, BASKET_MIN_SUPPORT
+from app.analytics.shared.metrics import (
+    BASKET_MIN_SHARED_ORDERS,
+    BASKET_MIN_SUPPORT,
+    MAX_DISTINCT_PRODUCTS_PER_ORDER,
+)
 
 _SIX_PLACES = Decimal("0.000001")
 
 _BASKET_SQL = """
-WITH in_range AS (
+WITH range_lines AS (
     SELECT order_id, product_id, min(product_name) AS product_name
     FROM line_items
     WHERE order_date BETWEEN ? AND ?
     GROUP BY order_id, product_id
+), oversize_orders AS (
+    SELECT order_id
+    FROM range_lines
+    GROUP BY order_id
+    HAVING count(*) > ?
+), in_range AS (
+    SELECT range_lines.*
+    FROM range_lines
+    WHERE NOT EXISTS (
+        SELECT 1 FROM oversize_orders WHERE oversize_orders.order_id = range_lines.order_id
+    )
 ), basket_population AS (
     SELECT count(*) AS basket_orders
     FROM (SELECT DISTINCT order_id FROM in_range)
@@ -50,7 +65,8 @@ SELECT product_a_id,
        shared_orders,
        orders_with_a,
        orders_with_b,
-       bp.basket_orders
+       bp.basket_orders,
+       (SELECT count(*) FROM oversize_orders) AS excluded_oversize_orders
 FROM basket_population bp
 LEFT JOIN eligible_pairs ep ON TRUE
 """
@@ -60,8 +76,15 @@ def _ratio(numerator: int, denominator: int) -> Decimal:
     return (Decimal(numerator) / Decimal(denominator)).quantize(_SIX_PLACES, rounding=ROUND_HALF_UP)
 
 
-def _availability(basket_orders: int, eligible_pair_count: int) -> Availability:
+def _availability(
+    basket_orders: int, eligible_pair_count: int, excluded_oversize_orders: int
+) -> Availability:
     if basket_orders == 0:
+        if excluded_oversize_orders:
+            return Availability(
+                AvailabilityState.INSUFFICIENT_DATA,
+                "All orders in this range have more than 100 products and are excluded from basket analysis",
+            )
         return Availability(AvailabilityState.ZERO_RESULT, "No orders in the selected range.")
     if basket_orders < BASKET_MIN_SHARED_ORDERS:
         return Availability(
@@ -84,9 +107,16 @@ def read_product_basket(
     """Return thresholded product pairs and optionally related products for one product."""
     rows = connection.execute(
         _BASKET_SQL,
-        [start, end, BASKET_MIN_SHARED_ORDERS, BASKET_MIN_SUPPORT],
+        [
+            start,
+            end,
+            MAX_DISTINCT_PRODUCTS_PER_ORDER,
+            BASKET_MIN_SHARED_ORDERS,
+            BASKET_MIN_SUPPORT,
+        ],
     ).fetchall()
     basket_orders = int(rows[0][7]) if rows else 0
+    excluded_oversize_orders = int(rows[0][8]) if rows else 0
     pairs: list[dict[str, Any]] = []
     for (
         product_a_id,
@@ -97,6 +127,7 @@ def read_product_basket(
         orders_with_a,
         orders_with_b,
         basket_orders,
+        _excluded_oversize_orders,
     ) in rows:
         if product_a_id is None:
             continue
@@ -136,7 +167,7 @@ def read_product_basket(
     for pair in pairs:
         pair.pop("_lift_exact")
         pair.pop("_basket_orders")
-    availability = _availability(basket_orders, len(pairs))
+    availability = _availability(basket_orders, len(pairs), excluded_oversize_orders)
     related = []
     if product_id is not None:
         for pair in pairs:
@@ -164,6 +195,7 @@ def read_product_basket(
                 )
     return {
         "basket_orders": basket_orders,
+        "excluded_oversize_orders": excluded_oversize_orders,
         "eligible_pair_count": len(pairs),
         "pairs": pairs[:20],
         "availability": availability,

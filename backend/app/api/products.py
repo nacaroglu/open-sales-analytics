@@ -21,6 +21,7 @@ from app.analytics.shared.metrics import (
     BASKET_MIN_SHARED_ORDERS,
     BASKET_MIN_SUPPORT,
     DORMANCY_WINDOWS,
+    MAX_DISTINCT_PRODUCTS_PER_ORDER,
 )
 from app.api.module_common import (
     cache_key,
@@ -227,6 +228,8 @@ def _fraction(value) -> str:
 def _basket_body(basket: dict) -> dict:
     return {
         "basket_orders": basket["basket_orders"],
+        "excluded_oversize_orders": basket["excluded_oversize_orders"],
+        "max_distinct_products_per_order": MAX_DISTINCT_PRODUCTS_PER_ORDER,
         "min_shared_orders": BASKET_MIN_SHARED_ORDERS,
         "min_support": _fraction(BASKET_MIN_SUPPORT),
         "eligible_pair_count": basket["eligible_pair_count"],
@@ -249,6 +252,7 @@ def _basket_body(basket: dict) -> dict:
 
 def _related_products_body(basket: dict) -> dict:
     return {
+        "excluded_oversize_orders": basket["excluded_oversize_orders"],
         "availability": {
             "state": basket["related_availability"].state,
             "reason": basket["related_availability"].reason,

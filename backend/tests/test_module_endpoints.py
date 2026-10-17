@@ -145,6 +145,8 @@ def test_products_and_detail_support_zero_result_and_slash_ids(client):
     assert products.json()["growth"]["availability"]["state"] == "zero_result"
     assert products.json()["penetration"]["availability"]["state"] == "zero_result"
     assert products.json()["basket"]["availability"]["state"] == "zero_result"
+    assert products.json()["basket"]["excluded_oversize_orders"] == 0
+    assert products.json()["basket"]["max_distinct_products_per_order"] == 100
 
     detail = request(
         client,
