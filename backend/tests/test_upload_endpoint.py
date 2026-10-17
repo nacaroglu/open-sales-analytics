@@ -75,7 +75,15 @@ def test_valid_file_creates_a_dataset(client, settings, data_dir):
     assert set(body) == {"dataset_id", "token", "meta", "warnings", "initial_summary"}
     assert body["warnings"] == []
     meta = body["meta"]
-    assert set(meta) == {"id", "currency", "created_at", "expires_at", "row_count", "date_range"}
+    assert set(meta) == {
+        "id",
+        "currency",
+        "created_at",
+        "expires_at",
+        "row_count",
+        "date_range",
+        "capabilities",
+    }
     assert meta["id"] == body["dataset_id"]
     assert meta["currency"] == "USD"
     assert meta["row_count"] == 2

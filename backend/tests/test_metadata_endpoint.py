@@ -1,5 +1,7 @@
+import json
 from datetime import UTC, datetime, timedelta
 
+import duckdb
 import pytest
 from app.auth import get_now
 from app.config import Settings, get_settings
@@ -11,7 +13,15 @@ from fastapi.testclient import TestClient
 
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"
 CREATED = datetime(2025, 6, 1, 12, 30, tzinfo=UTC)
-KEYS = {"id", "currency", "created_at", "expires_at", "row_count", "date_range"}
+KEYS = {
+    "id",
+    "currency",
+    "created_at",
+    "expires_at",
+    "row_count",
+    "date_range",
+    "capabilities",
+}
 
 
 @pytest.fixture
@@ -57,7 +67,8 @@ def test_returns_metadata_with_exactly_the_documented_keys(client, make_dataset)
     response = fetch(client, dataset_id, token)
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
-    assert response.json() == {
+    body = response.json()
+    assert {key: body[key] for key in KEYS - {"capabilities"}} == {
         "id": dataset_id,
         "currency": "EUR",
         "created_at": "2025-06-01T12:30:00Z",
@@ -65,8 +76,116 @@ def test_returns_metadata_with_exactly_the_documented_keys(client, make_dataset)
         "row_count": 2,
         "date_range": {"min": "2025-01-02", "max": "2025-03-09"},
     }
-    assert set(response.json()) == KEYS
-    assert isinstance(response.json()["row_count"], int)
+    assert set(body) == KEYS
+    assert isinstance(body["row_count"], int)
+
+
+def test_capabilities_contain_fact_counts_and_dataset_comparison_states(client, make_dataset):
+    dataset_id, token = make_dataset(
+        ["o1,2023-03-01,p1,Mug,2,19.99", "o2,2024-03-01,p2,Cup,1,5.00"]
+    )
+
+    capabilities = fetch(client, dataset_id, token).json()["capabilities"]
+
+    assert capabilities == {
+        "columns": {"customer_id": False},
+        "counts": {"orders": 2, "products": 2, "line_items": 2, "history_days": 367},
+        "modules": {
+            "overview": {"state": "available", "reason": None},
+            "products": {"state": "available", "reason": None},
+            "customers": {
+                "state": "unavailable",
+                "reason": "Customer analytics needs an optional customer_id column, which is not supported yet.",
+            },
+        },
+        "comparisons": {
+            "previous_period": {"state": "available", "reason": None},
+            "previous_year": {"state": "available", "reason": None},
+        },
+    }
+
+
+def test_customer_id_is_ignored_and_metadata_does_not_leak_identifiers(client):
+    csv = (
+        "order_id,order_date,product_id,product_name,quantity,unit_price,customer_id\n"
+        "secret-order,2025-01-01,secret-product,Secret Product,1,9.99,secret-customer\n"
+    )
+    response = client.post(
+        "/api/datasets",
+        files={"file": ("x.csv", csv.encode(), "text/csv")},
+        data={"currency": "USD"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert {warning["code"] for warning in body["warnings"]} == {"extra_column"}
+    assert body["meta"]["capabilities"]["columns"] == {"customer_id": False}
+    metadata_text = json.dumps(body["meta"])
+    assert all(value not in metadata_text for value in ("secret-order", "secret-product"))
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected_state", "expected_reason"),
+    [
+        (
+            ["o1,2025-01-01,p1,Mug,1,1"],
+            "insufficient_data",
+            "A comparison needs at least two days of history.",
+        ),
+        (
+            ["o1,2023-03-02,p1,Mug,1,1", "o2,2024-03-01,p2,Cup,1,1"],
+            "insufficient_data",
+            "The comparison needs data from 2023-03-01, but the dataset starts on 2023-03-02.",
+        ),
+    ],
+)
+def test_unavailable_comparisons_explain_the_missing_requirement(
+    client, make_dataset, rows, expected_state, expected_reason
+):
+    dataset_id, token = make_dataset(rows)
+    comparisons = fetch(client, dataset_id, token).json()["capabilities"]["comparisons"]
+
+    if len(rows) == 1:
+        assert comparisons["previous_period"] == {
+            "state": expected_state,
+            "reason": expected_reason,
+        }
+    else:
+        assert comparisons["previous_year"] == {
+            "state": expected_state,
+            "reason": expected_reason,
+        }
+
+
+def test_dataset_without_fact_tables_is_not_found(client, settings, make_dataset):
+    dataset_id, token = make_dataset(["o1,2025-01-01,p1,Mug,1,1"])
+    path = settings.dataset_dir / f"{dataset_id}.duckdb"
+    connection = duckdb.connect(str(path))
+    try:
+        connection.execute("DROP TABLE order_facts")
+        connection.execute("DROP TABLE product_facts")
+    finally:
+        connection.close()
+
+    response = fetch(client, dataset_id, token)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+def test_metadata_response_schema_documents_capabilities_and_availability_state():
+    schema = app.openapi()["components"]["schemas"]
+
+    assert "DatasetMetaResponse" in schema
+    assert "capabilities" in schema["DatasetMetaResponse"]["properties"]
+    assert "AvailabilityState" in schema
+    assert set(schema["AvailabilityState"]["enum"]) == {
+        "available",
+        "unavailable",
+        "insufficient_data",
+        "low_coverage",
+        "zero_result",
+    }
 
 
 def test_single_date_dataset_has_equal_min_and_max(client, make_dataset):
