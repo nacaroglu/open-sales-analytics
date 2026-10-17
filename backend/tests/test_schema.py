@@ -38,7 +38,7 @@ def columns(connection, table):
     ).fetchall()
 
 
-def test_creates_exactly_the_two_tables(dataset_path):
+def test_creates_the_canonical_and_fact_tables(dataset_path):
     create_dataset(dataset_path)
 
     connection = open_dataset_readonly(dataset_path)
@@ -46,7 +46,12 @@ def test_creates_exactly_the_two_tables(dataset_path):
         "SELECT table_name FROM information_schema.tables ORDER BY table_name"
     ).fetchall()
     connection.close()
-    assert tables == [("dataset_meta",), ("line_items",)]
+    assert tables == [
+        ("dataset_meta",),
+        ("line_items",),
+        ("order_facts",),
+        ("product_facts",),
+    ]
 
 
 def test_columns_names_types_and_not_null(dataset_path):
