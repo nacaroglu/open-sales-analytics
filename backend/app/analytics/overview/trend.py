@@ -14,7 +14,12 @@ GROUP BY order_date
 """
 
 
-def read_trend(connection: duckdb.DuckDBPyConnection, start: date, end: date) -> dict:
+def read_trend(
+    connection: duckdb.DuckDBPyConnection,
+    start: date,
+    end: date,
+    granularity: str | None = None,
+) -> dict:
     """Gross sales per time bucket for rows dated ``start`` to ``end``, both included.
 
     Returns ``{"granularity": str, "buckets": [{"bucket_start": date,
@@ -26,7 +31,7 @@ def read_trend(connection: duckdb.DuckDBPyConnection, start: date, end: date) ->
     """
     if start > end:
         raise ValueError("start must not be after end")
-    granularity = choose_granularity(start, end)
+    granularity = choose_granularity(start, end) if granularity is None else granularity
 
     totals: dict[date, Decimal] = {}
     for order_date, amount in connection.execute(_DAILY_SQL, [start, end]).fetchall():

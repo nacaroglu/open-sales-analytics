@@ -10,6 +10,8 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from app.api.datasets import router as datasets_router
+from app.api.overview import router as overview_router
+from app.api.products import router as products_router
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely
 from app.config import Settings, get_settings
 from app.errors import register_error_handlers
@@ -36,6 +38,8 @@ app = FastAPI(title="Open Sales Analytics", lifespan=lifespan)
 app.add_middleware(RequestLogMiddleware)
 register_error_handlers(app)
 app.include_router(datasets_router)
+app.include_router(overview_router)
+app.include_router(products_router)
 
 
 @app.get("/api/health")
