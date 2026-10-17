@@ -1,7 +1,11 @@
 from pathlib import Path
 
-from app.analytics.shared.metrics import BASKET_MIN_SHARED_ORDERS, BASKET_MIN_SUPPORT, DORMANCY_WINDOWS, MAX_DISTINCT_PRODUCTS_PER_ORDER, get_metric
-
+from app.analytics.shared.metrics import (
+    BASKET_MIN_SHARED_ORDERS,
+    DORMANCY_WINDOWS,
+    MAX_DISTINCT_PRODUCTS_PER_ORDER,
+    get_metric,
+)
 
 PRODUCT_METRICS = (
     "gross_sales_share",
