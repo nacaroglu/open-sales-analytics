@@ -128,6 +128,27 @@ class ProductPriceHistoryResponse(BaseModel):
     buckets: list[PriceHistoryBucket]
 
 
+class PenetrationProduct(BaseModel):
+    product_id: str
+    product_name: str
+    orders_containing_product: int
+    all_orders: int
+    order_penetration: str | None
+
+
+class ProductPenetrationResponse(BaseModel):
+    all_orders: int
+    availability: AvailabilityResponse
+    products: list[PenetrationProduct]
+
+
+class ProductDetailPenetration(BaseModel):
+    orders_containing_product: int
+    all_orders: int
+    order_penetration: str | None
+    availability: AvailabilityResponse
+
+
 class ProductsResponse(ModuleEnvelope):
     product_count: int
     availability: AvailabilityResponse
@@ -135,6 +156,7 @@ class ProductsResponse(ModuleEnvelope):
     share: ProductShareResponse
     growth: ProductGrowthResponse
     dormant: ProductDormancyResponse
+    penetration: ProductPenetrationResponse
 
 
 class OverviewKpis(BaseModel):
@@ -169,4 +191,5 @@ class ProductDetailResponse(ModuleEnvelope):
     price_history: ProductPriceHistoryResponse = Field(
         description="Quantity-weighted realized average unit price by sales-trend bucket."
     )
+    penetration: ProductDetailPenetration
     availability: AvailabilityResponse
