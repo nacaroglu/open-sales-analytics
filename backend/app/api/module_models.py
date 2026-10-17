@@ -100,12 +100,29 @@ class ProductGrowthResponse(BaseModel):
     falling: list[GrowthProduct]
 
 
+class DormantProduct(BaseModel):
+    product_id: str
+    product_name: str
+    last_sale_date: str
+    days_inactive: int
+    earlier_gross_sales: str
+    earlier_orders: int
+
+
+class ProductDormancyResponse(BaseModel):
+    window_days: int
+    anchor_date: str
+    availability: AvailabilityResponse
+    products: list[DormantProduct]
+
+
 class ProductsResponse(ModuleEnvelope):
     product_count: int
     availability: AvailabilityResponse
     rankings: ProductRankingsResponse
     share: ProductShareResponse
     growth: ProductGrowthResponse
+    dormant: ProductDormancyResponse
 
 
 class OverviewKpis(BaseModel):

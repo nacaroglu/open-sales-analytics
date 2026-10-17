@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 _UNITS = frozenset({"money", "count", "ratio", "percent", "days"})
 _ACTIVE_RANGE = "The active reporting range, inclusive of its start and end dates."
+DORMANCY_WINDOWS = (30, 60, 90)
 _BASKET_INSUFFICIENT_DATA = (
     "A pair is eligible only when it occurs in at least 10 shared orders and support is at "
     "least 0.1%. Orders containing more than 100 distinct products are excluded from basket "
@@ -212,6 +213,16 @@ METRICS: dict[str, MetricDefinition] = {
         None,
         "The active reporting range and its selected comparison period.",
         "Unavailable when the selected comparison period is unavailable.",
+    ),
+    "dormancy": MetricDefinition(
+        "dormancy",
+        "Dormant products",
+        "count",
+        "a product is dormant when anchor - last_sale_date is at least the selected window",
+        "count of products with days_inactive >= selected window",
+        None,
+        "The selected range end date as anchor, with a 30, 60, or 90 day inclusive window.",
+        "Insufficient when the dataset covers fewer than the selected window before the anchor.",
     ),
     "cumulative_revenue_share": MetricDefinition(
         "cumulative_revenue_share",
