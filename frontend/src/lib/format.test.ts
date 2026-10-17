@@ -1,5 +1,11 @@
 import { expect, test } from "vitest";
-import { formatCount, formatDay, formatExpiry, formatMonthYear, formatMoney, formatRelativeExpiry } from "./format";
+import { formatCount, formatDay, formatExpiry, formatMonthYear, formatMoney, formatRelativeExpiry, formatShare } from "./format";
+
+test("formats decimal shares with decimal-string rounding", () => {
+  expect(formatShare("0.150000")).toBe("15.00%");
+  expect(formatShare("0.000049")).toBe("0.00%");
+  expect(formatShare("0.125050")).toBe("12.51%");
+});
 
 test("money is shown with the currency symbol, thousands separators and two decimals", () => {
   expect(formatMoney("1234.5000", "USD")).toBe("$1,234.50");

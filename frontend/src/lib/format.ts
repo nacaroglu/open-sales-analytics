@@ -34,6 +34,15 @@ export function formatCount(value: number): string {
   return wholeNumbers.format(value);
 }
 
+export function formatShare(value: string): string {
+  const [whole, fraction = ""] = value.split(".");
+  const digits = `${fraction}000000`.slice(0, 6);
+  const scaled = BigInt(whole || "0") * 10000n + BigInt(digits);
+  const rounded = (scaled + 50n) / 100n;
+  const text = rounded.toString().padStart(3, "0");
+  return `${text.slice(0, -2)}.${text.slice(-2)}%`;
+}
+
 // Application-generated dates are English in every browser. The locale is fixed
 // and never taken from the browser, so a Turkish browser gets the same text. The
 // parts come from en-US and are put together day first here, because en-GB's own

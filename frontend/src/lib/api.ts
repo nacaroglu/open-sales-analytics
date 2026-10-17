@@ -1,5 +1,5 @@
 import { tokenFor } from "./session";
-import type { Created, Health, Issue, Meta, PublicConfig, Summary } from "./types";
+import type { Created, Health, Issue, Meta, ProductDetail, ProductsResponse, PublicConfig, Summary } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -159,4 +159,18 @@ export function getAnalytics(
 
 export function deleteDataset(id: string, options: Options = {}): Promise<void> {
   return request("DELETE", datasetUrl(id), { ...options, datasetId: id });
+}
+
+function query(params: Record<string, string | undefined>): string {
+  const values = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => { if (value !== undefined) values.set(key, value); });
+  return values.size ? `?${values}` : "";
+}
+
+export function getProducts(id: string, range: { start?: string; end?: string; comparison?: string; dormancy_days?: string } = {}, options: Options = {}): Promise<ProductsResponse> {
+  return request("GET", `${datasetUrl(id)}/products${query(range)}`, { ...options, datasetId: id });
+}
+
+export function getProductDetail(id: string, productId: string, range: { start?: string; end?: string; comparison?: string } = {}, options: Options = {}): Promise<ProductDetail> {
+  return request("GET", `${datasetUrl(id)}/products/detail${query({ product_id: productId, ...range })}`, { ...options, datasetId: id });
 }

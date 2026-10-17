@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { getAnalytics, getConfig, getMeta } from "./api";
+import { getAnalytics, getConfig, getMeta, getProductDetail, getProducts } from "./api";
 import { tokenFor } from "./session";
 
 export function useMeta(datasetId: string) {
@@ -34,4 +34,12 @@ export function useConfig() {
     retry: false,
     retryOnMount: false,
   });
+}
+
+export function useProducts(datasetId: string, start?: string, end?: string, dormancyDays = "60", comparison = "previous_period") {
+  return useQuery({ queryKey: ["products", datasetId, start, end, comparison, dormancyDays], queryFn: ({ signal }) => getProducts(datasetId, { start, end, comparison, dormancy_days: dormancyDays }, { signal }), enabled: tokenFor(datasetId) !== null, placeholderData: keepPreviousData, staleTime: Infinity });
+}
+
+export function useProductDetail(datasetId: string, productId: string | undefined, start?: string, end?: string, comparison = "previous_period") {
+  return useQuery({ queryKey: ["product-detail", datasetId, productId, start, end, comparison], queryFn: ({ signal }) => getProductDetail(datasetId, productId ?? "", { start, end, comparison }, { signal }), enabled: tokenFor(datasetId) !== null && productId !== undefined, placeholderData: keepPreviousData, staleTime: Infinity });
 }
