@@ -1,0 +1,4 @@
+order_id,order_date,product_id,product_name,quantity,unit_price
+o1,2025-01-01,p1,Weighted,1,10.00
+o2,2025-01-01,p1,Weighted,3,20.00
+o3,2025-01-02,p1,Weighted,1,0.00

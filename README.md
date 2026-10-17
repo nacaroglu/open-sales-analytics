@@ -7,6 +7,7 @@ taxes or shipping in it.
 
 Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) | [Demo walkthrough](#demo-walkthrough) |
 [Explore the results](#explore-the-results) |
+[Product analytics](#product-analytics) | [Comparisons](#comparisons) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
 [Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
 
@@ -122,7 +123,51 @@ Below the trend, the top 10 products by gross sales:
 **Analyze another file** deletes this dataset and returns to the upload screen.
 
 The dashboard is organized into Overview, Customers and Products sections. Customers is not available yet in this
-release; the Products section is the shell for the product analyses planned next.
+release; Products contains the portfolio analyses described in [Product analytics](#product-analytics).
+
+## Comparisons
+
+The date-range card can compare the active range with the previous period or the same period last year. The dashboard
+shows the exact dates returned by the API. A full-range comparison is unavailable when the comparison would begin before
+the dataset's first date. Leap-day comparisons use the last valid day of February in the comparison year. A comparison
+with no prior value is labelled “No prior value”; two zero values are “No change”; a new product is “New”; otherwise the
+percentage is shown as “Comparable”.
+
+## Product analytics
+
+All product figures use the selected inclusive active range unless noted. Money is gross sales: discounts, refunds and
+costs are outside this dataset contract. Each product name and ID is displayed as text supplied by the server.
+
+| UI label and key | Formula and denominator | Window and non-normal states | Worked example |
+| --- | --- | --- | --- |
+| Rankings — `gross_sales` | Sum of quantity × unit price; units sold is sum of quantity; orders is distinct order count | Active range; empty ranges have no products | A line with 2 units at 12.50 contributes 25.00 gross sales |
+| Share of gross sales — `gross_sales_share` | Product gross sales / total product gross sales | Active range; insufficient when total gross sales is zero | 15 of 100 is 15.00% |
+| Top 20% share — `top_20_percent_share` | Gross sales from the top 20% product count / total gross sales | Active range; insufficient when total is zero | Five products at 50/20/15/10/5: top one is 50.00% |
+| Products to reach 80% — `products_to_80_percent` | Smallest ordered product count whose cumulative share reaches 80% | Active range; insufficient when total is zero | 50+20+15 reaches 80% at 3 products |
+| Cumulative share — `cumulative_share` | Running gross sales / total gross sales | Active range; unavailable when total is zero | The first three golden products reach 85.00% |
+| Product growth — `product_growth` | Current gross sales minus comparison gross sales; percentage uses the comparison value | Comparison period; `New`, `No current sales`, `No change`, or unavailable comparison avoid misleading percentages | 10 to 20 is +10 and +100.00% |
+| Rising/falling ranking — `rising_products`, `falling_products` | Rank by absolute gross-sales change | Selected comparison; unavailable when comparison is unavailable | A +10 change ranks above a +900% change of +1 |
+| Dormant products — `dormancy` | Products with no sale in the selected 30, 60 or 90-day window; earlier totals use sales before the window | Anchored to the dataset's latest date, default 60; insufficient history or zero result are distinct. A sale exactly N days before the anchor is inside the window | A product last sold 60 days before the anchor is included for a 60-day window |
+| Weighted unit price — `weighted_unit_price` | SUM(quantity × unit price) / SUM(quantity) | Active range buckets; missing-sales buckets are gaps, not zero prices | 1 unit at 10 plus 3 at 20 gives 17.50 |
+| Order penetration — `order_penetration` | Distinct orders containing the product / all distinct orders | Active range; zero orders is a zero result | 25 of 200 orders is 12.50% |
+| Support — `basket_support` | Shared orders / eligible basket orders | Active range; at least 10 shared orders and 0.1% support are required | 10 shared orders in 10,000 gives 0.10% |
+| Confidence — `basket_confidence` | Shared orders / orders containing the directional product | Active range; below-threshold pairs are not shown | A→B and B→A can differ because their order counts differ |
+| Lift — `basket_lift` | Confidence / support of the destination product | Active range; below-threshold pairs are not shown | Lift compares the observed pair rate with the destination support |
+
+The shared registry labels these keys as: Gross-sales share, Cumulative gross-sales share, Top 20% product share,
+Products to 80% of gross sales, Product gross-sales growth, Rising products, Falling products, Dormant products,
+Weighted realized unit price, Order penetration, Basket support, Basket confidence and Basket lift.
+
+Pairs below either basket threshold are not shown, even when their lift is high. Orders with more than 100 distinct
+products are excluded from basket analysis only; exactly 100 is included, and those orders still count in rankings,
+penetration and gross sales. The Products view reports how many were excluded. Price history describes realised price
+movement only; it does not measure price elasticity or show that a price change caused a sales change. Rising and falling
+uses absolute change so tiny baselines do not dominate. Penetration, support, confidence and lift use distinct orders.
+
+The API documentation is available at [`/docs`](http://localhost:8000/docs). `GET /api/datasets/{id}/overview` returns
+overview KPIs and trends; `GET /api/datasets/{id}/products` returns the portfolio analyses; and
+`GET /api/datasets/{id}/products/detail?product_id=...` returns one product's detail analyses. Dataset endpoints require
+the dataset's bearer token.
 
 ## Configuration
 
