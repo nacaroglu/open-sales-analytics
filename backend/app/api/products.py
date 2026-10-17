@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 
+from app.analytics.products.growth import read_product_growth
 from app.analytics.products.share import read_product_share
 from app.analytics.products.top_products import (
     read_product_count,
@@ -89,6 +90,44 @@ def _share_body(share: dict) -> dict:
     }
 
 
+def _growth_body(growth: dict) -> dict:
+    def compared_body(metric: dict, money: bool) -> dict:
+        def number(value):
+            if value is None:
+                return None
+            return f"{value:.4f}" if money else int(value)
+
+        return {
+            "value": number(metric["value"]),
+            "comparison_value": number(metric["comparison_value"]),
+            "absolute_change": number(metric["absolute_change"]),
+            "percent_change": (
+                None if metric["percent_change"] is None else f"{metric['percent_change']:.2f}"
+            ),
+            "change_status": metric["change_status"],
+        }
+
+    def product_body(product: dict) -> dict:
+        return {
+            "product_id": product["product_id"],
+            "product_name": product["product_name"],
+            "gross_sales": compared_body(product["gross_sales"], True),
+            "units_sold": compared_body(product["units_sold"], False),
+            "orders": compared_body(product["orders"], False),
+            "classification": product["classification"],
+        }
+
+    return {
+        "availability": {
+            "state": growth["availability"].state,
+            "reason": growth["availability"].reason,
+        },
+        "products": [product_body(product) for product in growth["products"]],
+        "rising": [product_body(product) for product in growth["rising"]],
+        "falling": [product_body(product) for product in growth["falling"]],
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
@@ -110,6 +149,7 @@ def get_products(
             )
             rankings = read_product_rankings(connection, periods.current.start, periods.current.end)
             share = read_product_share(connection, periods.current.start, periods.current.end)
+            growth = read_product_growth(connection, periods.current, periods.comparison)
         finally:
             connection.close()
         body = envelope(
@@ -124,6 +164,7 @@ def get_products(
             **_ranking_body(rankings),
         }
         body["share"] = _share_body(share)
+        body["growth"] = _growth_body(growth)
         return body
 
     return cached_json(

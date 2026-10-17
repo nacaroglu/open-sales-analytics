@@ -84,11 +84,28 @@ class ProductShareResponse(BaseModel):
     availability: AvailabilityResponse
 
 
+class GrowthProduct(BaseModel):
+    product_id: str
+    product_name: str
+    gross_sales: ComparedMoney
+    units_sold: ComparedCount
+    orders: ComparedCount
+    classification: Literal["new", "no_current_sales", "rising", "falling", "unchanged"] | None
+
+
+class ProductGrowthResponse(BaseModel):
+    availability: AvailabilityResponse
+    products: list[GrowthProduct]
+    rising: list[GrowthProduct]
+    falling: list[GrowthProduct]
+
+
 class ProductsResponse(ModuleEnvelope):
     product_count: int
     availability: AvailabilityResponse
     rankings: ProductRankingsResponse
     share: ProductShareResponse
+    growth: ProductGrowthResponse
 
 
 class OverviewKpis(BaseModel):
