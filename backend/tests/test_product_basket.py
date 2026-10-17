@@ -127,3 +127,22 @@ def test_basket_support_below_boundary_is_excluded(tmp_path):
     assert result["basket_orders"] == 10001
     assert result["eligible_pair_count"] == 0
     assert result["pairs"] == []
+
+
+def test_oversize_orders_are_excluded_once_and_disclosed(tmp_path):
+    rows = []
+    for index in range(9):
+        rows.extend([row(f"small-{index}", "a"), row(f"small-{index}", "b")])
+    rows.extend([row("exactly-100", "a"), row("exactly-100", "b")])
+    rows.extend(row("exactly-100", f"p-{index}") for index in range(98))
+    rows.extend([row("oversize-101", "a"), row("oversize-101", "b")])
+    rows.extend(row("oversize-101", f"q-{index}") for index in range(99))
+    connection = build(tmp_path / "oversize.duckdb", rows)
+    try:
+        result = read_product_basket(connection, date(2025, 1, 1), date(2025, 1, 1))
+    finally:
+        connection.close()
+
+    assert result["excluded_oversize_orders"] == 1
+    assert result["basket_orders"] == 10
+    assert result["pairs"][0]["shared_orders"] == 10

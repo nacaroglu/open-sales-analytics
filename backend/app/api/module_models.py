@@ -166,6 +166,8 @@ class BasketPair(BaseModel):
 
 class ProductBasketResponse(BaseModel):
     basket_orders: int
+    excluded_oversize_orders: int
+    max_distinct_products_per_order: int
     min_shared_orders: int
     min_support: str
     eligible_pair_count: int
@@ -183,6 +185,7 @@ class RelatedProduct(BaseModel):
 
 
 class RelatedProductsResponse(BaseModel):
+    excluded_oversize_orders: int
     availability: AvailabilityResponse
     related_products: list[RelatedProduct]
 

@@ -8,6 +8,7 @@ _ACTIVE_RANGE = "The active reporting range, inclusive of its start and end date
 DORMANCY_WINDOWS = (30, 60, 90)
 BASKET_MIN_SHARED_ORDERS = 10
 BASKET_MIN_SUPPORT = Decimal("0.001")
+MAX_DISTINCT_PRODUCTS_PER_ORDER = 100
 _BASKET_INSUFFICIENT_DATA = (
     "A pair is eligible only when it occurs in at least 10 shared orders and support is at "
     "least 0.1%. Orders containing more than 100 distinct products are excluded from basket "
