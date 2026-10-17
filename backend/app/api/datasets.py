@@ -25,6 +25,7 @@ from app.errors import ApiError
 from app.importer import dataset_path
 from app.ingest import CreatedDataset, ingest_csv, new_upload_path
 from app.logging_config import log_exception
+from app.response_cache import ResponseCache, get_response_cache
 from app.schema import open_dataset_readonly
 
 router = APIRouter(prefix="/api")
@@ -465,10 +466,12 @@ def get_dataset_analytics(
 def delete_dataset(
     dataset: AuthorizedDataset = Depends(require_dataset),
     settings: Settings = Depends(get_settings),
+    cache: ResponseCache = Depends(get_response_cache),
 ):
     try:
         _remove_dataset_files(dataset_path(settings, dataset.id))
     except FileNotFoundError:
         # Removed by someone else after the authorisation check.
         raise ApiError(404, "not_found", "The dataset was not found.") from None
+    cache.invalidate_dataset(dataset.id)
     return Response(status_code=204, headers={"Cache-Control": "no-store"})

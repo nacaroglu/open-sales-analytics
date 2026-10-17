@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.auth import _EXPIRY_SQL
 from app.config import Settings
+from app.response_cache import ResponseCache, response_cache_for_settings
 from app.schema import DatasetFileError, open_dataset_readonly
 from app.tokens import is_valid_dataset_id
 
@@ -109,7 +110,9 @@ def _is_expired_or_broken(path: Path, now: datetime) -> bool | None:
         connection.close()
 
 
-def _sweep_datasets_dir(directory: Path, now: datetime) -> tuple[int, int]:
+def _sweep_datasets_dir(
+    directory: Path, now: datetime, cache: ResponseCache | None = None
+) -> tuple[int, int]:
     datasets = temp_files = 0
     with os.scandir(directory) as scan:
         entries = sorted(scan, key=lambda entry: entry.name)
@@ -122,6 +125,8 @@ def _sweep_datasets_dir(directory: Path, now: datetime) -> tuple[int, int]:
             verdict = _is_expired_or_broken(path, now)
             if verdict and _remove_file(path):
                 datasets += 1
+                if cache is not None:
+                    cache.invalidate_dataset(name[: -len(_DATASET_SUFFIX)])
                 _remove_file(path.with_name(name + ".wal"))
         elif _id_from(name, _WAL_SUFFIX):
             if not os.path.lexists(path.with_name(name[: -len(".wal")])) and _is_old(path, now):
@@ -152,9 +157,11 @@ def _sweep_uploads_dir(directory: Path, now: datetime) -> int:
     return removed
 
 
-def sweep(settings: Settings, now: datetime) -> SweepResult:
+def sweep(settings: Settings, now: datetime, cache: ResponseCache | None = None) -> SweepResult:
     """One cleanup pass over DATASET_DIR; ``now`` must be timezone-aware."""
-    datasets, temp_files = _sweep_datasets_dir(settings.dataset_dir, now)
+    if cache is None:
+        cache = response_cache_for_settings(settings)
+    datasets, temp_files = _sweep_datasets_dir(settings.dataset_dir, now, cache)
     temp_files += _sweep_uploads_dir(settings.dataset_dir / "uploads", now)
     logger.info(
         "cleanup sweep: %d datasets removed, %d temporary files removed", datasets, temp_files

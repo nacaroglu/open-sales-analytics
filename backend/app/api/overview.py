@@ -1,17 +1,24 @@
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
 
 from app.analytics.overview.kpis import read_kpis
 from app.analytics.overview.trend import read_trend
 from app.analytics.products.top_products import read_top_products
 from app.analytics.shared.buckets import choose_granularity
-from app.api.module_common import compared, envelope, resolve_periods
+from app.api.module_common import (
+    cache_key,
+    cached_json,
+    compared,
+    dataset_expiry,
+    envelope,
+    resolve_periods,
+)
 from app.api.module_models import OverviewResponse
-from app.auth import AuthorizedDataset, require_dataset
+from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.config import Settings, get_settings
 from app.importer import dataset_path
+from app.response_cache import ResponseCache, get_response_cache
 from app.schema import open_dataset_readonly
 
 router = APIRouter(prefix="/api")
@@ -95,6 +102,14 @@ def build_overview(connection, meta: dict, periods) -> dict:
     return body
 
 
+def _compute_overview(settings: Settings, dataset: AuthorizedDataset, periods) -> dict:
+    connection = open_dataset_readonly(dataset_path(settings, dataset.id))
+    try:
+        return build_overview(connection, dataset.meta, periods)
+    finally:
+        connection.close()
+
+
 @router.get("/datasets/{id}/overview", response_model=OverviewResponse)
 def get_overview(
     start: str | None = Query(default=None),
@@ -102,12 +117,15 @@ def get_overview(
     comparison: str = Query(default="previous_period"),
     dataset: AuthorizedDataset = Depends(require_dataset),
     settings: Settings = Depends(get_settings),
+    now: datetime = Depends(get_now),
+    cache: ResponseCache = Depends(get_response_cache),
 ):
     first, last = _dates(dataset.meta)
     periods = resolve_periods(start, end, comparison, first, last)
-    connection = open_dataset_readonly(dataset_path(settings, dataset.id))
-    try:
-        body = build_overview(connection, dataset.meta, periods)
-    finally:
-        connection.close()
-    return JSONResponse(body, headers={"Cache-Control": "no-store"})
+    return cached_json(
+        cache,
+        cache_key(dataset.id, "overview", periods),
+        now,
+        dataset_expiry(dataset.meta),
+        lambda: _compute_overview(settings, dataset, periods),
+    )
