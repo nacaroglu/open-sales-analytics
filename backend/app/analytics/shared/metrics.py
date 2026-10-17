@@ -1,10 +1,13 @@
 """Authoritative metric definitions shared by APIs, tests, and UI labels."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 _UNITS = frozenset({"money", "count", "ratio", "percent", "days"})
 _ACTIVE_RANGE = "The active reporting range, inclusive of its start and end dates."
 DORMANCY_WINDOWS = (30, 60, 90)
+BASKET_MIN_SHARED_ORDERS = 10
+BASKET_MIN_SUPPORT = Decimal("0.001")
 _BASKET_INSUFFICIENT_DATA = (
     "A pair is eligible only when it occurs in at least 10 shared orders and support is at "
     "least 0.1%. Orders containing more than 100 distinct products are excluded from basket "
@@ -260,7 +263,7 @@ METRICS: dict[str, MetricDefinition] = {
         "percent",
         "support(A,B) = orders_with_A_and_B / all_orders",
         "orders_with_A_and_B",
-        "all_orders",
+        "basket_orders",
         _ACTIVE_RANGE,
         _BASKET_INSUFFICIENT_DATA,
     ),
