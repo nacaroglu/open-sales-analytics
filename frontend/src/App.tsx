@@ -49,7 +49,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<UploadPage onCreated={onCreated} />} />
           <Route
-            path="/d/:datasetId"
+            path="/d/:datasetId/*"
             element={
               <Dashboard
                 notice={notice}

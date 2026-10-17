@@ -10,6 +10,7 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - Fixed labels: "Gross sales", "Orders", "Units sold", "Average order value", "Try sample data", "Download sample CSV", "Upload", "Reset", "Retry", "Analyze another file".
 - Text from the server or the user (reasons, field names, product names) is rendered as text, never as raw HTML.
 - Something not covered here: add one line to this file in your task; do not invent a private style.
+- Dashboard section navigation uses underlined indigo links with a bold indigo bottom border for the current page; unavailable sections use a white rounded border card with a bold “Unavailable” label and muted reason text.
 
 ## Colour roles (contrast checked with WCAG 2.x, every text pair, disabled ones included, >= 4.5:1; ratios recomputed from Tailwind 4's palette)
 

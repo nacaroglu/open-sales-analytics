@@ -6,6 +6,7 @@ Gross sales is quantity times unit price, summed over the lines in the chosen pe
 taxes or shipping in it.
 
 Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) | [Demo walkthrough](#demo-walkthrough) |
+[Explore the results](#explore-the-results) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
 [Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
 
@@ -119,6 +120,9 @@ Below the trend, the top 10 products by gross sales:
 ![Top 10 products by gross sales](_docs/images/demo-top-products.png)
 
 **Analyze another file** deletes this dataset and returns to the upload screen.
+
+The dashboard is organized into Overview, Customers and Products sections. Customers is not available yet in this
+release; the Products section is the shell for the product analyses planned next.
 
 ## Configuration
 
