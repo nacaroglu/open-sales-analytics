@@ -2,7 +2,7 @@
 
 # Stage 1: build the frontend (Node is not part of the final image).
 # Base images are pinned by digest (policy: README, Container image pinning); Dependabot bumps tag and digest together.
-FROM node:26@sha256:a723b54c35a76e947095a20a67d39585bb09c862e6b1adeb8a9f518f95e34fb0 AS frontend
+FROM node:26@sha256:32fa97f3363975684b08bf4e8a68a47c7905175cc20275b50b974bbd02aba731 AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
