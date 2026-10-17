@@ -20,6 +20,7 @@ KEYS = {
     "expires_at",
     "row_count",
     "date_range",
+    "customer_coverage",
     "capabilities",
 }
 
@@ -75,6 +76,13 @@ def test_returns_metadata_with_exactly_the_documented_keys(client, make_dataset)
         "expires_at": "2025-06-02T12:30:00Z",
         "row_count": 2,
         "date_range": {"min": "2025-01-02", "max": "2025-03-09"},
+        "customer_coverage": {
+            "tier": "missing",
+            "coverage": None,
+            "identified_orders": 0,
+            "unidentified_orders": 2,
+            "total_orders": 2,
+        },
     }
     assert set(body) == KEYS
     assert isinstance(body["row_count"], int)
@@ -95,7 +103,7 @@ def test_capabilities_contain_fact_counts_and_dataset_comparison_states(client, 
             "products": {"state": "available", "reason": None},
             "customers": {
                 "state": "unavailable",
-                "reason": "Customer analytics needs an optional customer_id column, which is not supported yet.",
+                "reason": "The file has no customer_id column.",
             },
         },
         "comparisons": {
@@ -119,7 +127,8 @@ def test_customer_id_is_stored_without_exposing_identifiers_in_metadata(client):
     assert response.status_code == 201
     body = response.json()
     assert body["warnings"] == []
-    assert body["meta"]["capabilities"]["columns"] == {"customer_id": False}
+    assert body["meta"]["capabilities"]["columns"] == {"customer_id": True}
+    assert body["meta"]["customer_coverage"]["tier"] == "normal"
     metadata_text = json.dumps(body["meta"])
     assert all(value not in metadata_text for value in ("secret-order", "secret-product"))
 
@@ -216,6 +225,33 @@ def test_matches_the_meta_returned_by_upload(client, tmp_path):
     response = fetch(client, created["dataset_id"], created["token"])
     assert response.status_code == 200
     assert response.json() == created["meta"]
+
+
+def test_customer_coverage_metadata_has_counts_only_and_preserves_auth(client):
+    csv = (
+        "order_id,order_date,product_id,product_name,quantity,unit_price,customer_id\n"
+        "order-secret,2025-01-01,p1,Mug,1,9.99,customer-secret\n"
+        "order-secret,2025-01-01,p2,Cup,1,5.00,\n"
+        "order-blank,2025-01-02,p3,Plate,1,3.00,\n"
+    )
+    created = client.post(
+        "/api/datasets",
+        files={"file": ("x.csv", csv.encode(), "text/csv")},
+        data={"currency": "USD"},
+    )
+    assert created.status_code == 201
+    body = fetch(client, created.json()["dataset_id"], created.json()["token"])
+    assert body.status_code == 200
+    coverage = body.json()["customer_coverage"]
+    assert coverage == {
+        "tier": "warning",
+        "coverage": 0.5,
+        "identified_orders": 1,
+        "unidentified_orders": 1,
+        "total_orders": 2,
+    }
+    assert "customer-secret" not in body.text
+    assert fetch(client, created.json()["dataset_id"], "wrong-token").status_code == 401
 
 
 def test_missing_token_is_401(client, make_dataset):

@@ -24,6 +24,9 @@ DATASET_META = [
     ("token_hash", "VARCHAR"),
     ("row_count", "BIGINT"),
     ("has_customer_id", "BOOLEAN"),
+    ("identified_orders", "BIGINT"),
+    ("unidentified_orders", "BIGINT"),
+    ("total_orders", "BIGINT"),
 ]
 
 

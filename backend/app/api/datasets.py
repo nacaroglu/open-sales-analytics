@@ -41,6 +41,7 @@ TOP_PRODUCTS_COUNT = 10
 class AvailabilityModel(BaseModel):
     state: AvailabilityState
     reason: str | None
+    warning: dict[str, str | None] | None = None
 
 
 class CapabilityCountsModel(BaseModel):
@@ -79,6 +80,7 @@ class DatasetMetaResponse(BaseModel):
     expires_at: str
     row_count: int
     date_range: dict[str, str]
+    customer_coverage: dict
     capabilities: CapabilitiesModel
 
 
