@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { getAnalytics, getConfig, getMeta, getProductDetail, getProducts } from "./api";
+import { getAnalytics, getConfig, getMeta, getOverview, getProductDetail, getProducts } from "./api";
 import { tokenFor } from "./session";
 
 export function useMeta(datasetId: string) {
@@ -10,16 +10,21 @@ export function useMeta(datasetId: string) {
   });
 }
 
-export function useAnalytics(datasetId: string, start?: string, end?: string) {
+export function useAnalytics(datasetId: string, start?: string, end?: string, enabled = true) {
   return useQuery({
     queryKey: ["analytics", datasetId, start, end],
     queryFn: ({ signal }) => getAnalytics(datasetId, { start, end }, { signal }),
-    enabled: tokenFor(datasetId) !== null,
+    enabled: enabled && tokenFor(datasetId) !== null,
     // A range change keeps the old numbers on screen until the new ones arrive.
     placeholderData: keepPreviousData,
     // Analytics never change after the import, so a range seen once is final.
     staleTime: Infinity,
   });
+}
+
+export function useOverview(datasetId: string, start?: string, end?: string, comparison = "previous_period", enabled = true) {
+  const active = enabled && tokenFor(datasetId) !== null;
+  return useQuery({ queryKey: active ? ["overview", datasetId, start, end, comparison] : ["meta", datasetId], queryFn: ({ signal }) => getOverview(datasetId, { start, end, comparison }, { signal }), enabled: active, placeholderData: keepPreviousData, staleTime: Infinity });
 }
 
 export function useConfig() {

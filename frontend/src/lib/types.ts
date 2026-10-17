@@ -66,6 +66,12 @@ export interface Summary {
     distinct_orders: number;
   }[];
 }
+export interface Overview extends Omit<Summary, "kpis" | "trend"> {
+  comparison: Comparison;
+  kpis: { gross_sales: ComparedMoney; orders: ComparedCount; units_sold: ComparedCount; average_order_value: ComparedMoney };
+  trend: { bucket_start: string; gross_sales: string }[];
+  comparison_trend: { bucket_start: string; gross_sales: string }[] | null;
+}
 
 export interface Availability { state: AvailabilityState; reason: string | null }
 export interface ComparisonDates { start: string; end: string }

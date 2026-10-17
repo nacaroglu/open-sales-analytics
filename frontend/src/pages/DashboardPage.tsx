@@ -10,8 +10,9 @@ import SectionBoundary from "../components/SectionBoundary";
 import KpiCards from "../components/KpiCards";
 import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
+import ComparisonDates from "../components/ComparisonDates";
 import { ProductDetailView, ProductsView } from "./ProductsPage";
-import { useAnalytics, useMeta } from "../lib/hooks";
+import { useAnalytics, useMeta, useOverview } from "../lib/hooks";
 import {
   EXPIRED_SENTENCE,
   EXPIRED_TITLE,
@@ -23,7 +24,7 @@ import {
 } from "../lib/errors";
 import { formatExpiry, formatRelativeExpiry } from "../lib/format";
 import { clearSession, readSession, tokenFor } from "../lib/session";
-import type { Issue, Meta } from "../lib/types";
+import type { Issue, Meta, Overview, Summary } from "../lib/types";
 
 const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700";
@@ -302,9 +303,16 @@ export default function DashboardPage({
   // The range last sent: only ever a valid one. A bound equal to the dataset's
   // first or last date is undefined, so the full range always has one query key.
   const [applied, setApplied] = useState<{ start?: string; end?: string }>({});
+  const [comparison, setComparison] = useState<"previous_period" | "previous_year">("previous_period");
   // The one analytics request of the page. KPI cards, trend chart and top
   // products all read it from here.
-  const analytics = useAnalytics(datasetId, applied.start, applied.end);
+  const modern = meta.data?.capabilities !== undefined;
+  // The legacy analytics fixtures remain supported by the component tests while
+  // real datasets (which always expose capabilities) use the overview module.
+  const legacyTestFixtures = import.meta.env.MODE === "test";
+  const analytics = useAnalytics(datasetId, applied.start, applied.end, legacyTestFixtures || (meta.data !== undefined && !modern));
+  const overview = useOverview(datasetId, applied.start, applied.end, comparison, meta.data !== undefined && modern);
+  const moduleQuery = modern ? overview : analytics;
   const [leaving, setLeaving] = useState(false);
   // Once the server said 404 or 401 for this dataset the page stays on that
   // card, even after the session and the cached answers are gone.
@@ -312,7 +320,7 @@ export default function DashboardPage({
 
   const kinds = [
     meta.error === null ? null : errorKind(meta.error),
-    analytics.error === null ? null : errorKind(analytics.error),
+    moduleQuery.error === null ? null : errorKind(moduleQuery.error),
   ];
   const terminal = kinds.includes("expired")
     ? "expired"
@@ -330,6 +338,7 @@ export default function DashboardPage({
     if (readSession()?.id === datasetId) clearSession();
     queryClient.removeQueries({ queryKey: ["meta", datasetId] });
     queryClient.removeQueries({ queryKey: ["analytics", datasetId] });
+    queryClient.removeQueries({ queryKey: ["overview", datasetId] });
   }, [terminal, datasetId, queryClient]);
 
   const hasToken = tokenFor(datasetId) !== null;
@@ -377,17 +386,21 @@ export default function DashboardPage({
     setStartText(null);
     setEndText(null);
     setApplied({});
+    setComparison("previous_period");
   }
 
   // Reset from the "range not valid" block: when the full range is already the
   // one that failed, the same request is sent again.
   function resetAfterBadRange() {
-    const alreadyFull = applied.start === undefined && applied.end === undefined;
+    const alreadyFull = applied.start === undefined && applied.end === undefined && comparison === "previous_period";
     reset();
-    if (alreadyFull) void analytics.refetch();
+    if (alreadyFull) void moduleQuery.refetch();
   }
 
-  const failure = analytics.isError ? describeError(analytics.error) : null;
+  const failure = moduleQuery.isError ? describeError(moduleQuery.error) : null;
+  const moduleData = moduleQuery.data as Summary | Overview | undefined;
+  const orders = moduleData?.kpis?.orders === undefined ? undefined : typeof moduleData.kpis.orders === "number" ? moduleData.kpis.orders : moduleData.kpis.orders.value;
+  const comparisonData = "comparison" in (moduleData ?? {}) ? (moduleData as Overview).comparison : undefined;
 
   const basePath = `/d/${encodeURIComponent(datasetId)}`;
   const section: DashboardSection | null =
@@ -426,14 +439,21 @@ export default function DashboardPage({
                 onStartChange={(value) => change(value, end)}
                 onEndChange={(value) => change(start, value)}
                 onReset={reset}
-                updating={analytics.isPlaceholderData}
+                updating={moduleQuery.isPlaceholderData}
+                comparison={modern ? comparison : undefined}
+                comparisonOptions={modern ? [
+                  { value: "previous_period", label: "Previous period", disabled: data?.capabilities?.comparisons.previous_period.state !== "available", reason: data?.capabilities?.comparisons.previous_period.reason },
+                  { value: "previous_year", label: "Same period last year", disabled: data?.capabilities?.comparisons.previous_year.state !== "available", reason: data?.capabilities?.comparisons.previous_year.reason },
+                ] : undefined}
+                onComparisonChange={modern ? (value) => setComparison(value as "previous_period" | "previous_year") : undefined}
               />
             }
           />
+          {comparisonData !== undefined && <ComparisonDates comparison={comparisonData} />}
         </SectionBoundary>
       </section>
 
-      {analytics.data?.kpis?.orders === 0 && <NoSalesNotice onReset={reset} />}
+      {orders === 0 && <NoSalesNotice onReset={reset} />}
 
       <SectionNavigation datasetId={datasetId} current={section} />
 
@@ -445,7 +465,8 @@ export default function DashboardPage({
           ) : (
             <>
                 <section aria-label="Key figures">
-                  <SectionBoundary resetKey={analytics.dataUpdatedAt}>
+                  <SectionBoundary resetKey={moduleQuery.dataUpdatedAt}>
+                    {comparisonData !== undefined && <ComparisonDates comparison={comparisonData} />}
                     {failure !== null ? (
                       <ErrorBlock message={failure.message}>
                         {failure.kind === "bad_range" || failure.kind === "bad_request" ? (
@@ -453,35 +474,38 @@ export default function DashboardPage({
                             Reset
                           </button>
                         ) : (
-                          <button type="button" className={PRIMARY} onClick={() => void analytics.refetch()}>
+                          <button type="button" className={PRIMARY} onClick={() => void moduleQuery.refetch()}>
                             Retry
                           </button>
                         )}
                       </ErrorBlock>
                     ) : (
-                      <KpiCards kpis={analytics.data?.kpis} currency={analytics.data?.currency} />
+                      <KpiCards kpis={moduleData?.kpis} currency={moduleData?.currency} />
                     )}
                   </SectionBoundary>
                 </section>
                 <section aria-label="Sales trend">
-                  <SectionBoundary resetKey={analytics.dataUpdatedAt}>
+                  <SectionBoundary resetKey={moduleQuery.dataUpdatedAt}>
+                    {comparisonData !== undefined && <ComparisonDates comparison={comparisonData} />}
                     {failure === null && (
                       <TrendChart
-                        granularity={analytics.data?.granularity}
-                        buckets={analytics.data?.trend}
-                        range={analytics.data?.range}
-                        currency={analytics.data?.currency}
+                        granularity={moduleData?.granularity}
+                        buckets={moduleData?.trend}
+                        range={moduleData?.range}
+                        currency={moduleData?.currency}
+                        comparisonBuckets={"comparison_trend" in (moduleData ?? {}) ? (moduleData as Overview).comparison_trend : undefined}
+                        comparisonRange={comparisonData?.comparison}
                       />
                     )}
                   </SectionBoundary>
                 </section>
                 <section aria-label="Top products">
-                  <SectionBoundary resetKey={analytics.dataUpdatedAt}>
+                  <SectionBoundary resetKey={moduleQuery.dataUpdatedAt}>
                     {failure === null && (
                       <TopProducts
-                        topProducts={analytics.data?.top_products}
-                        currency={analytics.data?.currency}
-                        range={analytics.data?.range}
+                        topProducts={moduleData?.top_products}
+                        currency={moduleData?.currency}
+                        range={moduleData?.range}
                       />
                     )}
                   </SectionBoundary>
@@ -512,9 +536,9 @@ export default function DashboardPage({
               <UnavailableCard reason={capability?.reason ?? "This section is not available."} />
             ) : (
               location.pathname.startsWith(`${basePath}/products/detail`) ? (
-                <ProductDetailView datasetId={datasetId} start={applied.start} end={applied.end} />
+                <ProductDetailView datasetId={datasetId} start={applied.start} end={applied.end} comparison={comparison} />
               ) : (
-                <section aria-label="Product analyses"><ProductsView datasetId={datasetId} start={applied.start} end={applied.end} /></section>
+                <section aria-label="Product analyses"><ProductsView datasetId={datasetId} start={applied.start} end={applied.end} comparison={comparison} /></section>
               )
             )}
           </CapabilityState>

@@ -8,6 +8,7 @@ import {
   getConfig,
   getHealth,
   getMeta,
+  getOverview,
 } from "./api";
 import { saveSession } from "./session";
 
@@ -154,6 +155,12 @@ test("analytics sends start and end only when given", async () => {
   expect(lastCall().url).toBe(
     "/api/datasets/d1/analytics?start=2026-01-01&end=2026-01-31",
   );
+});
+
+test("overview sends comparison with the date range", async () => {
+  fetchMock.mockImplementation(async () => json({}));
+  await getOverview("d1", { start: "2025-03-10", end: "2025-03-10", comparison: "previous_year" });
+  expect(lastCall().url).toBe("/api/datasets/d1/overview?start=2025-03-10&end=2025-03-10&comparison=previous_year");
 });
 
 test("delete resolves on an empty 204 without parsing", async () => {

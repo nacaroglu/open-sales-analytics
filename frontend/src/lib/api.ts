@@ -1,5 +1,5 @@
 import { tokenFor } from "./session";
-import type { Created, Health, Issue, Meta, ProductDetail, ProductsResponse, PublicConfig, Summary } from "./types";
+import type { Created, Health, Issue, Meta, Overview, ProductDetail, ProductsResponse, PublicConfig, Summary } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -155,6 +155,10 @@ export function getAnalytics(
     ...options,
     datasetId: id,
   });
+}
+
+export function getOverview(id: string, range: { start?: string; end?: string; comparison?: string } = {}, options: Options = {}): Promise<Overview> {
+  return request("GET", `${datasetUrl(id)}/overview${query({ start: range.start, end: range.end, comparison: range.comparison })}`, { ...options, datasetId: id });
 }
 
 export function deleteDataset(id: string, options: Options = {}): Promise<void> {
