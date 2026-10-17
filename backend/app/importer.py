@@ -60,6 +60,36 @@ FROM ds.line_items
 GROUP BY product_id
 """
 
+_INSERT_CUSTOMER_FACTS = """
+WITH identified_orders AS (
+    SELECT DISTINCT li.customer_id,
+           of.order_id,
+           of.first_order_date,
+           of.last_order_date,
+           of.units,
+           of.gross_sales
+    FROM ds.line_items AS li
+    JOIN ds.order_facts AS of ON of.order_id = li.order_id
+    WHERE li.customer_id IS NOT NULL
+), customer_firsts AS (
+    SELECT customer_id, min(first_order_date) AS first_order_date
+    FROM identified_orders
+    GROUP BY customer_id
+)
+INSERT INTO ds.customer_facts
+SELECT orders.customer_id,
+       firsts.first_order_date,
+       CAST(date_trunc('month', firsts.first_order_date) AS DATE),
+       CAST(count(*) FILTER (WHERE orders.first_order_date = firsts.first_order_date) AS INTEGER),
+       max(orders.last_order_date),
+       CAST(count(*) AS INTEGER),
+       CAST(sum(orders.units) AS BIGINT),
+       CAST(sum(orders.gross_sales) AS DECIMAL(18,4))
+FROM identified_orders AS orders
+JOIN customer_firsts AS firsts USING (customer_id)
+GROUP BY orders.customer_id, firsts.first_order_date
+"""
+
 
 def dataset_path(settings: Settings, dataset_id: str) -> Path:
     """The dataset file for an ID; the ID must be a plain file-name stem."""
@@ -133,6 +163,7 @@ def _copy_rows(
         staging.execute(_INSERT_LINE_ITEMS)
         staging.execute(_INSERT_ORDER_FACTS)
         staging.execute(_INSERT_PRODUCT_FACTS)
+        staging.execute(_INSERT_CUSTOMER_FACTS)
         staging.execute(
             _INSERT_META,
             {

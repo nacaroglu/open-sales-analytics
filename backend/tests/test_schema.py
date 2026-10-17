@@ -28,6 +28,16 @@ DATASET_META = [
     ("unidentified_orders", "BIGINT"),
     ("total_orders", "BIGINT"),
 ]
+CUSTOMER_FACTS = [
+    ("customer_id", "VARCHAR"),
+    ("first_order_date", "DATE"),
+    ("acquisition_month", "DATE"),
+    ("first_day_orders", "INTEGER"),
+    ("last_order_date", "DATE"),
+    ("lifetime_orders", "INTEGER"),
+    ("lifetime_units", "BIGINT"),
+    ("lifetime_gross_sales", "DECIMAL(18,4)"),
+]
 
 
 @pytest.fixture
@@ -52,6 +62,7 @@ def test_creates_the_canonical_and_fact_tables(dataset_path):
     ).fetchall()
     connection.close()
     assert tables == [
+        ("customer_facts",),
         ("dataset_meta",),
         ("line_items",),
         ("order_facts",),
@@ -65,12 +76,15 @@ def test_columns_names_types_and_not_null(dataset_path):
     connection = open_dataset_readonly(dataset_path)
     line_items = columns(connection, "line_items")
     dataset_meta = columns(connection, "dataset_meta")
+    customer_facts = columns(connection, "customer_facts")
     connection.close()
 
     assert [(name, kind) for name, kind, _ in line_items] == LINE_ITEMS
     assert [(name, kind) for name, kind, _ in dataset_meta] == DATASET_META
+    assert [(name, kind) for name, kind, _ in customer_facts] == CUSTOMER_FACTS
     assert all(nullable == "NO" for *_, nullable in line_items[:-1])
     assert line_items[-1][-1] == "YES"
+    assert all(nullable == "NO" for *_, nullable in customer_facts)
 
 
 def test_unit_price_round_trips_as_exact_decimal(dataset_path):
