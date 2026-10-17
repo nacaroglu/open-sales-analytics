@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +48,19 @@ class CustomerCoverageEnvelope(BaseModel):
     range: CustomerCoverageResponse
 
 
+class ComparedCount(BaseModel):
+    value: int
+    comparison_value: int | None
+    absolute_change: int | None
+    percent_change: str | None
+    change_status: str | None
+
+
+class IdentifiedCustomersSection(BaseModel):
+    availability: AvailabilityResponse
+    value: ComparedCount
+
+
 class CustomersResponse(BaseModel):
     module: Literal["customers"]
     range: ModuleRange
@@ -55,21 +68,13 @@ class CustomersResponse(BaseModel):
     currency: str
     availability: CustomerAvailabilityResponse
     coverage: CustomerCoverageEnvelope
-    sections: dict[str, Any]
+    sections: dict[str, IdentifiedCustomersSection]
 
 
 class ComparedMoney(BaseModel):
     value: str
     comparison_value: str | None
     absolute_change: str | None
-    percent_change: str | None
-    change_status: str | None
-
-
-class ComparedCount(BaseModel):
-    value: int
-    comparison_value: int | None
-    absolute_change: int | None
     percent_change: str | None
     change_status: str | None
 

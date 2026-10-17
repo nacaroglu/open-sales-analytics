@@ -317,6 +317,16 @@ METRICS: dict[str, MetricDefinition] = {
         _ACTIVE_RANGE,
         _BASKET_INSUFFICIENT_DATA,
     ),
+    "identified_customers": MetricDefinition(
+        "identified_customers",
+        "Identified customers",
+        "count",
+        "COUNT(DISTINCT customer_id) for identified orders in the active range",
+        "COUNT(DISTINCT customer_id)",
+        None,
+        "The active reporting range, inclusive of its start and end dates.",
+        "No identified customers in range: reported as 0 with zero_result availability.",
+    ),
 }
 
 

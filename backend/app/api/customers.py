@@ -3,7 +3,10 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query
 
 from app.analytics.customers.coverage import read_customer_coverage
+from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.shared.availability import (
+    Availability,
+    AvailabilityState,
     CustomerCoverage,
     customer_availability,
     customer_coverage_tier,
@@ -12,6 +15,7 @@ from app.analytics.shared.availability import (
 from app.api.module_common import (
     cache_key,
     cached_json,
+    compared,
     comparison_body,
     dataset_expiry,
     resolve_periods,
@@ -53,6 +57,34 @@ def _availability_body(has_customer_id: bool, coverage: CustomerCoverage) -> dic
     return {"tier": tier, **availability}
 
 
+def _identified_customers_body(connection, periods) -> dict:
+    current = read_identified_customer_count(connection, periods.current.start, periods.current.end)
+    baseline = (
+        read_identified_customer_count(
+            connection,
+            periods.comparison.comparison_start,
+            periods.comparison.comparison_end,
+        )
+        if periods.comparison.available
+        else None
+    )
+    availability = (
+        Availability(AvailabilityState.AVAILABLE)
+        if current
+        else Availability(
+            AvailabilityState.ZERO_RESULT,
+            "No identified customers placed an order in the selected range.",
+        )
+    )
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "value": compared(current, baseline, as_money=False),
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -62,7 +94,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
         int(dataset_meta["total_orders"]),
     )
     range_coverage = read_customer_coverage(connection, periods.current.start, periods.current.end)
-    return {
+    body = {
         "module": "customers",
         "range": {
             "start": periods.current.start.isoformat(),
@@ -82,6 +114,10 @@ def build_customers(connection, meta: dict, periods) -> dict:
         },
         "sections": {},
     }
+    tier = customer_coverage_tier(has_customer_id, dataset_coverage)
+    if tier in {"normal", "warning"}:
+        body["sections"]["identified_customers"] = _identified_customers_body(connection, periods)
+    return body
 
 
 def _compute_customers(settings: Settings, dataset: AuthorizedDataset, periods) -> dict:

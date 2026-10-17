@@ -16,6 +16,8 @@ def test_metric_registry_is_nonempty_unique_and_contains_existing_api_kpis():
     assert keys
     assert len(keys) == len(set(keys))
     assert {"gross_sales", "orders", "units_sold", "average_order_value"} <= set(keys)
+    assert METRICS["identified_customers"].unit == "count"
+    assert METRICS["identified_customers"].denominator is None
     assert all(key == metric.key for key, metric in METRICS.items())
 
 
@@ -25,7 +27,7 @@ def test_every_metric_has_the_required_nonempty_contract_fields():
     for metric in METRICS.values():
         assert all(getattr(metric, field).strip() for field in required)
         assert metric.denominator is None or metric.denominator.strip()
-        assert metric.unit in {"money", "count", "ratio", "percent", "days"}
+        assert metric.unit in {"money", "count", "ratio", "percent", "days", "date"}
 
 
 def test_api_kpi_keys_are_documented_by_the_registry(tmp_path):
