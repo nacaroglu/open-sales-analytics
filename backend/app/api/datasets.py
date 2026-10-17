@@ -1,5 +1,4 @@
 import logging
-import re
 import shutil
 from datetime import date, datetime
 from decimal import Decimal
@@ -12,9 +11,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
-from app.analytics.kpis import read_kpis
-from app.analytics.top_products import read_top_products
-from app.analytics.trend import read_trend
+from app.analytics.overview.kpis import read_kpis
+from app.analytics.overview.trend import read_trend
+from app.analytics.products.top_products import read_top_products
+from app.analytics.shared.filters import parse_day
 from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.capacity import count_live_datasets
 from app.config import Settings, get_settings
@@ -33,7 +33,6 @@ SAMPLE_CURRENCY = "USD"
 
 _MAX_FIELD_BYTES = 256  # the only text field is a currency code
 TOP_PRODUCTS_COUNT = 10
-_DATE_FORM = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 def _invalid(message: str) -> ApiError:
@@ -387,15 +386,6 @@ def _invalid_range(message: str) -> ApiError:
     return ApiError(400, "invalid_range", message)
 
 
-def _parse_day(name: str, text: str) -> date:
-    if not _DATE_FORM.fullmatch(text):
-        raise _invalid_range(f"{name} must be a date written YYYY-MM-DD.")
-    try:
-        return date.fromisoformat(text)
-    except ValueError:
-        raise _invalid_range(f"{name} is not a real date.") from None
-
-
 @router.get("/datasets/{id}/analytics")
 def get_dataset_analytics(
     start: str | None = Query(default=None),
@@ -405,8 +395,11 @@ def get_dataset_analytics(
 ):
     first = date.fromisoformat(dataset.meta["date_range"]["min"])
     last = date.fromisoformat(dataset.meta["date_range"]["max"])
-    range_start = first if start is None else _parse_day("start", start)
-    range_end = last if end is None else _parse_day("end", end)
+    try:
+        range_start = first if start is None else parse_day("start", start)
+        range_end = last if end is None else parse_day("end", end)
+    except ValueError as exc:
+        raise _invalid_range(str(exc)) from None
     if range_start > range_end:
         raise _invalid_range("start must not be after end.")
     if range_start < first or range_end > last:
