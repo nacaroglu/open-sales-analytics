@@ -167,6 +167,19 @@ def test_duplicated_required_header(tmp_path):
     assert [(e.code, e.field) for e in result.errors] == [("duplicate_column", "quantity")]
 
 
+def test_customer_id_is_optional_and_duplicate_is_rejected(tmp_path):
+    result = check(tmp_path, f"{HEADER}, customer_id\n{ROW},CUST-1\n")
+    assert result.ok and result.warnings == []
+
+    duplicate = check(tmp_path, f"{HEADER},customer_id,customer_id\n{ROW},a,b\n")
+    assert [(e.code, e.field) for e in duplicate.errors] == [("duplicate_column", "customer_id")]
+
+
+def test_missing_customer_id_is_not_an_error(tmp_path):
+    result = check(tmp_path, f"{HEADER}\n{ROW}\n")
+    assert result.ok
+
+
 def test_each_extra_column_is_one_warning_and_not_an_error(tmp_path):
     result = check(tmp_path, f"{HEADER},notes,region\n{ROW},a,b\n")
 

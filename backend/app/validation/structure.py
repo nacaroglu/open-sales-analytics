@@ -12,6 +12,7 @@ REQUIRED_COLUMNS = (
     "quantity",
     "unit_price",
 )
+OPTIONAL_COLUMNS = ("customer_id",)
 
 
 def _megabytes(byte_count: int) -> str:
@@ -100,8 +101,17 @@ def _check_header(header: list[str], result: ValidationResult) -> None:
                     reason=f"The column '{column}' appears {counts[column]} times.",
                 )
             )
+    for column in OPTIONAL_COLUMNS:
+        if counts[column] > 1:
+            result.add_error(
+                Issue(
+                    code="duplicate_column",
+                    field=column,
+                    reason=f"The column '{column}' appears {counts[column]} times.",
+                )
+            )
     for name in header:
-        if name not in REQUIRED_COLUMNS:
+        if name not in REQUIRED_COLUMNS and name not in OPTIONAL_COLUMNS:
             result.add_warning(
                 Issue(
                     code="extra_column",

@@ -13,7 +13,10 @@ def build(path, rows):
     create_dataset(path)
     connection = duckdb.connect(str(path))
     try:
-        connection.executemany("INSERT INTO line_items VALUES (?, ?, ?, ?, ?, ?)", rows)
+        connection.executemany(
+            "INSERT INTO line_items (order_id, order_date, product_id, product_name, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?)",
+            rows,
+        )
     finally:
         connection.close()
     return open_dataset_readonly(path)

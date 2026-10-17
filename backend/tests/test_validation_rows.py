@@ -95,12 +95,38 @@ def test_staging_is_all_varchar_and_keeps_leading_zeros(tmp_path):
     )
     assert {name: kind for name, kind in types.items() if name != "row_number"} == {
         c: "VARCHAR"
-        for c in ("order_id", "order_date", "product_id", "product_name", "quantity", "unit_price")
+        for c in (
+            "order_id",
+            "order_date",
+            "product_id",
+            "product_name",
+            "quantity",
+            "unit_price",
+            "customer_id",
+        )
     }
     assert connection.execute("SELECT order_id, product_id FROM staging").fetchone() == (
         "007",
         "0042",
     )
+
+
+def test_optional_customer_id_is_trimmed_nullable_and_preserves_opaque_text(tmp_path):
+    path = tmp_path / "u.csv"
+    path.write_text(
+        "customer_id," + HEADER + "\n"
+        " 007 ,o1,2025-01-02,p1,Mug,1,9.99\n"
+        "   ,o2,2025-01-03,p2,Cup,1,4.50\n"
+        "müşteri-ü1,o3,2025-01-04,p3,Plate,1,2.00\n",
+        encoding="utf-8",
+    )
+    connection = stage_csv(path)
+    assert connection.execute("SELECT customer_id FROM staging ORDER BY row_number").fetchall() == [
+        ("007",),
+        (None,),
+        ("müşteri-ü1",),
+    ]
+    assert connection.execute("SELECT has_customer_id FROM staging_meta").fetchone() == (True,)
 
 
 def test_row_numbers_start_at_two_for_the_first_data_row(tmp_path):
