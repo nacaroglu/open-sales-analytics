@@ -1,1 +1,1 @@
-"""Shared, dependency-free analytics value objects and calculations."""
+"""Dependency-free filters, periods, buckets, availability, and metric contracts."""

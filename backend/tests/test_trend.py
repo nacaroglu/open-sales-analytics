@@ -4,9 +4,9 @@ from decimal import Decimal
 
 import duckdb
 import pytest
-from app.analytics import trend
-from app.analytics.kpis import read_kpis
-from app.analytics.trend import read_trend
+from app.analytics.overview import trend
+from app.analytics.overview.kpis import read_kpis
+from app.analytics.overview.trend import read_trend
 from app.schema import create_dataset, open_dataset_readonly
 
 
