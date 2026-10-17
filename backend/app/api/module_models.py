@@ -149,6 +149,44 @@ class ProductDetailPenetration(BaseModel):
     availability: AvailabilityResponse
 
 
+class BasketProduct(BaseModel):
+    product_id: str
+    product_name: str
+
+
+class BasketPair(BaseModel):
+    product_a: BasketProduct
+    product_b: BasketProduct
+    shared_orders: int
+    support: str
+    confidence_a_to_b: str
+    confidence_b_to_a: str
+    lift: str
+
+
+class ProductBasketResponse(BaseModel):
+    basket_orders: int
+    min_shared_orders: int
+    min_support: str
+    eligible_pair_count: int
+    availability: AvailabilityResponse
+    pairs: list[BasketPair]
+
+
+class RelatedProduct(BaseModel):
+    product: BasketProduct
+    shared_orders: int
+    support: str
+    confidence_from_x: str
+    confidence_to_x: str
+    lift: str
+
+
+class RelatedProductsResponse(BaseModel):
+    availability: AvailabilityResponse
+    related_products: list[RelatedProduct]
+
+
 class ProductsResponse(ModuleEnvelope):
     product_count: int
     availability: AvailabilityResponse
@@ -157,6 +195,7 @@ class ProductsResponse(ModuleEnvelope):
     growth: ProductGrowthResponse
     dormant: ProductDormancyResponse
     penetration: ProductPenetrationResponse
+    basket: ProductBasketResponse
 
 
 class OverviewKpis(BaseModel):
@@ -192,4 +231,5 @@ class ProductDetailResponse(ModuleEnvelope):
         description="Quantity-weighted realized average unit price by sales-trend bucket."
     )
     penetration: ProductDetailPenetration
+    related_products: RelatedProductsResponse
     availability: AvailabilityResponse

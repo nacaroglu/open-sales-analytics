@@ -144,6 +144,7 @@ def test_products_and_detail_support_zero_result_and_slash_ids(client):
     assert products.json()["share"]["availability"]["state"] == "zero_result"
     assert products.json()["growth"]["availability"]["state"] == "zero_result"
     assert products.json()["penetration"]["availability"]["state"] == "zero_result"
+    assert products.json()["basket"]["availability"]["state"] == "zero_result"
 
     detail = request(
         client,
@@ -197,6 +198,7 @@ def test_products_response_contains_three_top_ten_rankings(client):
     assert growth["products"][0]["classification"] is None
     assert response.json()["penetration"]["all_orders"] == 5
     assert response.json()["penetration"]["products"][0]["order_penetration"] == "0.600000"
+    assert response.json()["basket"]["basket_orders"] == 5
 
 
 def test_products_dormancy_uses_anchor_and_cache_option(client):
@@ -261,6 +263,7 @@ def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
         "order_penetration": "0.333333",
         "availability": {"state": "available", "reason": None},
     }
+    assert detail.json()["related_products"]["availability"]["state"] == "zero_result"
 
     malicious = "missing'/;%"
     response = request(client, "/products/detail", dataset, product_id=malicious)
@@ -348,6 +351,8 @@ def test_module_endpoints_are_documented_with_typed_responses():
     assert "price_history" in schemas["ProductDetailResponse"]["properties"]
     assert "penetration" in schemas["ProductsResponse"]["properties"]
     assert "penetration" in schemas["ProductDetailResponse"]["properties"]
+    assert "basket" in schemas["ProductsResponse"]["properties"]
+    assert "related_products" in schemas["ProductDetailResponse"]["properties"]
     description = schemas["ProductDetailResponse"]["properties"]["price_history"]["description"]
     assert "realized average unit price" in description
     assert not any(

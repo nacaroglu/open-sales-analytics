@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 
+from app.analytics.products.basket import read_product_basket
 from app.analytics.products.dormancy import read_dormant_products
 from app.analytics.products.growth import read_product_growth
 from app.analytics.products.penetration import read_product_penetration
@@ -16,7 +17,11 @@ from app.analytics.products.top_products import (
 )
 from app.analytics.shared.availability import AvailabilityState
 from app.analytics.shared.buckets import choose_granularity
-from app.analytics.shared.metrics import DORMANCY_WINDOWS
+from app.analytics.shared.metrics import (
+    BASKET_MIN_SHARED_ORDERS,
+    BASKET_MIN_SUPPORT,
+    DORMANCY_WINDOWS,
+)
 from app.api.module_common import (
     cache_key,
     cached_json,
@@ -215,6 +220,52 @@ def _detail_penetration_body(penetration: dict) -> dict:
     }
 
 
+def _fraction(value) -> str:
+    return f"{value:.6f}"
+
+
+def _basket_body(basket: dict) -> dict:
+    return {
+        "basket_orders": basket["basket_orders"],
+        "min_shared_orders": BASKET_MIN_SHARED_ORDERS,
+        "min_support": _fraction(BASKET_MIN_SUPPORT),
+        "eligible_pair_count": basket["eligible_pair_count"],
+        "availability": {
+            "state": basket["availability"].state,
+            "reason": basket["availability"].reason,
+        },
+        "pairs": [
+            {
+                **pair,
+                "support": _fraction(pair["support"]),
+                "confidence_a_to_b": _fraction(pair["confidence_a_to_b"]),
+                "confidence_b_to_a": _fraction(pair["confidence_b_to_a"]),
+                "lift": _fraction(pair["lift"]),
+            }
+            for pair in basket["pairs"]
+        ],
+    }
+
+
+def _related_products_body(basket: dict) -> dict:
+    return {
+        "availability": {
+            "state": basket["related_availability"].state,
+            "reason": basket["related_availability"].reason,
+        },
+        "related_products": [
+            {
+                **related,
+                "support": _fraction(related["support"]),
+                "confidence_from_x": _fraction(related["confidence_from_x"]),
+                "confidence_to_x": _fraction(related["confidence_to_x"]),
+                "lift": _fraction(related["lift"]),
+            }
+            for related in basket["related_products"]
+        ],
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
@@ -243,6 +294,7 @@ def get_products(
             penetration = read_product_penetration(
                 connection, periods.current.start, periods.current.end
             )
+            basket = read_product_basket(connection, periods.current.start, periods.current.end)
         finally:
             connection.close()
         body = envelope(
@@ -260,6 +312,7 @@ def get_products(
         body["growth"] = _growth_body(growth)
         body["dormant"] = _dormancy_body(dormancy)
         body["penetration"] = _penetration_body(penetration)
+        body["basket"] = _basket_body(basket)
         return body
 
     return cached_json(
@@ -348,6 +401,14 @@ def get_product_detail(
             )
             body["penetration"] = _detail_penetration_body(
                 read_product_penetration(
+                    connection,
+                    periods.current.start,
+                    periods.current.end,
+                    product_id=product_id,
+                )
+            )
+            body["related_products"] = _related_products_body(
+                read_product_basket(
                     connection,
                     periods.current.start,
                     periods.current.end,
