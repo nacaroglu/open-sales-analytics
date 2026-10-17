@@ -246,6 +246,12 @@ def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
     )
     assert detail.status_code == 200
     assert detail.json()["kpis"]["gross_sales"]["value"] == "20.0000"
+    assert detail.json()["price_history"]["granularity"] == "daily"
+    assert detail.json()["price_history"]["availability"] == {
+        "state": "available",
+        "reason": None,
+    }
+    assert detail.json()["price_history"]["buckets"][0]["weighted_unit_price"] == "20.0000"
 
     malicious = "missing'/;%"
     response = request(client, "/products/detail", dataset, product_id=malicious)
@@ -326,8 +332,13 @@ def test_module_endpoints_are_documented_with_typed_responses():
     assert "growth" in schemas["ProductsResponse"]["properties"]
     assert "dormant" in schemas["ProductsResponse"]["properties"]
     assert "dormancy_days" in {
-        parameter["name"]
-        for parameter in paths["/api/datasets/{id}/products"]["get"]["parameters"]
+        parameter["name"] for parameter in paths["/api/datasets/{id}/products"]["get"]["parameters"]
     }
     comparison = schemas["ComparisonResponse"]["properties"]["mode"]
     assert comparison["enum"] == ["previous_period", "previous_year"]
+    assert "price_history" in schemas["ProductDetailResponse"]["properties"]
+    description = schemas["ProductDetailResponse"]["properties"]["price_history"]["description"]
+    assert "realized average unit price" in description
+    assert not any(
+        word in description.lower() for word in ("elasticity", "demand", "caused", "because of")
+    )

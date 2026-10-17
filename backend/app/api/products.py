@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.analytics.products.dormancy import read_dormant_products
 from app.analytics.products.growth import read_product_growth
+from app.analytics.products.price_history import read_product_price_history
 from app.analytics.products.share import read_product_share
 from app.analytics.products.top_products import (
     read_product_count,
@@ -155,6 +156,28 @@ def _dormancy_window(value: str) -> int:
     return int(value)
 
 
+def _price_history_body(history: dict) -> dict:
+    return {
+        "granularity": history["granularity"],
+        "availability": {
+            "state": history["availability"].state,
+            "reason": history["availability"].reason,
+        },
+        "buckets": [
+            {
+                "bucket_start": bucket["bucket_start"].isoformat(),
+                "weighted_unit_price": (
+                    None
+                    if bucket["weighted_unit_price"] is None
+                    else f"{bucket['weighted_unit_price']:.4f}"
+                ),
+                "units_sold": bucket["units_sold"],
+            }
+            for bucket in history["buckets"]
+        ],
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
@@ -266,6 +289,15 @@ def get_product_detail(
             }
             body["trend"] = _trend_body(
                 read_product_trend(
+                    connection,
+                    product_id,
+                    periods.current.start,
+                    periods.current.end,
+                    granularity,
+                )
+            )
+            body["price_history"] = _price_history_body(
+                read_product_price_history(
                     connection,
                     product_id,
                     periods.current.start,
