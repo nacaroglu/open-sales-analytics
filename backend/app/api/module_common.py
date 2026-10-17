@@ -1,6 +1,9 @@
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+
+from starlette.responses import JSONResponse, Response
 
 from app.analytics.shared.filters import parse_day
 from app.analytics.shared.periods import (
@@ -10,6 +13,7 @@ from app.analytics.shared.periods import (
     resolve_reporting_range,
 )
 from app.errors import ApiError
+from app.response_cache import CacheKey, ResponseCache
 
 
 @dataclass(frozen=True)
@@ -113,3 +117,43 @@ def envelope(meta: dict, periods: ModulePeriods, granularity: str) -> dict:
         "granularity": granularity,
         "comparison": comparison_body(periods),
     }
+
+
+def cache_key(
+    dataset_id: str,
+    module: str,
+    periods: ModulePeriods,
+    options: tuple[tuple[str, str], ...] = (),
+) -> CacheKey:
+    return (
+        dataset_id,
+        module,
+        periods.current.start,
+        periods.current.end,
+        periods.comparison.mode,
+        tuple(sorted(options)),
+    )
+
+
+def dataset_expiry(meta: dict) -> datetime:
+    return datetime.fromisoformat(meta["expires_at"].replace("Z", "+00:00"))
+
+
+def cached_json(
+    cache: ResponseCache,
+    key: CacheKey,
+    now: datetime,
+    dataset_expires_at: datetime,
+    compute: Callable[[], dict],
+) -> Response:
+    cached = cache.get(key, now)
+    if cached is not None:
+        return Response(
+            content=cached,
+            status_code=200,
+            media_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
+    response = JSONResponse(compute(), headers={"Cache-Control": "no-store"})
+    cache.put(key, bytes(response.body), now, dataset_expires_at)
+    return response

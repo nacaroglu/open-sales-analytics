@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     max_rows: int = Field(500_000, gt=0, validation_alias="MAX_ROWS")
     cleanup_interval_minutes: int = Field(15, gt=0, validation_alias="CLEANUP_INTERVAL_MINUTES")
     max_datasets: int = Field(200, gt=0, validation_alias="MAX_DATASETS")
+    response_cache_max_entries: int = Field(
+        256, ge=0, validation_alias="RESPONSE_CACHE_MAX_ENTRIES"
+    )
+    response_cache_ttl_seconds: int = Field(
+        300, gt=0, validation_alias="RESPONSE_CACHE_TTL_SECONDS"
+    )
     public_demo_mode: bool = Field(False, validation_alias="PUBLIC_DEMO_MODE")
 
     @property

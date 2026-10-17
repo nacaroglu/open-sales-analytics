@@ -134,6 +134,8 @@ The server reads these environment variables when it starts. Every variable is o
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | How often the server removes expired datasets (it also does so once at startup). |
 | `PUBLIC_DEMO_MODE` | boolean | `false` | `true` turns uploads off, see [Demo mode](#demo-mode). |
 | `MAX_DATASETS` | integer > 0 | `200` | Most unexpired datasets the server holds. Creating one more (an upload or **Try sample data**) answers 503 `capacity_reached` until one expires or is deleted. |
+| `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Maximum cached Overview/Product responses in this process. `0` disables the response cache. |
+| `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Maximum lifetime of a cached Overview/Product response; dataset expiry always wins. |
 
 Booleans accept `true`/`false`, `1`/`0` and `yes`/`no` in any letter case (`on`/`off`, `t`/`f` and `y`/`n` also work).
 
