@@ -143,6 +143,7 @@ def test_products_and_detail_support_zero_result_and_slash_ids(client):
     assert products.json()["rankings"]["availability"]["state"] == "zero_result"
     assert products.json()["share"]["availability"]["state"] == "zero_result"
     assert products.json()["growth"]["availability"]["state"] == "zero_result"
+    assert products.json()["penetration"]["availability"]["state"] == "zero_result"
 
     detail = request(
         client,
@@ -194,6 +195,8 @@ def test_products_response_contains_three_top_ten_rankings(client):
         "change_status": None,
     }
     assert growth["products"][0]["classification"] is None
+    assert response.json()["penetration"]["all_orders"] == 5
+    assert response.json()["penetration"]["products"][0]["order_penetration"] == "0.600000"
 
 
 def test_products_dormancy_uses_anchor_and_cache_option(client):
@@ -252,6 +255,12 @@ def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
         "reason": None,
     }
     assert detail.json()["price_history"]["buckets"][0]["weighted_unit_price"] == "20.0000"
+    assert detail.json()["penetration"] == {
+        "orders_containing_product": 1,
+        "all_orders": 3,
+        "order_penetration": "0.333333",
+        "availability": {"state": "available", "reason": None},
+    }
 
     malicious = "missing'/;%"
     response = request(client, "/products/detail", dataset, product_id=malicious)
@@ -337,6 +346,8 @@ def test_module_endpoints_are_documented_with_typed_responses():
     comparison = schemas["ComparisonResponse"]["properties"]["mode"]
     assert comparison["enum"] == ["previous_period", "previous_year"]
     assert "price_history" in schemas["ProductDetailResponse"]["properties"]
+    assert "penetration" in schemas["ProductsResponse"]["properties"]
+    assert "penetration" in schemas["ProductDetailResponse"]["properties"]
     description = schemas["ProductDetailResponse"]["properties"]["price_history"]["description"]
     assert "realized average unit price" in description
     assert not any(

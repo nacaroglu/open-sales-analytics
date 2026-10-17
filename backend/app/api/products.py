@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.analytics.products.dormancy import read_dormant_products
 from app.analytics.products.growth import read_product_growth
+from app.analytics.products.penetration import read_product_penetration
 from app.analytics.products.price_history import read_product_price_history
 from app.analytics.products.share import read_product_share
 from app.analytics.products.top_products import (
@@ -178,6 +179,42 @@ def _price_history_body(history: dict) -> dict:
     }
 
 
+def _penetration_body(penetration: dict) -> dict:
+    return {
+        "all_orders": penetration["all_orders"],
+        "availability": {
+            "state": penetration["availability"].state,
+            "reason": penetration["availability"].reason,
+        },
+        "products": [
+            {
+                **product,
+                "order_penetration": (
+                    None
+                    if product["order_penetration"] is None
+                    else f"{product['order_penetration']:.6f}"
+                ),
+            }
+            for product in penetration["products"]
+        ],
+    }
+
+
+def _detail_penetration_body(penetration: dict) -> dict:
+    product = penetration["products"][0]
+    return {
+        "orders_containing_product": product["orders_containing_product"],
+        "all_orders": product["all_orders"],
+        "order_penetration": (
+            None if product["order_penetration"] is None else f"{product['order_penetration']:.6f}"
+        ),
+        "availability": {
+            "state": penetration["availability"].state,
+            "reason": penetration["availability"].reason,
+        },
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
@@ -203,6 +240,9 @@ def get_products(
             share = read_product_share(connection, periods.current.start, periods.current.end)
             growth = read_product_growth(connection, periods.current, periods.comparison)
             dormancy = read_dormant_products(connection, periods.current, window_days)
+            penetration = read_product_penetration(
+                connection, periods.current.start, periods.current.end
+            )
         finally:
             connection.close()
         body = envelope(
@@ -219,6 +259,7 @@ def get_products(
         body["share"] = _share_body(share)
         body["growth"] = _growth_body(growth)
         body["dormant"] = _dormancy_body(dormancy)
+        body["penetration"] = _penetration_body(penetration)
         return body
 
     return cached_json(
@@ -303,6 +344,14 @@ def get_product_detail(
                     periods.current.start,
                     periods.current.end,
                     granularity,
+                )
+            )
+            body["penetration"] = _detail_penetration_body(
+                read_product_penetration(
+                    connection,
+                    periods.current.start,
+                    periods.current.end,
+                    product_id=product_id,
                 )
             )
             body["availability"] = _availability(current["orders"] > 0)
