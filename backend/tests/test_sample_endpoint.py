@@ -69,6 +69,7 @@ def test_sample_returns_the_same_shape_as_an_upload(client):
         "expires_at",
         "row_count",
         "date_range",
+        "capabilities",
     }
 
 

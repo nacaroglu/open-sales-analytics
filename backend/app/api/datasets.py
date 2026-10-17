@@ -8,12 +8,14 @@ from typing import BinaryIO
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
+from pydantic import BaseModel
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
 from app.analytics.overview.kpis import read_kpis
 from app.analytics.overview.trend import read_trend
 from app.analytics.products.top_products import read_top_products
+from app.analytics.shared.availability import AvailabilityState
 from app.analytics.shared.filters import parse_day
 from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.capacity import count_live_datasets
@@ -33,6 +35,50 @@ SAMPLE_CURRENCY = "USD"
 
 _MAX_FIELD_BYTES = 256  # the only text field is a currency code
 TOP_PRODUCTS_COUNT = 10
+
+
+class AvailabilityModel(BaseModel):
+    state: AvailabilityState
+    reason: str | None
+
+
+class CapabilityCountsModel(BaseModel):
+    orders: int
+    products: int
+    line_items: int
+    history_days: int
+
+
+class CapabilityColumnsModel(BaseModel):
+    customer_id: bool
+
+
+class CapabilityModulesModel(BaseModel):
+    overview: AvailabilityModel
+    products: AvailabilityModel
+    customers: AvailabilityModel
+
+
+class CapabilityComparisonsModel(BaseModel):
+    previous_period: AvailabilityModel
+    previous_year: AvailabilityModel
+
+
+class CapabilitiesModel(BaseModel):
+    columns: CapabilityColumnsModel
+    counts: CapabilityCountsModel
+    modules: CapabilityModulesModel
+    comparisons: CapabilityComparisonsModel
+
+
+class DatasetMetaResponse(BaseModel):
+    id: str
+    currency: str
+    created_at: str
+    expires_at: str
+    row_count: int
+    date_range: dict[str, str]
+    capabilities: CapabilitiesModel
 
 
 def _invalid(message: str) -> ApiError:
@@ -377,7 +423,7 @@ def download_sample_csv() -> FileResponse:
     return FileResponse(SAMPLE_CSV, media_type="text/csv", filename="sample_sales.csv")
 
 
-@router.get("/datasets/{id}")
+@router.get("/datasets/{id}", response_model=DatasetMetaResponse)
 def get_dataset_meta(dataset: AuthorizedDataset = Depends(require_dataset)):
     return JSONResponse(dataset.meta, headers={"Cache-Control": "no-store"})
 
