@@ -16,7 +16,7 @@ Frontend: `frontend/src/**/<name>.test.ts` or `.test.tsx` next to the code (Vite
 
 CI (`.github/workflows/ci.yml`) runs pytest, `ruff check`, `ruff format --check`, `mypy backend/app`, and in `frontend/` `npm test`, `npm run lint`,
 `npm run typecheck`, `npm run build`, a dependency scan of both lockfiles (policy in the README; shared with a weekly scheduled run), then the browser suite on the built container.
-Baseline, measured 2026-09-30: `uv run pytest` 632 tests in about 50 s; `npm test` 308 tests in about 9 s (re-measured 2026-10-04 in #46).
+Baseline, measured after Phase 3A: `uv run pytest` 789 tests in about 60 s; `npm test` 316 tests in about 9 s. Re-measure these counts when the test suite changes materially.
 
 ## Levels (plan section 12)
 
@@ -37,6 +37,23 @@ Plan section 12 rules and their tests: validation rules `test_validation_structu
 `test_analytics_endpoint.py`; missing or invalid token `test_auth.py`, `test_delete_endpoint.py`,
 `test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
 demo mode `test_demo_mode.py`; the browser journeys `frontend/e2e/*.spec.ts` (`happy-path`, `upload`, `dashboard`, `lifecycle`).
+
+### Phase 3A metrics and their tests
+
+The matrix below is the audit index. A named cell must point to a test that exists; `n/a` is explicit only where
+the aspect does not apply to that metric. Boundary tests include both endpoints of the inclusive range.
+
+| Metric | Numerator | Denominator | Date boundaries | Empty range | Zero baseline | Comparison behaviour |
+| --- | --- | --- | --- | --- | --- | --- |
+| Rankings (gross sales, units, orders) | `test_product_rankings.py::test_rankings_return_all_values_with_independent_tie_ordering` | n/a: direct totals | `test_product_rankings.py::test_rankings_return_all_values_with_independent_tie_ordering` | `test_product_rankings.py::test_rankings_exclude_products_outside_an_empty_range` | n/a: no baseline | n/a: portfolio ranking is current-range only |
+| Share and Pareto | `test_product_share.py::test_share_and_pareto_use_exact_ordered_gross_sales` | `test_product_share.py::test_share_and_pareto_use_exact_ordered_gross_sales` | `test_product_share.py::test_share_uses_product_id_order_at_boundaries_and_exact_eighty` | `test_product_share.py::test_share_handles_zero_sales_and_empty_ranges` | n/a: no baseline | n/a: current-range analysis |
+| Growth and rising/falling | `test_product_growth.py::test_growth_uses_union_periods_and_classifies_products` | `test_product_growth.py::test_growth_uses_union_periods_and_classifies_products` | `test_product_growth.py::test_growth_uses_union_periods_and_classifies_products` | `test_product_growth.py::test_growth_supports_previous_year_and_empty_ranges` | `test_product_growth.py::test_growth_uses_union_periods_and_classifies_products` | `test_product_growth.py::test_growth_supports_previous_year_and_empty_ranges` |
+| Dormancy | `test_product_dormancy.py::test_dormancy_uses_anchor_history_and_exact_boundaries` | n/a: recency window | `test_product_dormancy.py::test_dormancy_uses_anchor_history_and_exact_boundaries` | `test_product_dormancy.py::test_dormancy_distinguishes_insufficient_history_and_zero_result` | n/a: dormancy has no baseline | n/a: dormancy has no comparison |
+| Weighted unit price | `test_product_price_history.py::test_price_history_uses_weighted_prices_and_contiguous_daily_buckets` | `test_product_price_history.py::test_price_history_uses_weighted_prices_and_contiguous_daily_buckets` | `test_product_price_history.py::test_price_history_reuses_weekly_buckets_and_range_boundaries` | `test_product_price_history.py::test_price_history_is_zero_result_when_product_has_no_lines_in_range` | n/a: price has no comparison baseline | n/a: detail history is current-range only |
+| Order penetration | `test_product_penetration.py::test_penetration_uses_distinct_in_range_orders_and_exact_fractions` | `test_product_penetration.py::test_penetration_uses_distinct_in_range_orders_and_exact_fractions` | `test_product_penetration.py::test_penetration_supports_filtered_order_population_and_product_zero` | `test_product_penetration.py::test_penetration_has_zero_result_when_no_orders_exist` | n/a: no comparison baseline | n/a: current-range analysis |
+| Basket support, confidence and lift | `test_product_basket.py::test_basket_returns_exact_thresholded_pairs_and_lift_ranking` | `test_product_basket.py::test_basket_returns_exact_thresholded_pairs_and_lift_ranking` | `test_product_basket.py::test_basket_returns_exact_thresholded_pairs_and_lift_ranking` | `test_product_basket.py::test_basket_availability_distinguishes_empty_small_and_no_pair` | n/a: no comparison baseline | n/a: current-range analysis |
+| Oversize-order exclusion | `test_product_basket.py::test_oversize_orders_are_excluded_once_and_disclosed` | `test_product_basket.py::test_oversize_orders_are_excluded_once_and_disclosed` | `test_product_basket.py::test_oversize_orders_are_excluded_once_and_disclosed` | `test_product_basket.py::test_basket_availability_distinguishes_empty_small_and_no_pair` | n/a: no comparison baseline | n/a: exclusion is current-range only |
+| Overview comparison (previous period, YoY) | `test_module_endpoints.py::test_overview_has_compared_kpis_and_same_granularity_comparison_trend` | `test_module_endpoints.py::test_overview_has_compared_kpis_and_same_granularity_comparison_trend` | `test_periods.py::test_one_day_and_dataset_edge_reporting_ranges_are_accepted` | `test_module_endpoints.py::test_overview_unavailable_comparison_keeps_current_values_and_nulls_baseline` | `test_periods.py::test_positive_current_with_zero_baseline_uses_the_requested_status` | `test_module_endpoints.py::test_overview_unavailable_comparison_keeps_current_values_and_nulls_baseline` |
 
 ## Isolation and settings
 Tests never read or write the real `DATASET_DIR` (default `./tmp_datasets`). Two patterns:
