@@ -28,6 +28,22 @@ const meta = {
   expires_at: "2026-10-01T12:00:00Z",
   row_count: 1200,
   date_range: { min: "2025-01-01", max: "2025-03-31" },
+  capabilities: {
+    columns: { customer_id: false },
+    counts: { orders: 1, products: 1, line_items: 1, history_days: 90 },
+    modules: {
+      overview: { state: "available", reason: null },
+      products: { state: "available", reason: null },
+      customers: {
+        state: "unavailable",
+        reason: "Customer analytics needs an optional customer_id column, which is not supported yet.",
+      },
+    },
+    comparisons: {
+      previous_period: { state: "available", reason: null },
+      previous_year: { state: "insufficient_data", reason: "not enough history" },
+    },
+  } as const,
 };
 
 function created(warnings: Issue[] = []): Created {
@@ -148,6 +164,17 @@ test("an unknown path goes to /", async () => {
 
   await waitFor(() => expect(where()).toBe("/|||null"));
   expect(screen.getByRole("button", { name: "Try sample data" })).toBeInTheDocument();
+});
+
+test("a dashboard section opens directly and keeps the dataset route", async () => {
+  saveSession({ id: "d1", token: "tok" });
+  renderApp("/d/d1/customers");
+
+  expect(await screen.findByRole("heading", { level: 2, name: "Customers" })).toBeInTheDocument();
+  expect(
+    await screen.findByText("Customer analytics needs an optional customer_id column, which is not supported yet."),
+  ).toBeInTheDocument();
+  expect(where()).toBe("/d/d1/customers|||null");
 });
 
 test("/d/<id> without a stored token shows the message and sends no request", () => {

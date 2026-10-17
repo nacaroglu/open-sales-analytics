@@ -9,6 +9,33 @@ export interface Meta {
   expires_at: string;
   row_count: number;
   date_range: { min: string; max: string };
+  capabilities?: Capabilities;
+}
+
+export type AvailabilityState =
+  | "available"
+  | "unavailable"
+  | "insufficient_data"
+  | "low_coverage"
+  | "zero_result";
+
+export interface CapabilityAvailability {
+  state: AvailabilityState;
+  reason: string | null;
+}
+
+export interface Capabilities {
+  columns: { customer_id: boolean };
+  counts: { orders: number; products: number; line_items: number; history_days: number };
+  modules: {
+    overview: CapabilityAvailability;
+    products: CapabilityAvailability;
+    customers: CapabilityAvailability;
+  };
+  comparisons: {
+    previous_period: CapabilityAvailability;
+    previous_year: CapabilityAvailability;
+  };
 }
 
 export interface Issue {

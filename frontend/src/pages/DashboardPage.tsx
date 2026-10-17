@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { deleteDataset } from "../lib/api";
 import DateRangeFilter, { validateRange } from "../components/DateRangeFilter";
@@ -132,6 +132,71 @@ function WarningNotice({ warnings, onDismiss }: { warnings: Issue[]; onDismiss: 
   );
 }
 
+type DashboardSection = "overview" | "customers" | "products";
+
+function SectionNavigation({ datasetId, current }: { datasetId: string; current: DashboardSection }) {
+  const base = `/d/${encodeURIComponent(datasetId)}`;
+  const links: { name: string; path: string; section: DashboardSection }[] = [
+    { name: "Overview", path: base, section: "overview" },
+    { name: "Customers", path: `${base}/customers`, section: "customers" },
+    { name: "Products", path: `${base}/products`, section: "products" },
+  ];
+  return (
+    <nav aria-label="Dashboard sections" className="flex flex-wrap gap-4 border-b border-slate-200">
+      {links.map((link) => (
+        <Link
+          key={link.section}
+          to={link.path}
+          aria-current={current === link.section ? "page" : undefined}
+          className={`${LINK} px-1 py-2 ${current === link.section ? "border-b-2 border-indigo-700 font-semibold" : "border-b-2 border-transparent"}`}
+        >
+          {link.name}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+function UnavailableCard({ reason }: { reason: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-6">
+      <p className="text-base font-semibold text-slate-900">Unavailable</p>
+      <p className="mt-1 text-sm text-slate-600">{reason}</p>
+    </div>
+  );
+}
+
+function CapabilityState({
+  data,
+  failed,
+  onRetry,
+  children,
+}: {
+  data: Meta | undefined;
+  failed: boolean;
+  onRetry: () => void;
+  children: ReactNode;
+}) {
+  if (failed) {
+    return (
+      <ErrorBlock message={LOAD_FAILED}>
+        <button type="button" className={PRIMARY} onClick={onRetry}>
+          Retry
+        </button>
+      </ErrorBlock>
+    );
+  }
+  if (data === undefined) {
+    return (
+      <div role="status" aria-busy="true" className="space-y-2">
+        <p className="text-sm text-slate-600">Loading…</p>
+        <div className="h-24 w-full animate-pulse rounded bg-slate-200 motion-reduce:animate-none" />
+      </div>
+    );
+  }
+  return children;
+}
+
 const FACTS = ["Period", "Currency", "Rows", "Expires"];
 
 // The Date range card: the facts of the dataset and the filter. It is one
@@ -226,6 +291,7 @@ export default function DashboardPage({
   onDismissSuccess?: () => void;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const meta = useMeta(datasetId);
   // What the two date inputs show; null means the dataset's first (Start) or
@@ -322,6 +388,19 @@ export default function DashboardPage({
 
   const failure = analytics.isError ? describeError(analytics.error) : null;
 
+  const basePath = `/d/${encodeURIComponent(datasetId)}`;
+  const section: DashboardSection | null =
+    location.pathname === basePath || location.pathname === `${basePath}/`
+      ? "overview"
+      : location.pathname === `${basePath}/customers`
+        ? "customers"
+        : location.pathname === `${basePath}/products`
+          ? "products"
+          : null;
+  if (section === null) return <Navigate to={basePath} replace />;
+  const capability = meta.data?.capabilities?.modules[section];
+  const unavailable = capability !== undefined && capability.state !== "available";
+
   return (
     <div className="space-y-8">
       <Header />
@@ -355,48 +434,87 @@ export default function DashboardPage({
 
       {analytics.data?.kpis?.orders === 0 && <NoSalesNotice onReset={reset} />}
 
-      <section aria-label="Key figures">
-        <SectionBoundary resetKey={analytics.dataUpdatedAt}>
-          {failure !== null ? (
-            <ErrorBlock message={failure.message}>
-              {failure.kind === "bad_range" || failure.kind === "bad_request" ? (
-                <button type="button" className={SECONDARY} onClick={resetAfterBadRange}>
-                  Reset
-                </button>
-              ) : (
-                <button type="button" className={PRIMARY} onClick={() => void analytics.refetch()}>
-                  Retry
-                </button>
-              )}
-            </ErrorBlock>
+      <SectionNavigation datasetId={datasetId} current={section} />
+
+      {section === "overview" && (
+        <section aria-label="Overview" className="space-y-8">
+          <h2 className="text-xl font-semibold text-slate-900">Overview</h2>
+          {unavailable ? (
+            <UnavailableCard reason={capability?.reason ?? "This section is not available."} />
           ) : (
-            <KpiCards kpis={analytics.data?.kpis} currency={analytics.data?.currency} />
+            <>
+                <section aria-label="Key figures">
+                  <SectionBoundary resetKey={analytics.dataUpdatedAt}>
+                    {failure !== null ? (
+                      <ErrorBlock message={failure.message}>
+                        {failure.kind === "bad_range" || failure.kind === "bad_request" ? (
+                          <button type="button" className={SECONDARY} onClick={resetAfterBadRange}>
+                            Reset
+                          </button>
+                        ) : (
+                          <button type="button" className={PRIMARY} onClick={() => void analytics.refetch()}>
+                            Retry
+                          </button>
+                        )}
+                      </ErrorBlock>
+                    ) : (
+                      <KpiCards kpis={analytics.data?.kpis} currency={analytics.data?.currency} />
+                    )}
+                  </SectionBoundary>
+                </section>
+                <section aria-label="Sales trend">
+                  <SectionBoundary resetKey={analytics.dataUpdatedAt}>
+                    {failure === null && (
+                      <TrendChart
+                        granularity={analytics.data?.granularity}
+                        buckets={analytics.data?.trend}
+                        range={analytics.data?.range}
+                        currency={analytics.data?.currency}
+                      />
+                    )}
+                  </SectionBoundary>
+                </section>
+                <section aria-label="Top products">
+                  <SectionBoundary resetKey={analytics.dataUpdatedAt}>
+                    {failure === null && (
+                      <TopProducts
+                        topProducts={analytics.data?.top_products}
+                        currency={analytics.data?.currency}
+                        range={analytics.data?.range}
+                      />
+                    )}
+                  </SectionBoundary>
+                </section>
+            </>
           )}
-        </SectionBoundary>
-      </section>
-      <section aria-label="Sales trend">
-        <SectionBoundary resetKey={analytics.dataUpdatedAt}>
-          {failure === null && (
-            <TrendChart
-              granularity={analytics.data?.granularity}
-              buckets={analytics.data?.trend}
-              range={analytics.data?.range}
-              currency={analytics.data?.currency}
-            />
-          )}
-        </SectionBoundary>
-      </section>
-      <section aria-label="Top products">
-        <SectionBoundary resetKey={analytics.dataUpdatedAt}>
-          {failure === null && (
-            <TopProducts
-              topProducts={analytics.data?.top_products}
-              currency={analytics.data?.currency}
-              range={analytics.data?.range}
-            />
-          )}
-        </SectionBoundary>
-      </section>
+        </section>
+      )}
+
+      {section === "customers" && (
+        <section aria-label="Customers" className="space-y-8">
+          <h2 className="text-xl font-semibold text-slate-900">Customers</h2>
+          <CapabilityState data={data} failed={meta.isError} onRetry={() => void meta.refetch()}>
+            {unavailable ? (
+              <UnavailableCard reason={capability?.reason ?? "This section is not available."} />
+            ) : (
+              <section aria-label="Customer analyses" />
+            )}
+          </CapabilityState>
+        </section>
+      )}
+
+      {section === "products" && (
+        <section aria-label="Products" className="space-y-8">
+          <h2 className="text-xl font-semibold text-slate-900">Products</h2>
+          <CapabilityState data={data} failed={meta.isError} onRetry={() => void meta.refetch()}>
+            {unavailable ? (
+              <UnavailableCard reason={capability?.reason ?? "This section is not available."} />
+            ) : (
+              <section aria-label="Product analyses" />
+            )}
+          </CapabilityState>
+        </section>
+      )}
     </div>
   );
 }

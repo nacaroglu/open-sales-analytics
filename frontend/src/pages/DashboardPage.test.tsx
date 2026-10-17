@@ -35,6 +35,23 @@ const meta: Meta = {
   date_range: { min: "2025-03-01", max: "2025-03-31" },
 };
 
+const capabilities: NonNullable<Meta["capabilities"]> = {
+  columns: { customer_id: false },
+  counts: { orders: 1, products: 1, line_items: 1, history_days: 31 },
+  modules: {
+    overview: { state: "available", reason: null },
+    products: { state: "available", reason: null },
+    customers: {
+      state: "unavailable",
+      reason: "Customer analytics needs an optional customer_id column, which is not supported yet.",
+    },
+  },
+  comparisons: {
+    previous_period: { state: "available", reason: null },
+    previous_year: { state: "insufficient_data", reason: "not enough history" },
+  },
+};
+
 const summary: Summary = {
   range: { start: "2025-03-01", end: "2025-03-31" },
   currency: "EUR",
@@ -70,16 +87,15 @@ function BackButton() {
 }
 
 function renderAt(path: string, warnings: Issue[] = []) {
+  const datasetId = path.split("/")[2] ?? "";
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/start", path]} initialIndex={1}>
         <BackButton />
         <Routes>
           <Route
-            path="/d/:datasetId"
-            element={
-              <DashboardPage datasetId={path.slice(3)} warnings={warnings} onDismissWarnings={dismiss} />
-            }
+            path="/d/:datasetId/*"
+            element={<DashboardPage datasetId={datasetId} warnings={warnings} onDismissWarnings={dismiss} />}
           />
           <Route path="*" element={<p>Upload screen route</p>} />
         </Routes>
@@ -87,6 +103,25 @@ function renderAt(path: string, warnings: Issue[] = []) {
     </QueryClientProvider>,
   );
 }
+
+test("section navigation opens Customers and Products while keeping the shared range state", async () => {
+  getMeta.mockResolvedValue({ ...meta, capabilities });
+  renderAt("/d/d1/customers");
+
+  expect(await screen.findByRole("heading", { level: 2, name: "Customers" })).toBeInTheDocument();
+  expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+  expect(await screen.findByText(capabilities.modules.customers.reason ?? "")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByRole("region", { name: "Product analyses" })).not.toBeInTheDocument();
+
+  const start = await screen.findByLabelText("Start date");
+  fireEvent.change(start, { target: { value: "2025-03-10" } });
+  fireEvent.click(screen.getByRole("link", { name: "Products" }));
+  expect(await screen.findByRole("heading", { level: 2, name: "Products" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Product analyses" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Start date")).toHaveValue("2025-03-10");
+  expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("aria-current", "page");
+});
 
 test("loaded state shows period as received, currency, grouped rows and local expiry", async () => {
   renderAt("/d/d1");
