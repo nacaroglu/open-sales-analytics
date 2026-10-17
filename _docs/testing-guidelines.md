@@ -36,7 +36,7 @@ Plan section 12 rules and their tests: validation rules `test_validation_structu
 "rejected upload leaves nothing" `test_upload_endpoint.py`; filtered analytics
 `test_analytics_endpoint.py`; missing or invalid token `test_auth.py`, `test_delete_endpoint.py`,
 `test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
-demo mode `test_demo_mode.py`; the browser journeys `frontend/e2e/*.spec.ts` (`happy-path`, `upload`, `dashboard`, `lifecycle`).
+demo mode `test_demo_mode.py`; the browser journeys `frontend/e2e/*.spec.ts` (`happy-path`, `upload`, `dashboard`, `products`, `lifecycle`).
 
 ### Phase 3A metrics and their tests
 
