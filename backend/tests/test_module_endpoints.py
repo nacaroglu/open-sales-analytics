@@ -140,6 +140,7 @@ def test_products_and_detail_support_zero_result_and_slash_ids(client):
     assert products.status_code == 200
     assert products.json()["product_count"] == 0
     assert products.json()["availability"]["state"] == "zero_result"
+    assert products.json()["rankings"]["availability"]["state"] == "zero_result"
 
     detail = request(
         client,
@@ -156,6 +157,20 @@ def test_products_and_detail_support_zero_result_and_slash_ids(client):
     assert body["kpis"]["gross_sales"]["value"] == "0.0000"
     assert body["kpis"]["gross_sales"]["change_status"] == "no_change"
     assert all(bucket["gross_sales"] == "0.0000" for bucket in body["trend"])
+
+
+def test_products_response_contains_three_top_ten_rankings(client):
+    dataset = create(client)
+    response = request(client, "/products", dataset, start="2025-01-01", end="2025-01-14")
+
+    assert response.status_code == 200
+    rankings = response.json()["rankings"]
+    assert rankings["availability"] == {"state": "available", "reason": None}
+    assert [row["product_id"] for row in rankings["by_gross_sales"]] == ["p/one", "p-two"]
+    assert [row["product_id"] for row in rankings["by_units_sold"]] == ["p-two", "p/one"]
+    assert [row["product_id"] for row in rankings["by_orders"]] == ["p-two", "p/one"]
+    assert rankings["by_gross_sales"][0]["gross_sales"] == "40.0000"
+    assert isinstance(rankings["by_gross_sales"][0]["units_sold"], int)
 
 
 def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
@@ -245,5 +260,6 @@ def test_module_endpoints_are_documented_with_typed_responses():
     assert "OverviewResponse" in schemas
     assert "ProductsResponse" in schemas
     assert "ProductDetailResponse" in schemas
+    assert "rankings" in schemas["ProductsResponse"]["properties"]
     comparison = schemas["ComparisonResponse"]["properties"]["mode"]
     assert comparison["enum"] == ["previous_period", "previous_year"]

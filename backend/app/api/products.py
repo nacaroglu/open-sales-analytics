@@ -6,6 +6,7 @@ from app.analytics.products.top_products import (
     read_product_count,
     read_product_identity,
     read_product_kpis,
+    read_product_rankings,
     read_product_trend,
 )
 from app.analytics.shared.availability import AvailabilityState
@@ -54,6 +55,13 @@ def _trend_body(rows: list[dict]) -> list[dict[str, str]]:
     ]
 
 
+def _ranking_body(rankings: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    return {
+        name: [{**row, "gross_sales": f"{row['gross_sales']:.4f}"} for row in rows]
+        for name, rows in rankings.items()
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
@@ -73,6 +81,7 @@ def get_products(
             product_count = read_product_count(
                 connection, periods.current.start, periods.current.end
             )
+            rankings = read_product_rankings(connection, periods.current.start, periods.current.end)
         finally:
             connection.close()
         body = envelope(
@@ -82,6 +91,10 @@ def get_products(
         )
         body["product_count"] = product_count
         body["availability"] = _availability(product_count > 0)
+        body["rankings"] = {
+            "availability": _availability(product_count > 0),
+            **_ranking_body(rankings),
+        }
         return body
 
     return cached_json(

@@ -51,6 +51,27 @@ class ModuleEnvelope(BaseModel):
     comparison: ComparisonResponse
 
 
+class RankingProduct(BaseModel):
+    product_id: str
+    product_name: str
+    gross_sales: str
+    units_sold: int
+    distinct_orders: int
+
+
+class ProductRankingsResponse(BaseModel):
+    availability: AvailabilityResponse
+    by_gross_sales: list[RankingProduct]
+    by_units_sold: list[RankingProduct]
+    by_orders: list[RankingProduct]
+
+
+class ProductsResponse(ModuleEnvelope):
+    product_count: int
+    availability: AvailabilityResponse
+    rankings: ProductRankingsResponse
+
+
 class OverviewKpis(BaseModel):
     gross_sales: ComparedMoney
     orders: ComparedCount
@@ -63,11 +84,6 @@ class OverviewResponse(ModuleEnvelope):
     trend: list[dict[str, str]]
     comparison_trend: list[dict[str, str]] | None
     top_products: list[dict[str, str | int]]
-
-
-class ProductsResponse(ModuleEnvelope):
-    product_count: int
-    availability: AvailabilityResponse
 
 
 class ProductResponse(BaseModel):

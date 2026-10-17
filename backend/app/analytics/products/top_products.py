@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import duckdb
 
-_TOP_PRODUCTS_SQL = """
+_PRODUCT_TOTALS_SQL = """
 SELECT product_id,
        min(product_name),
        sum(quantity * unit_price) AS gross_sales,
@@ -12,9 +12,49 @@ SELECT product_id,
 FROM line_items
 WHERE order_date BETWEEN ? AND ?
 GROUP BY product_id
+"""
+
+_TOP_PRODUCTS_SQL = (
+    _PRODUCT_TOTALS_SQL
+    + """
 ORDER BY gross_sales DESC, product_id ASC
 LIMIT ?
 """
+)
+
+
+def _product_totals(rows) -> list[dict]:
+    return [
+        {
+            "product_id": product_id,
+            "product_name": product_name,
+            "gross_sales": Decimal(gross_sales),
+            "units_sold": int(units_sold),
+            "distinct_orders": int(distinct_orders),
+        }
+        for product_id, product_name, gross_sales, units_sold, distinct_orders in rows
+    ]
+
+
+def read_product_rankings(
+    connection: duckdb.DuckDBPyConnection, start: date, end: date, n: int = 10
+) -> dict[str, list[dict]]:
+    """Return the top products independently ranked by sales, units and orders."""
+    if n < 1:
+        raise ValueError("n must be at least 1")
+    rows = connection.execute(_PRODUCT_TOTALS_SQL, [start, end]).fetchall()
+    products = _product_totals(rows)
+    return {
+        "by_gross_sales": sorted(
+            products, key=lambda row: (-row["gross_sales"], row["product_id"])
+        )[:n],
+        "by_units_sold": sorted(products, key=lambda row: (-row["units_sold"], row["product_id"]))[
+            :n
+        ],
+        "by_orders": sorted(products, key=lambda row: (-row["distinct_orders"], row["product_id"]))[
+            :n
+        ],
+    }
 
 
 def read_top_products(
@@ -33,16 +73,7 @@ def read_top_products(
     if n < 1:
         raise ValueError("n must be at least 1")
     rows = connection.execute(_TOP_PRODUCTS_SQL, [start, end, n]).fetchall()
-    return [
-        {
-            "product_id": product_id,
-            "product_name": product_name,
-            "gross_sales": Decimal(gross_sales),
-            "units_sold": int(units_sold),
-            "distinct_orders": int(distinct_orders),
-        }
-        for product_id, product_name, gross_sales, units_sold, distinct_orders in rows
-    ]
+    return _product_totals(rows)
 
 
 def read_product_count(connection: duckdb.DuckDBPyConnection, start: date, end: date) -> int:
