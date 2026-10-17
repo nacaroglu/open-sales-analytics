@@ -57,6 +57,11 @@ const COLUMNS: { name: string; type: string; rule: string }[] = [
     type: "Decimal",
     rule: "Required and non-negative. A zero price is accepted with a warning; a negative price is invalid.",
   },
+  {
+    name: "customer_id",
+    type: "String",
+    rule: "Optional. Blank is allowed; use a hashed identifier, UUID or non-personal internal key (never an email, phone number or name).",
+  },
 ];
 
 const FOCUS =
@@ -187,7 +192,7 @@ export default function UploadPage({
         <h2 className="text-xl font-semibold text-slate-900">File format</h2>
         <p className="text-sm text-slate-600">
           One row is one product line within one completed order. The file must
-          have these six columns.
+          have these six required columns plus one optional column.
         </p>
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="w-full text-left">

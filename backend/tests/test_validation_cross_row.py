@@ -6,6 +6,7 @@ from app.validation import MAX_REPORTED_ERRORS, stage_csv, validate_rows
 FIXTURES = Path(__file__).parent / "fixtures" / "cross_row"
 TODAY = date(2025, 6, 1)
 HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"
+CUSTOMER_HEADER = HEADER + ",customer_id"
 
 
 def run(path):
@@ -19,6 +20,12 @@ def run(path):
 def run_rows(tmp_path, *rows):
     path = tmp_path / "upload.csv"
     path.write_text(HEADER + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    return run(path)
+
+
+def run_customer_rows(tmp_path, *rows):
+    path = tmp_path / "customer-upload.csv"
+    path.write_text(CUSTOMER_HEADER + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
     return run(path)
 
 
@@ -240,3 +247,104 @@ def test_cross_row_errors_are_never_counted_twice(tmp_path):
     result = run_rows(tmp_path, line("o1", "p1"), line("o1", "p1", name="Other"))
 
     assert result.error_count == len(result.errors) == 2
+
+
+# --- conflicting_customer_id -----------------------------------------------
+
+
+def customer_line(order, product, customer="", name="Mug"):
+    return f"{order},2025-01-02,{product},{name},1,9.99,{customer}"
+
+
+def test_customer_fill_and_all_blank_orders_are_valid(tmp_path):
+    result = run(FIXTURES / "clean_customer_fill.csv")
+
+    assert result.errors == []
+
+
+def test_all_blank_customer_ids_remain_unidentified(tmp_path):
+    result = run_customer_rows(
+        tmp_path,
+        customer_line("D", "p1"),
+        customer_line("D", "p2", "   "),
+    )
+
+    assert result.errors == []
+
+
+def test_customer_ids_conflict_once_per_order_on_first_differing_row(tmp_path):
+    result = run(FIXTURES / "conflicting_customer_id.csv")
+
+    assert summary(result) == [(3, "customer_id", "conflicting_customer_id")]
+    assert result.errors[0].reason == "Order 'B-1' has 2 different customer IDs."
+    assert "SECRET-X" not in result.errors[0].reason
+    assert "SECRET-Y" not in result.errors[0].reason
+
+
+def test_three_customer_ids_are_one_error_and_report_the_count(tmp_path):
+    result = run_customer_rows(
+        tmp_path,
+        customer_line("B", "p1", "C1"),
+        customer_line("B", "p2", "C2"),
+        customer_line("B", "p3", "C3"),
+    )
+
+    assert summary(result) == [(3, "customer_id", "conflicting_customer_id")]
+    assert "3 different customer IDs" in result.errors[0].reason
+
+
+def test_customer_ids_trim_but_remain_case_sensitive(tmp_path):
+    trimmed = run_customer_rows(
+        tmp_path,
+        customer_line("A", "p1", "C1"),
+        customer_line("A", "p2", " C1 "),
+    )
+    cased = run_customer_rows(
+        tmp_path,
+        customer_line("B", "p1", "C1"),
+        customer_line("B", "p2", "c1"),
+    )
+
+    assert trimmed.errors == []
+    assert summary(cased) == [(3, "customer_id", "conflicting_customer_id")]
+
+
+def test_one_customer_id_can_be_shared_by_different_orders(tmp_path):
+    result = run_customer_rows(
+        tmp_path,
+        customer_line("A", "p1", "C1"),
+        customer_line("B", "p2", "C1"),
+    )
+
+    assert result.errors == []
+
+
+def test_customer_conflicts_merge_with_other_errors_in_row_order(tmp_path):
+    result = run_customer_rows(
+        tmp_path,
+        customer_line("A", "p1", "C1"),
+        customer_line("B", "p2", "C1", name="Cup"),
+        customer_line("B", "p3", "C2", name="Plate"),
+        customer_line("C", "p4", "C3", name="Hat").replace(",1,9.99,C3", ",0,9.99,C3"),
+    )
+
+    assert [(e.row_number, e.code) for e in result.errors] == [
+        (4, "conflicting_customer_id"),
+        (5, "invalid_quantity"),
+    ]
+
+
+def test_customer_conflict_error_count_is_true_and_list_is_capped(tmp_path):
+    rows = []
+    for number in range(150):
+        rows.extend(
+            [
+                customer_line(f"o{number}", f"p{number}a", "C1"),
+                customer_line(f"o{number}", f"p{number}b", "C2"),
+            ]
+        )
+
+    result = run_customer_rows(tmp_path, *rows)
+
+    assert result.error_count == 150
+    assert len(result.errors) == MAX_REPORTED_ERRORS

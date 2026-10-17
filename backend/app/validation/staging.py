@@ -6,7 +6,7 @@ from pathlib import Path
 
 import duckdb
 
-from app.validation.structure import REQUIRED_COLUMNS
+from app.validation.structure import OPTIONAL_COLUMNS, REQUIRED_COLUMNS
 
 # A value that cannot occur in the normalised temp file, so DuckDB never turns
 # an empty string into NULL.
@@ -19,8 +19,11 @@ def stage_csv(path: str | os.PathLike[str]) -> duckdb.DuckDBPyConnection:
     Two tables are created:
 
     * ``staging`` - one row per data record, every column ``VARCHAR`` (nothing
-      is inferred, so ``007`` stays ``007``) plus ``row_number``. Only the six
-      required columns are read; values are trimmed of surrounding whitespace.
+      is inferred, so ``007`` stays ``007``) plus ``row_number``. The six
+      required columns and optional ``customer_id`` are read; values are
+      trimmed of surrounding whitespace and blank values become SQL ``NULL``.
+    * ``staging_meta`` - one row recording whether the input header contained
+      the optional ``customer_id`` column.
     * ``staging_malformed`` - ``row_number, field_count, header_field_count``
       for records whose field count differs from the header's. They cannot be
       mapped to columns, so they are not in ``staging``.
@@ -41,17 +44,19 @@ def stage_csv(path: str | os.PathLike[str]) -> duckdb.DuckDBPyConnection:
     try:
         rows_file = workdir / "rows.csv"
         bad_file = workdir / "malformed.csv"
-        _normalise(path, rows_file, bad_file)
+        has_customer_id = _normalise(path, rows_file, bad_file)
 
         connection = duckdb.connect(":memory:")
         connection.execute(_STAGING_SQL, [str(rows_file)])
         connection.execute(_MALFORMED_SQL, [str(bad_file)])
+        connection.execute("CREATE TABLE staging_meta (has_customer_id BOOLEAN NOT NULL)")
+        connection.execute("INSERT INTO staging_meta VALUES (?)", [has_customer_id])
         return connection
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-def _normalise(path: Path, rows_file: Path, bad_file: Path) -> None:
+def _normalise(path: Path, rows_file: Path, bad_file: Path) -> bool:
     with (
         open(path, encoding="utf-8-sig", newline="") as source,
         open(rows_file, "w", encoding="utf-8", newline="") as rows_out,
@@ -62,6 +67,7 @@ def _normalise(path: Path, rows_file: Path, bad_file: Path) -> None:
 
         header: list[str] | None = None
         indexes: list[int] = []
+        has_customer_id = False
         record_number = 0
         for record in csv.reader(source):
             if header is None:
@@ -69,6 +75,7 @@ def _normalise(path: Path, rows_file: Path, bad_file: Path) -> None:
                     continue  # blank lines before the header do not count
                 header = [name.strip() for name in record]
                 indexes = _column_indexes(header)
+                has_customer_id = "customer_id" in header
                 record_number = 1
                 continue
             record_number += 1
@@ -77,15 +84,26 @@ def _normalise(path: Path, rows_file: Path, bad_file: Path) -> None:
             if len(record) != len(header):
                 bad.writerow([record_number, len(record), len(header)])
                 continue
-            rows.writerow([record_number, *(record[i].strip() for i in indexes)])
+            values = []
+            for column, index in zip((*REQUIRED_COLUMNS, *OPTIONAL_COLUMNS), indexes, strict=True):
+                if index == -1:
+                    values.append(_NULL_SENTINEL)
+                    continue
+                value = record[index].strip()
+                values.append(_NULL_SENTINEL if column == "customer_id" and value == "" else value)
+            rows.writerow([record_number, *values])
 
     if header is None:
         raise ValueError("the file has no header row")
+    return has_customer_id
 
 
 def _column_indexes(header: list[str]) -> list[int]:
     indexes = []
-    for column in REQUIRED_COLUMNS:
+    for column in (*REQUIRED_COLUMNS, *OPTIONAL_COLUMNS):
+        if column == "customer_id" and header.count(column) == 0:
+            indexes.append(-1)
+            continue
         if header.count(column) != 1:
             raise ValueError(
                 f"column {column!r} must appear exactly once; run validate_structure first"
@@ -103,9 +121,11 @@ def _read_csv(columns: str) -> str:
 
 _STAGING_SQL = (
     "CREATE TABLE staging AS SELECT CAST(row_number AS BIGINT) AS row_number, "
-    + ", ".join(REQUIRED_COLUMNS)
+    + ", ".join((*REQUIRED_COLUMNS, *OPTIONAL_COLUMNS))
     + " FROM "
-    + _read_csv(", ".join(f"'{c}': 'VARCHAR'" for c in ("row_number", *REQUIRED_COLUMNS)))
+    + _read_csv(
+        ", ".join(f"'{c}': 'VARCHAR'" for c in ("row_number", *REQUIRED_COLUMNS, *OPTIONAL_COLUMNS))
+    )
 )
 
 _MALFORMED_SQL = (

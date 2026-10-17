@@ -14,15 +14,25 @@ SELECT order_id,
        product_id,
        product_name,
        CAST(quantity AS INTEGER),
-       CAST(unit_price AS DECIMAL(18,4))
+       CAST(unit_price AS DECIMAL(18,4)),
+       max(customer_id) OVER (PARTITION BY order_id)
 FROM staging
 ORDER BY row_number
 """
 
 _INSERT_META = """
+WITH order_coverage AS (
+    SELECT order_id, bool_or(customer_id IS NOT NULL) AS identified
+    FROM ds.line_items
+    GROUP BY order_id
+)
 INSERT INTO ds.dataset_meta
-SELECT $id, $currency, $created_at, $expires_at, $token_hash, count(*)
-FROM ds.line_items
+SELECT $id, $currency, $created_at, $expires_at, $token_hash,
+       (SELECT count(*) FROM ds.line_items), $has_customer_id,
+       count(*) FILTER (WHERE identified),
+       count(*) FILTER (WHERE NOT identified),
+       count(*)
+FROM order_coverage
 """
 
 _INSERT_ORDER_FACTS = """
@@ -48,6 +58,36 @@ SELECT product_id,
        CAST(count(DISTINCT order_id) AS BIGINT)
 FROM ds.line_items
 GROUP BY product_id
+"""
+
+_INSERT_CUSTOMER_FACTS = """
+WITH identified_orders AS (
+    SELECT DISTINCT li.customer_id,
+           of.order_id,
+           of.first_order_date,
+           of.last_order_date,
+           of.units,
+           of.gross_sales
+    FROM ds.line_items AS li
+    JOIN ds.order_facts AS of ON of.order_id = li.order_id
+    WHERE li.customer_id IS NOT NULL
+), customer_firsts AS (
+    SELECT customer_id, min(first_order_date) AS first_order_date
+    FROM identified_orders
+    GROUP BY customer_id
+)
+INSERT INTO ds.customer_facts
+SELECT orders.customer_id,
+       firsts.first_order_date,
+       CAST(date_trunc('month', firsts.first_order_date) AS DATE),
+       CAST(count(*) FILTER (WHERE orders.first_order_date = firsts.first_order_date) AS INTEGER),
+       max(orders.last_order_date),
+       CAST(count(*) AS INTEGER),
+       CAST(sum(orders.units) AS BIGINT),
+       CAST(sum(orders.gross_sales) AS DECIMAL(18,4))
+FROM identified_orders AS orders
+JOIN customer_firsts AS firsts USING (customer_id)
+GROUP BY orders.customer_id, firsts.first_order_date
 """
 
 
@@ -92,6 +132,8 @@ def import_dataset(
         working = target.with_name(f".{target.name}.importing")
         try:
             create_dataset(working)
+            customer_flag = staging.execute("SELECT has_customer_id FROM staging_meta").fetchone()
+            assert customer_flag is not None
             _copy_rows(
                 staging,
                 working,
@@ -100,6 +142,7 @@ def import_dataset(
                 token_hash,
                 created_at,
                 created_at + settings.dataset_ttl,
+                bool(customer_flag[0]),
             )
             working.rename(target)
         except BaseException:
@@ -111,13 +154,16 @@ def import_dataset(
         Path(csv_path).unlink(missing_ok=True)
 
 
-def _copy_rows(staging, working, dataset_id, currency, token_hash, created_at, expires_at) -> None:
+def _copy_rows(
+    staging, working, dataset_id, currency, token_hash, created_at, expires_at, has_customer_id
+) -> None:
     staging.execute(f"ATTACH '{_quote(working)}' AS ds")
     try:
         staging.execute("BEGIN")
         staging.execute(_INSERT_LINE_ITEMS)
         staging.execute(_INSERT_ORDER_FACTS)
         staging.execute(_INSERT_PRODUCT_FACTS)
+        staging.execute(_INSERT_CUSTOMER_FACTS)
         staging.execute(
             _INSERT_META,
             {
@@ -126,6 +172,7 @@ def _copy_rows(staging, working, dataset_id, currency, token_hash, created_at, e
                 "created_at": created_at,
                 "expires_at": expires_at,
                 "token_hash": token_hash,
+                "has_customer_id": has_customer_id,
             },
         )
         staging.execute("COMMIT")

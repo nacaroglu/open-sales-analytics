@@ -1,0 +1,3 @@
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+B-1,2025-01-02,p1,Mug,1,9.99,SECRET-X
+B-1,2025-01-02,p2,Cup,1,4.50,SECRET-Y

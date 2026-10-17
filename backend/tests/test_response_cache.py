@@ -89,7 +89,7 @@ def test_sweep_invalidates_entries_for_deleted_datasets(tmp_path):
     create_dataset(path)
     connection = duckdb.connect(str(path))
     connection.execute(
-        "INSERT INTO dataset_meta VALUES (?, 'USD', ?, ?, 'hash', 1)",
+        "INSERT INTO dataset_meta (id, currency, created_at, expires_at, token_hash, row_count) VALUES (?, 'USD', ?, ?, 'hash', 1)",
         [dataset_id, NOW - timedelta(hours=2), NOW - timedelta(hours=1)],
     )
     connection.close()
