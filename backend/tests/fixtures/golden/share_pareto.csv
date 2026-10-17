@@ -1,0 +1,6 @@
+order_id,order_date,product_id,product_name,quantity,unit_price
+o1,2025-01-01,p1,A,1,50.00
+o2,2025-01-01,p2,B,1,20.00
+o3,2025-01-01,p3,C,1,15.00
+o4,2025-01-01,p4,D,1,10.00
+o5,2025-01-01,p5,E,1,5.00

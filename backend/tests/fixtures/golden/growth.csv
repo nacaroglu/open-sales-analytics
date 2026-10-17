@@ -1,0 +1,7 @@
+order_id,order_date,product_id,product_name,quantity,unit_price
+o1,2025-01-01,p1,Rising,1,10.00
+o2,2025-01-02,p1,Rising,1,20.00
+o3,2025-01-01,p2,Falling,1,20.00
+o4,2025-01-02,p2,Falling,1,10.00
+o5,2025-01-01,p3,Unchanged,1,10.00
+o6,2025-01-02,p3,Unchanged,1,10.00
