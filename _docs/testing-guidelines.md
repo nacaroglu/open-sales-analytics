@@ -16,7 +16,7 @@ Frontend: `frontend/src/**/<name>.test.ts` or `.test.tsx` next to the code (Vite
 
 CI (`.github/workflows/ci.yml`) runs pytest, `ruff check`, `ruff format --check`, `mypy backend/app`, and in `frontend/` `npm test`, `npm run lint`,
 `npm run typecheck`, `npm run build`, a dependency scan of both lockfiles (policy in the README; shared with a weekly scheduled run), then the browser suite on the built container.
-Baseline, measured after Phase 3A: `uv run pytest` 789 tests in about 60 s; `npm test` 316 tests in about 9 s. Re-measure these counts when the test suite changes materially.
+Baseline, measured after Phase 3A: `uv run pytest` 790 tests in about 90 s; `npm test` 320 tests in about 10 s. Re-measure these counts when the test suite changes materially.
 
 ## Levels (plan section 12)
 
