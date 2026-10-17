@@ -67,6 +67,28 @@ export interface Summary {
   }[];
 }
 
+export interface Availability { state: AvailabilityState; reason: string | null }
+export interface ComparisonDates { start: string; end: string }
+export interface Comparison { mode: "previous_period" | "previous_year"; current: ComparisonDates; comparison: ComparisonDates; state: AvailabilityState; reason: string | null }
+export interface ComparedMoney { value: string; comparison_value: string | null; absolute_change: string | null; percent_change: string | null; change_status: string | null }
+export interface ComparedCount { value: number; comparison_value: number | null; absolute_change: number | null; percent_change: string | null; change_status: string | null }
+export interface ProductRow { product_id: string; product_name: string; gross_sales: string; units_sold: number; distinct_orders: number }
+export interface ProductsResponse {
+  range: { start: string; end: string }; currency: string; granularity: Granularity; comparison: Comparison; product_count: number; availability: Availability;
+  rankings: { availability: Availability; by_gross_sales: ProductRow[]; by_units_sold: ProductRow[]; by_orders: ProductRow[] };
+  share: { products: { product_id: string; product_name: string; gross_sales: string; gross_sales_share: string | null; cumulative_share: string | null }[]; product_count: number; total_gross_sales: string; top_20_percent_product_count: number | null; top_20_percent_share: string | null; products_to_80_percent: number | null; availability: Availability };
+  growth: { availability: Availability; products: GrowthProduct[]; rising: GrowthProduct[]; falling: GrowthProduct[] };
+  dormant: { window_days: number; anchor_date: string; availability: Availability; products: DormantProduct[] };
+  penetration: { all_orders: number; availability: Availability; products: PenetrationProduct[] };
+  basket: BasketResponse;
+}
+export interface GrowthProduct { product_id: string; product_name: string; gross_sales: ComparedMoney; units_sold: ComparedCount; orders: ComparedCount; classification: "new" | "no_current_sales" | "rising" | "falling" | "unchanged" | null }
+export interface DormantProduct { product_id: string; product_name: string; last_sale_date: string; days_inactive: number; earlier_gross_sales: string; earlier_orders: number }
+export interface PenetrationProduct { product_id: string; product_name: string; orders_containing_product: number; all_orders: number; order_penetration: string | null }
+export interface BasketPair { product_a: { product_id: string; product_name: string }; product_b: { product_id: string; product_name: string }; shared_orders: number; support: string; confidence_a_to_b: string; confidence_b_to_a: string; lift: string }
+export interface BasketResponse { basket_orders: number; excluded_oversize_orders: number; max_distinct_products_per_order: number; min_shared_orders: number; min_support: string; eligible_pair_count: number; availability: Availability; pairs: BasketPair[] }
+export interface ProductDetail { range: { start: string; end: string }; currency: string; granularity: Granularity; comparison: Comparison; product: { product_id: string; product_name: string }; kpis: { gross_sales: ComparedMoney; units_sold: ComparedCount; orders: ComparedCount }; trend: { bucket_start: string; gross_sales: string }[]; price_history: { granularity: Granularity; availability: Availability; buckets: { bucket_start: string; weighted_unit_price: string | null; units_sold: number }[] }; penetration: { orders_containing_product: number; all_orders: number; order_penetration: string | null; availability: Availability }; related_products: { excluded_oversize_orders: number; availability: Availability; related_products: { product: { product_id: string; product_name: string }; shared_orders: number; support: string; confidence_from_x: string; confidence_to_x: string; lift: string }[] }; availability: Availability }
+
 export interface Created {
   dataset_id: string;
   token: string;

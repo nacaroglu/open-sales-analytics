@@ -10,6 +10,7 @@ import SectionBoundary from "../components/SectionBoundary";
 import KpiCards from "../components/KpiCards";
 import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
+import { ProductDetailView, ProductsView } from "./ProductsPage";
 import { useAnalytics, useMeta } from "../lib/hooks";
 import {
   EXPIRED_SENTENCE,
@@ -394,7 +395,7 @@ export default function DashboardPage({
       ? "overview"
       : location.pathname === `${basePath}/customers`
         ? "customers"
-        : location.pathname === `${basePath}/products`
+      : location.pathname === `${basePath}/products` || location.pathname.startsWith(`${basePath}/products/detail`)
           ? "products"
           : null;
   if (section === null) return <Navigate to={basePath} replace />;
@@ -510,7 +511,11 @@ export default function DashboardPage({
             {unavailable ? (
               <UnavailableCard reason={capability?.reason ?? "This section is not available."} />
             ) : (
-              <section aria-label="Product analyses" />
+              location.pathname.startsWith(`${basePath}/products/detail`) ? (
+                <ProductDetailView datasetId={datasetId} start={applied.start} end={applied.end} />
+              ) : (
+                <section aria-label="Product analyses"><ProductsView datasetId={datasetId} start={applied.start} end={applied.end} /></section>
+              )
             )}
           </CapabilityState>
         </section>

@@ -3,6 +3,7 @@ import { ApiError } from "./api";
 // The one place that turns a thrown value into what the user is told. Pages
 // and components never look at a status code or a server `code` themselves.
 export type ErrorKind =
+  | "product_not_found"
   | "expired" // 404: the dataset expired or was deleted
   | "unauthorized" // 401: the browser session has no valid token
   | "bad_range" // 400 from analytics: the range was refused
@@ -35,6 +36,7 @@ export const UPLOAD_DISABLED_HINT = "You can still use Try sample data.";
 
 export function errorKind(error: unknown): ErrorKind {
   if (!(error instanceof ApiError)) return "failed";
+  if (error.status === 404 && error.code === "product_not_found") return "product_not_found";
   if (error.status === 404) return "expired";
   if (error.status === 401) return "unauthorized";
   if (error.status === 400) return error.code === "invalid_request" ? "bad_request" : "bad_range";
