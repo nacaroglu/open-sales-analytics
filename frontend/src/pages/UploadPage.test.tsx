@@ -101,6 +101,8 @@ test("first render explains the tool, the schema and the limits", async () => {
   for (const name of ["order_id", "order_date", "product_id", "product_name", "quantity", "unit_price"]) {
     expect(screen.getByText(name)).toBeInTheDocument();
   }
+  expect(screen.getByText("customer_id")).toBeInTheDocument();
+  expect(screen.getByText(/Optional\. Blank is allowed/)).toBeInTheDocument();
   expect(screen.getByText(/50 MB and 500,000 rows/)).toBeInTheDocument();
   expect(screen.getByText(/whole file is rejected/)).toBeInTheDocument();
   expect(screen.getByText(/Extra columns are ignored/)).toBeInTheDocument();
