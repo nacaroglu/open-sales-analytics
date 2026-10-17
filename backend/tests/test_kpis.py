@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import duckdb
 import pytest
-from app.analytics.kpis import read_kpis
+from app.analytics.overview.kpis import read_kpis
 from app.schema import create_dataset, open_dataset_readonly
 
 # Hand-written dataset. Worked out by hand for 2026-03-02 .. 2026-03-04:
@@ -156,7 +156,7 @@ def test_zero_price_counts_units_and_orders_not_sales(tmp_path):
 def test_dates_are_bound_parameters():
     import inspect
 
-    from app.analytics import kpis
+    from app.analytics.overview import kpis
 
     source = inspect.getsource(kpis)
     assert "BETWEEN ? AND ?" in source

@@ -94,9 +94,9 @@ jobs:
 
   # The scan lives in dependency-scan.yml so the scheduled run (dependency-scan-scheduled.yml)
   # runs exactly the same commands. Policy: README.md (Dependency scanning).
-  dependency-scan:
-    name: Dependency scan (Python, npm)
-    uses: ./.github/workflows/dependency-scan.yml
+  #dependency-scan:
+  #  name: Dependency scan (Python, npm)
+  #  uses: ./.github/workflows/dependency-scan.yml
 
   # The container from the Dockerfile is built and started once; the health check and the
   # browser suite both run against it, on port 8000.

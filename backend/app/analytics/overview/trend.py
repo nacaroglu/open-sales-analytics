@@ -1,10 +1,9 @@
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import duckdb
 
-DAILY_MAX_DAYS = 90
-WEEKLY_MAX_DAYS = 730
+from app.analytics.shared.buckets import _bucket_start, _next_bucket, choose_granularity
 
 _ZERO_MONEY = Decimal("0.0000")
 _DAILY_SQL = """
@@ -13,37 +12,6 @@ FROM line_items
 WHERE order_date BETWEEN ? AND ?
 GROUP BY order_date
 """
-
-
-def choose_granularity(start: date, end: date) -> str:
-    """``daily`` up to 90 days, ``weekly`` up to 730, else ``monthly``.
-
-    The span counts both ends: one date to itself is 1 day.
-    """
-    days = (end - start).days + 1
-    if days <= DAILY_MAX_DAYS:
-        return "daily"
-    if days <= WEEKLY_MAX_DAYS:
-        return "weekly"
-    return "monthly"
-
-
-def _bucket_start(day: date, granularity: str) -> date:
-    if granularity == "daily":
-        return day
-    if granularity == "weekly":
-        return day - timedelta(days=day.weekday())
-    return day.replace(day=1)
-
-
-def _next_bucket(bucket: date, granularity: str) -> date:
-    if granularity == "daily":
-        return bucket + timedelta(days=1)
-    if granularity == "weekly":
-        return bucket + timedelta(days=7)
-    if bucket.month == 12:
-        return date(bucket.year + 1, 1, 1)
-    return date(bucket.year, bucket.month + 1, 1)
 
 
 def read_trend(connection: duckdb.DuckDBPyConnection, start: date, end: date) -> dict:
