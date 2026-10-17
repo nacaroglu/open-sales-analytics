@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 
+from app.analytics.products.share import read_product_share
 from app.analytics.products.top_products import (
     read_product_count,
     read_product_identity,
@@ -62,6 +63,32 @@ def _ranking_body(rankings: dict[str, list[dict]]) -> dict[str, list[dict]]:
     }
 
 
+def _share_body(share: dict) -> dict:
+    def fraction(value):
+        return None if value is None else f"{value:.6f}"
+
+    return {
+        "products": [
+            {
+                **row,
+                "gross_sales": f"{row['gross_sales']:.4f}",
+                "gross_sales_share": fraction(row["gross_sales_share"]),
+                "cumulative_share": fraction(row["cumulative_share"]),
+            }
+            for row in share["products"]
+        ],
+        "product_count": share["product_count"],
+        "total_gross_sales": f"{share['total_gross_sales']:.4f}",
+        "top_20_percent_product_count": share["top_20_percent_product_count"],
+        "top_20_percent_share": fraction(share["top_20_percent_share"]),
+        "products_to_80_percent": share["products_to_80_percent"],
+        "availability": {
+            "state": share["availability"].state,
+            "reason": share["availability"].reason,
+        },
+    }
+
+
 @router.get("/datasets/{id}/products", response_model=ProductsResponse)
 def get_products(
     start: str | None = Query(default=None),
@@ -82,6 +109,7 @@ def get_products(
                 connection, periods.current.start, periods.current.end
             )
             rankings = read_product_rankings(connection, periods.current.start, periods.current.end)
+            share = read_product_share(connection, periods.current.start, periods.current.end)
         finally:
             connection.close()
         body = envelope(
@@ -95,6 +123,7 @@ def get_products(
             "availability": _availability(product_count > 0),
             **_ranking_body(rankings),
         }
+        body["share"] = _share_body(share)
         return body
 
     return cached_json(

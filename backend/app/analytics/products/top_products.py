@@ -36,14 +36,21 @@ def _product_totals(rows) -> list[dict]:
     ]
 
 
+def read_product_totals(
+    connection: duckdb.DuckDBPyConnection, start: date, end: date
+) -> list[dict]:
+    """Return every product aggregate for the inclusive reporting range."""
+    rows = connection.execute(_PRODUCT_TOTALS_SQL, [start, end]).fetchall()
+    return _product_totals(rows)
+
+
 def read_product_rankings(
     connection: duckdb.DuckDBPyConnection, start: date, end: date, n: int = 10
 ) -> dict[str, list[dict]]:
     """Return the top products independently ranked by sales, units and orders."""
     if n < 1:
         raise ValueError("n must be at least 1")
-    rows = connection.execute(_PRODUCT_TOTALS_SQL, [start, end]).fetchall()
-    products = _product_totals(rows)
+    products = read_product_totals(connection, start, end)
     return {
         "by_gross_sales": sorted(
             products, key=lambda row: (-row["gross_sales"], row["product_id"])
