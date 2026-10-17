@@ -117,6 +117,32 @@ FROM (
 ) AS conflict
 """
 
+# One error per order: on the first row whose customer ID differs from the
+# first non-blank ID seen for that order, without exposing any ID values.
+_CONFLICTING_CUSTOMER_SQL = f"""
+SELECT conflict.row_number, 7 AS position, 'customer_id' AS field,
+       'conflicting_customer_id' AS code,
+       'Order ' || {_shown("conflict.order_id")} || ' has ' || conflict.customer_count
+       || ' different customer IDs.' AS reason
+FROM (
+    SELECT s.order_id,
+           min(s.row_number) AS row_number,
+           any_value(customers.customer_count) AS customer_count
+    FROM staging AS s
+    JOIN (
+        SELECT order_id,
+               arg_min(customer_id, row_number) AS first_customer_id,
+               count(DISTINCT customer_id) AS customer_count
+        FROM staging
+        WHERE order_id <> '' AND customer_id IS NOT NULL
+        GROUP BY order_id
+        HAVING count(DISTINCT customer_id) > 1
+    ) AS customers ON s.order_id = customers.order_id
+    WHERE s.customer_id IS NOT NULL AND s.customer_id <> customers.first_customer_id
+    GROUP BY s.order_id
+) AS conflict
+"""
+
 _MALFORMED_ROW_SQL = """
 SELECT row_number, 0 AS position, NULL AS field, 'malformed_row' AS code,
        'The row has ' || field_count || ' values but the header has ' || header_field_count
@@ -126,7 +152,12 @@ FROM staging_malformed
 
 _ISSUES_SQL = "CREATE OR REPLACE TEMP TABLE row_issues AS " + " UNION ALL ".join(
     [_select(*check) for check in _CHECKS]
-    + [_MALFORMED_ROW_SQL, _DUPLICATE_LINE_SQL, _CONFLICTING_NAME_SQL]
+    + [
+        _MALFORMED_ROW_SQL,
+        _DUPLICATE_LINE_SQL,
+        _CONFLICTING_NAME_SQL,
+        _CONFLICTING_CUSTOMER_SQL,
+    ]
 )
 
 _ZERO_PRICE_SQL = (

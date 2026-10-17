@@ -36,7 +36,7 @@ def test_api_kpi_keys_are_documented_by_the_registry(tmp_path):
     writer = duckdb.connect(str(path))
     try:
         writer.execute(
-            "INSERT INTO line_items VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO line_items (order_id, order_date, product_id, product_name, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?)",
             ["order-1", date(2025, 1, 1), "product-1", "Product", 1, "2.00"],
         )
     finally:

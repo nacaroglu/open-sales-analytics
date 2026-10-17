@@ -194,8 +194,8 @@ example, `MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` exits with `
 
 ## Dataset contract
 
-One row is one product line within one completed order. The file must have these six columns (the same table is on the
-upload screen):
+One row is one product line within one completed order. The file must have these six required columns plus one optional
+column (the same table is on the upload screen):
 
 | Column | Type | Rule |
 | --- | --- | --- |
@@ -205,14 +205,17 @@ upload screen):
 | `product_name` | String | Required and non-empty. One `product_id` must map to exactly one name within an upload. |
 | `quantity` | Integer | Required and greater than zero. Zero and negative quantities are invalid. |
 | `unit_price` | Decimal | Required and non-negative. A zero price is accepted with a warning; a negative price is invalid. |
+| `customer_id` | String | Optional. Blank allowed; up to 128 characters by default; use a hashed identifier, UUID or non-personal internal key. Never an email address, phone number, name or other direct identifier. |
 
 File-level rules:
 
 - UTF-8, comma-separated, one header row. The header is row 1 in error reports, so the first data row is row 2.
-- Column names are matched after trimming spaces. Order does not matter. A column that is not one of the six is
+- Column names are matched after trimming spaces. Order does not matter. A column that is not one of the six required columns or `customer_id` is
   ignored, with a warning (`extra_column`).
 - `(order_id, product_id)` is unique: the same product appears at most once per order.
 - One name per `product_id` in the whole file.
+- Within each order, blank `customer_id` values are filled from its one non-blank ID; conflicting IDs reject the
+  upload, while orders with all blanks remain unidentified.
 - One currency per upload, chosen in the upload form (see [Currencies](#currencies)).
 - Any invalid row rejects the whole file. Nothing is stored.
 - At most 50 MB and 500,000 rows by default (the `MAX_UPLOAD_BYTES` and `MAX_ROWS` variables).
@@ -228,6 +231,14 @@ order_id,order_date,product_id,product_name,quantity,unit_price
 A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
 A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
 A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
+```
+
+An optional `customer_id` can be included; blank cells are allowed:
+
+```csv
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
+A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
 ```
 
 With the app running on port 8000, import it through the API:
@@ -274,6 +285,7 @@ The report lists the first 100 errors and gives the total count (`error_count`).
 | `malformed_row` | The row has a different number of values than the header. |
 | `duplicate_line` | The same `order_id` and `product_id` appear on an earlier row. |
 | `conflicting_product_name` | One `product_id` has more than one `product_name`. |
+| `conflicting_customer_id` | One order has more than one non-blank `customer_id`. |
 
 A request can also fail before the file is read: a currency that is not in the list answers `400 invalid_request`.
 
@@ -283,7 +295,7 @@ Warnings do not reject the file. They come back in the `warnings` list of the `2
 
 | Code | Meaning |
 | --- | --- |
-| `extra_column` | The file has a column that is not one of the six, for example a `note` column. It is ignored and not stored. |
+| `extra_column` | The file has a column that is not one of the six required columns or `customer_id`, for example a `note` column. It is ignored and not stored. |
 | `zero_price` | One or more lines have a unit price of 0. They are imported and count as orders and units, with no gross sales. |
 
 ### Sample data
@@ -316,8 +328,11 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 ## Privacy
 
 - The raw CSV is deleted as soon as the import ends, on success and on failure.
-- Only the six columns are stored, in one DuckDB file per dataset under `DATASET_DIR`, with private permissions
+- Only the six required columns and optional `customer_id` are stored, in one DuckDB file per dataset under `DATASET_DIR`, with private permissions
   (`0600` for the file, `0700` for the directories).
+- Customer IDs are pseudonymous data, not anonymous data. They are kept for the dataset's 24-hour lifetime. Use a hashed
+  identifier, UUID or non-personal internal key; never upload a direct identifier such as an email address, phone number
+  or name.
 - A dataset is deleted after `DATASET_TTL_HOURS` (24 by default) by a cleanup at startup and then every
   `CLEANUP_INTERVAL_MINUTES`, or at once when you click **Analyze another file**.
 - Access needs a random bearer token. The browser keeps it in `sessionStorage`, so it is gone when the tab closes.
