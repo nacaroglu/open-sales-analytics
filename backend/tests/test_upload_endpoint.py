@@ -184,6 +184,42 @@ def test_cross_row_errors_are_returned(client):
     assert [e["code"] for e in error["errors"]] == ["duplicate_line"]
 
 
+def test_customer_conflict_rejects_upload_without_creating_a_dataset(client, data_dir):
+    content = csv_text(
+        "B-1,2025-01-02,p1,Mug,1,1,SECRET-X",
+        "B-1,2025-01-02,p2,Cup,1,1,SECRET-Y",
+        header=HEADER + ",customer_id",
+    )
+
+    response = upload(client, content)
+
+    assert response.status_code == 422
+    error = error_of(response)
+    assert error["code"] == "validation_failed"
+    assert [(e["code"], e["field"], e["row_number"]) for e in error["errors"]] == [
+        ("conflicting_customer_id", "customer_id", 3)
+    ]
+    assert error["errors"][0]["reason"] == "Order 'B-1' has 2 different customer IDs."
+    assert "SECRET-X" not in response.text and "SECRET-Y" not in response.text
+    assert_clean(data_dir)
+
+
+def test_customer_conflicts_are_capped_but_error_count_is_true(client):
+    rows = []
+    for number in range(150):
+        rows.extend(
+            [
+                f"o{number},2025-01-02,p{number}a,Mug,1,1,C1",
+                f"o{number},2025-01-02,p{number}b,Cup,1,1,C2",
+            ]
+        )
+
+    error = error_of(upload(client, csv_text(*rows, header=HEADER + ",customer_id")))
+
+    assert len(error["errors"]) == 100
+    assert error["error_count"] == 150
+
+
 def test_errors_are_capped_but_error_count_is_true(client, settings):
     rows = [f"o{i},2025-01-02,p{i},Item,0,1" for i in range(150)]
 

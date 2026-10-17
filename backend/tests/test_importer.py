@@ -158,6 +158,26 @@ def test_customer_id_is_case_sensitive_and_unicode_round_trips(uploads, settings
     connection.close()
 
 
+def test_customer_id_blanks_are_filled_during_canonical_import(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1,C1",
+        "o1,2025-01-02,p2,Cup,1,1,",
+        "o1,2025-01-02,p3,Plate,1,1, C1 ",
+        "o2,2025-01-02,p4,Hat,1,1,",
+        header=HEADER + ",customer_id",
+    )
+
+    connection = open_dataset_readonly(target)
+    rows = connection.execute(
+        "SELECT order_id, customer_id FROM line_items ORDER BY order_id, product_id"
+    ).fetchall()
+    connection.close()
+
+    assert rows == [("o1", "C1"), ("o1", "C1"), ("o1", "C1"), ("o2", None)]
+
+
 def test_dataset_meta_has_one_row_with_the_expected_values(uploads, settings):
     _, target = run_import(
         uploads,

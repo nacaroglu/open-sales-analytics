@@ -169,6 +169,8 @@ File-level rules:
   ignored, with a warning (`extra_column`).
 - `(order_id, product_id)` is unique: the same product appears at most once per order.
 - One name per `product_id` in the whole file.
+- Within each order, blank `customer_id` values are filled from its one non-blank ID; conflicting IDs reject the
+  upload, while orders with all blanks remain unidentified.
 - One currency per upload, chosen in the upload form (see [Currencies](#currencies)).
 - Any invalid row rejects the whole file. Nothing is stored.
 - At most 50 MB and 500,000 rows by default (the `MAX_UPLOAD_BYTES` and `MAX_ROWS` variables).
@@ -238,6 +240,7 @@ The report lists the first 100 errors and gives the total count (`error_count`).
 | `malformed_row` | The row has a different number of values than the header. |
 | `duplicate_line` | The same `order_id` and `product_id` appear on an earlier row. |
 | `conflicting_product_name` | One `product_id` has more than one `product_name`. |
+| `conflicting_customer_id` | One order has more than one non-blank `customer_id`. |
 
 A request can also fail before the file is read: a currency that is not in the list answers `400 invalid_request`.
 
