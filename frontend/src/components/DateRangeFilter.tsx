@@ -70,6 +70,9 @@ export default function DateRangeFilter({
   onEndChange,
   onReset,
   updating,
+  comparison,
+  comparisonOptions,
+  onComparisonChange,
 }: {
   min: string | undefined;
   max: string | undefined;
@@ -79,6 +82,9 @@ export default function DateRangeFilter({
   onEndChange: (value: string) => void;
   onReset: () => void;
   updating: boolean;
+  comparison?: string;
+  comparisonOptions?: { value: string; label: string; disabled?: boolean; reason?: string | null }[];
+  onComparisonChange?: (value: string) => void;
 }) {
   const id = useId();
   const errors =
@@ -134,6 +140,15 @@ export default function DateRangeFilter({
         />
         {errors.end !== null && <FieldError id={endErrorId} message={errors.end} />}
       </div>
+      {comparison !== undefined && comparisonOptions !== undefined && onComparisonChange !== undefined && (
+        <div className="w-52">
+          <label htmlFor={`${id}-comparison`} className="block text-sm font-medium">Compare with</label>
+          <select id={`${id}-comparison`} className={INPUT} value={comparison} onChange={(event) => onComparisonChange(event.target.value)} aria-describedby={`${id}-comparison-help`}>
+            {comparisonOptions.map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}{option.disabled ? " (unavailable)" : ""}</option>)}
+          </select>
+          <p id={`${id}-comparison-help`} className="text-sm text-slate-600">{comparisonOptions.filter((option) => option.disabled && option.reason).map((option) => option.reason).join(" ")}</p>
+        </div>
+      )}
       <button type="button" className={SECONDARY} disabled={disabled || atFullRange} onClick={onReset}>
         Reset
       </button>
