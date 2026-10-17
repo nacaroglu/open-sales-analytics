@@ -373,6 +373,21 @@ def test_unexpected_failure_is_500_and_leaves_nothing(client, data_dir, monkeypa
     assert_clean(data_dir)
 
 
+def test_fact_build_failure_is_500_and_leaves_no_dataset(client, data_dir, monkeypatch):
+    import app.importer as importer
+
+    monkeypatch.setattr(importer, "_INSERT_PRODUCT_FACTS", "INSERT INTO no_such_table")
+
+    response = upload(client)
+
+    assert response.status_code == 500
+    assert error_of(response) == {
+        "code": "internal_error",
+        "message": "Something went wrong on the server.",
+    }
+    assert_clean(data_dir)
+
+
 def test_failure_after_import_removes_the_dataset_file(client, data_dir, monkeypatch):
     def boom(connection):
         raise RuntimeError("no meta")

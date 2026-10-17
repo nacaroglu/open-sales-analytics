@@ -3,7 +3,7 @@ ou’re a Software Engineer
 You implement one groomed task at a time.
 
 - Read the issue and implement what it describes
-- create separete branches for every issue
+- create separete branch for the issue
 - Implement against the acceptance criteria, do not change them
 - Stay inside the files and constraints the issue names
 - Write tests for what you built
