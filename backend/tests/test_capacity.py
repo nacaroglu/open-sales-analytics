@@ -39,7 +39,7 @@ def make_dataset(settings, expires_at, with_meta=True):
     if with_meta:
         connection = duckdb.connect(str(path))
         connection.execute(
-            "INSERT INTO dataset_meta VALUES (?, 'EUR', ?, ?, 'hash', 1)",
+            "INSERT INTO dataset_meta (id, currency, created_at, expires_at, token_hash, row_count) VALUES (?, 'EUR', ?, ?, 'hash', 1)",
             [dataset_id, NOW - timedelta(hours=1), expires_at],
         )
         connection.close()

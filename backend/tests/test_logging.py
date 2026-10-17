@@ -188,6 +188,15 @@ def test_created_dataset_id_is_logged_for_upload_and_sample(client, log):
     assert lines[1]["dataset_id"] == sample.json()["dataset_id"]
 
 
+def test_successful_upload_does_not_log_customer_id(client, log):
+    marker = "CUSTMARKER-123"
+    response = upload(
+        client, HEADER + ",customer_id\no1,2025-01-02,p1,Mug,2,19.99," + marker + "\n"
+    )
+    assert response.status_code == 201
+    assert marker not in log.read()
+
+
 def test_dataset_id_is_null_for_a_failed_upload(client, log):
     assert upload(client, good_csv(), currency="XXX").status_code == 400
     assert upload(client, HEADER + "\no1,2025-01-02,p1,Mug,abc,19.99\n").status_code == 422
