@@ -18,7 +18,7 @@ Rules
 - Do not skip step 2
 - The engineer does not close the issue
 - QA does not fix the code, only outputs PASS or FAIL
-- The orchestrator will create PR the issue only after QA outputs PASS
+- The orchestrator will create Pull Request the issue only after QA outputs PASS
 - Never directly merge in to main branch
 
 -------------------------------------------------------------------------
@@ -32,3 +32,4 @@ Roles
 - PM - grooms a task before anyone implements it, follows _docs/team/pm.md
 - Engineer - implements one groomed task, follows _docs/team/software-engineer.md
 - QA - checks the result against the acceptance criteria, follows _docs/team/qa-engineer.md
+- DONOT commit in to main branch directly work on issue based branch

@@ -25,6 +25,31 @@ SELECT $id, $currency, $created_at, $expires_at, $token_hash, count(*)
 FROM ds.line_items
 """
 
+_INSERT_ORDER_FACTS = """
+INSERT INTO ds.order_facts
+SELECT order_id,
+       min(order_date),
+       max(order_date),
+       CAST(count(*) AS INTEGER),
+       CAST(sum(quantity) AS BIGINT),
+       CAST(sum(quantity * unit_price) AS DECIMAL(38,4))
+FROM ds.line_items
+GROUP BY order_id
+"""
+
+_INSERT_PRODUCT_FACTS = """
+INSERT INTO ds.product_facts
+SELECT product_id,
+       min(product_name),
+       min(order_date),
+       max(order_date),
+       CAST(sum(quantity * unit_price) AS DECIMAL(38,4)),
+       CAST(sum(quantity) AS BIGINT),
+       CAST(count(DISTINCT order_id) AS BIGINT)
+FROM ds.line_items
+GROUP BY product_id
+"""
+
 
 def dataset_path(settings: Settings, dataset_id: str) -> Path:
     """The dataset file for an ID; the ID must be a plain file-name stem."""
@@ -91,6 +116,8 @@ def _copy_rows(staging, working, dataset_id, currency, token_hash, created_at, e
     try:
         staging.execute("BEGIN")
         staging.execute(_INSERT_LINE_ITEMS)
+        staging.execute(_INSERT_ORDER_FACTS)
+        staging.execute(_INSERT_PRODUCT_FACTS)
         staging.execute(
             _INSERT_META,
             {

@@ -73,6 +73,47 @@ def test_order_and_product_counts(rows):
     assert 25 <= len({r["product_id"] for r in rows}) <= 50
 
 
+def test_sample_import_builds_reconciled_fact_tables(tmp_path, rows):
+    from app.config import Settings
+    from app.importer import import_dataset
+    from app.schema import open_dataset_readonly
+    from app.validation import stage_csv
+
+    csv_path = tmp_path / "sample.csv"
+    csv_path.write_bytes(COMMITTED.read_bytes())
+    settings = Settings(DATASET_DIR=tmp_path / "data")
+    target = import_dataset(
+        stage_csv(csv_path),
+        csv_path,
+        "sample-facts",
+        "USD",
+        "a" * 64,
+        settings,
+    )
+    connection = open_dataset_readonly(target)
+    try:
+        assert connection.execute("SELECT count(*) FROM order_facts").fetchone() == (
+            len({row["order_id"] for row in rows}),
+        )
+        assert connection.execute("SELECT count(*) FROM product_facts").fetchone() == (
+            len({row["product_id"] for row in rows}),
+        )
+        assert (
+            connection.execute(
+                "SELECT (SELECT sum(units) FROM order_facts), "
+                "(SELECT sum(quantity) FROM line_items), "
+                "(SELECT sum(lifetime_gross_sales) FROM product_facts), "
+                "(SELECT sum(quantity * unit_price) FROM line_items)"
+            ).fetchone()
+            == connection.execute(
+                "SELECT sum(quantity), sum(quantity), sum(quantity * unit_price), "
+                "sum(quantity * unit_price) FROM line_items"
+            ).fetchone()
+        )
+    finally:
+        connection.close()
+
+
 def test_dates_are_iso_within_2025_and_cover_every_month(rows):
     dates = []
     for r in rows:

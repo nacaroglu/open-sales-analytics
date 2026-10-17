@@ -14,6 +14,29 @@ CREATE TABLE IF NOT EXISTS line_items (
 )
 """
 
+ORDER_FACTS_DDL = """
+CREATE TABLE IF NOT EXISTS order_facts (
+    order_id         VARCHAR       NOT NULL,
+    first_order_date DATE          NOT NULL,
+    last_order_date  DATE          NOT NULL,
+    line_count       INTEGER       NOT NULL,
+    units            BIGINT        NOT NULL,
+    gross_sales      DECIMAL(38,4) NOT NULL
+)
+"""
+
+PRODUCT_FACTS_DDL = """
+CREATE TABLE IF NOT EXISTS product_facts (
+    product_id           VARCHAR       NOT NULL,
+    product_name         VARCHAR       NOT NULL,
+    first_sale_date      DATE          NOT NULL,
+    last_sale_date       DATE          NOT NULL,
+    lifetime_gross_sales DECIMAL(38,4) NOT NULL,
+    lifetime_units       BIGINT        NOT NULL,
+    lifetime_orders      BIGINT        NOT NULL
+)
+"""
+
 DATASET_META_DDL = """
 CREATE TABLE IF NOT EXISTS dataset_meta (
     id         VARCHAR     NOT NULL,
@@ -41,6 +64,8 @@ def create_dataset(path: str | os.PathLike[str]) -> None:
     connection = duckdb.connect(str(path))
     try:
         connection.execute(LINE_ITEMS_DDL)
+        connection.execute(ORDER_FACTS_DDL)
+        connection.execute(PRODUCT_FACTS_DDL)
         connection.execute(DATASET_META_DDL)
     finally:
         connection.close()
