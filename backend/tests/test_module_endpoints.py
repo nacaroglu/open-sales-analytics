@@ -142,6 +142,7 @@ def test_products_and_detail_support_zero_result_and_slash_ids(client):
     assert products.json()["availability"]["state"] == "zero_result"
     assert products.json()["rankings"]["availability"]["state"] == "zero_result"
     assert products.json()["share"]["availability"]["state"] == "zero_result"
+    assert products.json()["growth"]["availability"]["state"] == "zero_result"
 
     detail = request(
         client,
@@ -181,6 +182,18 @@ def test_products_response_contains_three_top_ten_rankings(client):
     assert share["products_to_80_percent"] == 2
     assert share["products"][0]["gross_sales_share"] == "0.727273"
     assert share["products"][-1]["cumulative_share"] == "1.000000"
+
+    growth = response.json()["growth"]
+    assert growth["availability"] == {"state": "available", "reason": None}
+    assert [row["product_id"] for row in growth["products"]] == ["p-two", "p/one"]
+    assert growth["products"][0]["gross_sales"] == {
+        "value": "15.0000",
+        "comparison_value": None,
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+    assert growth["products"][0]["classification"] is None
 
 
 def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
@@ -272,5 +285,6 @@ def test_module_endpoints_are_documented_with_typed_responses():
     assert "ProductDetailResponse" in schemas
     assert "rankings" in schemas["ProductsResponse"]["properties"]
     assert "share" in schemas["ProductsResponse"]["properties"]
+    assert "growth" in schemas["ProductsResponse"]["properties"]
     comparison = schemas["ComparisonResponse"]["properties"]["mode"]
     assert comparison["enum"] == ["previous_period", "previous_year"]
