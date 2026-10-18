@@ -67,16 +67,6 @@ class IdentifiedCustomersSection(BaseModel):
     value: ComparedCount
 
 
-class CustomersResponse(BaseModel):
-    module: Literal["customers"]
-    range: ModuleRange
-    comparison: ComparisonResponse
-    currency: str
-    availability: CustomerAvailabilityResponse
-    coverage: CustomerCoverageEnvelope
-    sections: dict[str, IdentifiedCustomersSection]
-
-
 class ComparedMoney(BaseModel):
     value: str = Field(description="Current gross-sales or money value in the active range.")
     comparison_value: str | None = Field(
@@ -89,6 +79,36 @@ class ComparedMoney(BaseModel):
     change_status: str | None = Field(
         description="Comparison status such as comparable, no_prior_value, or no_change."
     )
+
+
+class NewVsReturningSection(BaseModel):
+    availability: AvailabilityResponse
+    new_customer_gross_sales: ComparedMoney = Field(
+        description="Identified gross sales on each customer's full-history first purchase date."
+    )
+    returning_customer_gross_sales: ComparedMoney = Field(
+        description="Identified gross sales dated after each customer's first purchase date."
+    )
+    identified_gross_sales: ComparedMoney = Field(
+        description="New plus returning customer gross sales; unidentified rows are excluded."
+    )
+
+
+class CustomerSections(BaseModel):
+    """Customer analytics sections; absent sections are omitted from the JSON."""
+
+    identified_customers: IdentifiedCustomersSection | None = None
+    new_vs_returning: NewVsReturningSection | None = None
+
+
+class CustomersResponse(BaseModel):
+    module: Literal["customers"]
+    range: ModuleRange
+    comparison: ComparisonResponse
+    currency: str
+    availability: CustomerAvailabilityResponse
+    coverage: CustomerCoverageEnvelope
+    sections: CustomerSections
 
 
 class ModuleEnvelope(BaseModel):

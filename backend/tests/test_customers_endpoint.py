@@ -99,11 +99,24 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
             "change_status": None,
         },
     }
+    unavailable_comparison = {
+        "comparison_value": None,
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+    assert body["sections"]["new_vs_returning"] == {
+        "availability": {"state": "available", "reason": None},
+        "new_customer_gross_sales": {"value": "3.0000", **unavailable_comparison},
+        "returning_customer_gross_sales": {"value": "0.0000", **unavailable_comparison},
+        "identified_gross_sales": {"value": "3.0000", **unavailable_comparison},
+    }
+    markers = ("CUSTMARKER-0001", "CUSTMARKER-0002", "CUSTMARKER-0004")
     body_text = response.text
-    assert all(marker not in body_text for marker in ("CUSTMARKER-0001", "CUSTMARKER-0002"))
+    assert all(marker not in body_text for marker in markers)
     captured = capsys.readouterr()
     log_text = captured.out + captured.err
-    assert all(marker not in log_text for marker in ("CUSTMARKER-0001", "CUSTMARKER-0002"))
+    assert all(marker not in log_text for marker in markers)
 
 
 def test_identified_customers_comparison_uses_shared_change_semantics(client):
@@ -137,7 +150,126 @@ def test_identified_customers_zero_result_is_available_as_a_section(client):
     assert section["value"]["value"] == 0
 
 
-def test_missing_and_suppressed_coverage_omit_identified_customer_section(client):
+GOLDEN_ROWS = [
+    "a1,2026-01-10,p1,Mug,1,100.00,A",
+    "a2,2026-01-10,p2,Cup,1,50.00,A",
+    "a3,2026-02-05,p1,Mug,1,30.00,A",
+    "b1,2026-02-05,p1,Mug,1,20.00,B",
+    "b2,2026-02-20,p1,Mug,1,40.00,B",
+    "u1,2026-02-10,p1,Mug,1,999.00,",
+]
+
+
+def test_new_vs_returning_comparison_classifies_by_first_order_date(client):
+    dataset = upload(client, GOLDEN_ROWS)
+    body = get_customers(client, dataset, start="2026-02-06", end="2026-02-20").json()
+
+    assert body["comparison"]["comparison"] == {"start": "2026-01-22", "end": "2026-02-05"}
+    assert body["sections"]["new_vs_returning"] == {
+        "availability": {"state": "available", "reason": None},
+        "new_customer_gross_sales": {
+            "value": "0.0000",
+            "comparison_value": "20.0000",
+            "absolute_change": "-20.0000",
+            "percent_change": "-100.00",
+            "change_status": "comparable",
+        },
+        "returning_customer_gross_sales": {
+            "value": "40.0000",
+            "comparison_value": "30.0000",
+            "absolute_change": "10.0000",
+            "percent_change": "33.33",
+            "change_status": "comparable",
+        },
+        "identified_gross_sales": {
+            "value": "40.0000",
+            "comparison_value": "50.0000",
+            "absolute_change": "-10.0000",
+            "percent_change": "-20.00",
+            "change_status": "comparable",
+        },
+    }
+
+
+def test_new_vs_returning_empty_comparison_period_has_no_prior_value(client):
+    dataset = upload(client, GOLDEN_ROWS)
+    body = get_customers(client, dataset, start="2026-02-01", end="2026-02-20").json()
+
+    assert body["comparison"]["comparison"] == {"start": "2026-01-12", "end": "2026-01-31"}
+    section = body["sections"]["new_vs_returning"]
+    for key, value in (
+        ("new_customer_gross_sales", "20.0000"),
+        ("returning_customer_gross_sales", "70.0000"),
+        ("identified_gross_sales", "90.0000"),
+    ):
+        assert section[key]["value"] == value
+        assert section[key]["comparison_value"] == "0.0000"
+        assert section[key]["change_status"] == "no_prior_value"
+        assert section[key]["percent_change"] is None
+
+
+def test_new_vs_returning_unavailable_comparison_is_not_queried(client, monkeypatch):
+    import app.api.customers as customers_api
+
+    calls = []
+    original = customers_api.read_new_vs_returning
+
+    def recording(connection, start, end):
+        calls.append((start.isoformat(), end.isoformat()))
+        return original(connection, start, end)
+
+    monkeypatch.setattr(customers_api, "read_new_vs_returning", recording)
+    dataset = upload(client, GOLDEN_ROWS)
+    body = get_customers(client, dataset, start="2026-01-11", end="2026-02-20").json()
+
+    assert body["comparison"]["state"] == "unavailable"
+    assert calls == [("2026-01-11", "2026-02-20")]
+    section = body["sections"]["new_vs_returning"]
+    for key, value in (
+        ("new_customer_gross_sales", "20.0000"),
+        ("returning_customer_gross_sales", "70.0000"),
+        ("identified_gross_sales", "90.0000"),
+    ):
+        assert section[key] == {
+            "value": value,
+            "comparison_value": None,
+            "absolute_change": None,
+            "percent_change": None,
+            "change_status": None,
+        }
+
+
+def test_new_vs_returning_zero_result(client):
+    dataset = upload(
+        client,
+        [
+            "a1,2025-01-10,p1,Mug,1,100.00,C1",
+            "a2,2025-02-05,p1,Mug,1,30.00,C1",
+            "u1,2025-01-20,p1,Mug,1,9.00,",
+        ],
+    )
+    body = get_customers(client, dataset, start="2025-01-11", end="2025-01-31").json()
+    section = body["sections"]["new_vs_returning"]
+
+    assert section["availability"] == {
+        "state": "zero_result",
+        "reason": "No identified customer rows were found in the selected range.",
+    }
+    for key in (
+        "new_customer_gross_sales",
+        "returning_customer_gross_sales",
+        "identified_gross_sales",
+    ):
+        assert section[key]["value"] == "0.0000"
+
+
+def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
+    import app.api.customers as customers_api
+
+    def not_run(*args):
+        raise AssertionError("new_vs_returning must not be queried")
+
+    monkeypatch.setattr(customers_api, "read_new_vs_returning", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
     assert get_customers(client, missing).json()["sections"] == {}
     suppressed = upload(
@@ -221,6 +353,14 @@ def test_customer_availability_tiers_are_200_states(client, header, rows, tier, 
         assert body["sections"]["identified_customers"]["value"]["value"] == (
             2 if tier == "warning" else 3
         )
+        section = body["sections"]["new_vs_returning"]
+        assert section["availability"] == {"state": "available", "reason": None}
+        identified_sales = "4.0000" if tier == "warning" else "6.0000"
+        assert section["new_customer_gross_sales"]["value"] == identified_sales
+        assert section["returning_customer_gross_sales"]["value"] == "0.0000"
+        assert section["identified_gross_sales"]["value"] == identified_sales
+    if tier in {"missing", "suppressed"}:
+        assert "new_vs_returning" not in body["sections"]
 
 
 @pytest.mark.parametrize(
@@ -268,6 +408,7 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     serialized = json.dumps(schema["components"]["schemas"]["CustomersResponse"])
     assert "customer_id" not in serialized
     assert "customer_ids" not in serialized
+    assert "NewVsReturningSection" in json.dumps(schema["components"]["schemas"])
     assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"
     ]

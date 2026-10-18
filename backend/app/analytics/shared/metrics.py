@@ -327,6 +327,16 @@ METRICS: dict[str, MetricDefinition] = {
         "The active reporting range, inclusive of its start and end dates.",
         "No identified customers in range: reported as 0 with zero_result availability.",
     ),
+    "new_vs_returning": MetricDefinition(
+        "new_vs_returning",
+        "New versus returning customer gross sales",
+        "money",
+        "identified gross sales split into new sales on first_order_date and returning sales after first_order_date",
+        "SUM(quantity × unit_price) for identified line items classified by full-history first_order_date",
+        None,
+        "The active reporting range, with customer first_order_date taken from complete uploaded history.",
+        "No identified rows in range: all values are 0.0000 with zero_result availability; unavailable comparisons have null comparison fields.",
+    ),
 }
 
 

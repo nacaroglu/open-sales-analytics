@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.analytics.customers.coverage import read_customer_coverage
 from app.analytics.customers.identified import read_identified_customer_count
+from app.analytics.customers.new_vs_returning import read_new_vs_returning
 from app.analytics.shared.availability import (
     Availability,
     AvailabilityState,
@@ -85,6 +86,48 @@ def _identified_customers_body(connection, periods) -> dict:
     }
 
 
+def _new_vs_returning_body(connection, periods) -> dict:
+    current = read_new_vs_returning(connection, periods.current.start, periods.current.end)
+    baseline = (
+        read_new_vs_returning(
+            connection,
+            periods.comparison.comparison_start,
+            periods.comparison.comparison_end,
+        )
+        if periods.comparison.available
+        else None
+    )
+    availability = (
+        Availability(AvailabilityState.AVAILABLE)
+        if current["identified_rows"]
+        else Availability(
+            AvailabilityState.ZERO_RESULT,
+            "No identified customer rows were found in the selected range.",
+        )
+    )
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "new_customer_gross_sales": compared(
+            current["new_customer_gross_sales"],
+            None if baseline is None else baseline["new_customer_gross_sales"],
+            as_money=True,
+        ),
+        "returning_customer_gross_sales": compared(
+            current["returning_customer_gross_sales"],
+            None if baseline is None else baseline["returning_customer_gross_sales"],
+            as_money=True,
+        ),
+        "identified_gross_sales": compared(
+            current["identified_gross_sales"],
+            None if baseline is None else baseline["identified_gross_sales"],
+            as_money=True,
+        ),
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -117,6 +160,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
     tier = customer_coverage_tier(has_customer_id, dataset_coverage)
     if tier in {"normal", "warning"}:
         body["sections"]["identified_customers"] = _identified_customers_body(connection, periods)
+        body["sections"]["new_vs_returning"] = _new_vs_returning_body(connection, periods)
     return body
 
 
