@@ -6,6 +6,12 @@ from typing import TypedDict
 
 import duckdb
 
+from app.analytics.customers.buckets import (
+    PURCHASE_FREQUENCY_BUCKETS,
+    RFM_RECENCY_BUCKETS,
+    frequency_bucket_key,
+    recency_bucket_key,
+)
 from app.analytics.shared.metrics import RFM_SEGMENTS
 
 
@@ -24,6 +30,22 @@ class RfmScore(TypedDict):
 class RfmResult(TypedDict):
     customer_count: int
     segment_counts: dict[str, int]
+
+
+class RfmDrilldownSegment(TypedDict):
+    """Aggregates of one segment; bucket counts are keyed in bucket order."""
+
+    segment: str
+    customer_count: int
+    gross_sales: Decimal
+    recency_counts: dict[str, int]
+    frequency_counts: dict[str, int]
+
+
+class RfmDrilldownResult(TypedDict):
+    customer_count: int
+    gross_sales: Decimal
+    segments: list[RfmDrilldownSegment]
 
 
 def rfm_score(worse: int, ties: int, n: int) -> int:
@@ -118,3 +140,39 @@ def read_rfm(connection: duckdb.DuckDBPyConnection, end: date) -> RfmResult:
     for score in scores:
         counts[score["segment"]] += 1
     return {"customer_count": len(scores), "segment_counts": counts}
+
+
+def rfm_drilldown(scores: list[RfmScore]) -> RfmDrilldownResult:
+    """Aggregate anonymous scores per segment: counts, exact gross sales, distributions.
+
+    Every segment of ``RFM_SEGMENTS`` and every bucket is present, in fixed order, even
+    when empty. Only aggregates are returned.
+    """
+    segments: dict[str, RfmDrilldownSegment] = {
+        segment.name: {
+            "segment": segment.name,
+            "customer_count": 0,
+            "gross_sales": Decimal(0),
+            "recency_counts": {bucket.key: 0 for bucket in RFM_RECENCY_BUCKETS},
+            "frequency_counts": {bucket.key: 0 for bucket in PURCHASE_FREQUENCY_BUCKETS},
+        }
+        for segment in RFM_SEGMENTS
+    }
+    total = Decimal(0)
+    for score in scores:
+        group = segments[score["segment"]]
+        group["customer_count"] += 1
+        group["gross_sales"] += score["monetary"]
+        group["recency_counts"][recency_bucket_key(score["recency_days"])] += 1
+        group["frequency_counts"][frequency_bucket_key(score["frequency"])] += 1
+        total += score["monetary"]
+    return {
+        "customer_count": len(scores),
+        "gross_sales": total,
+        "segments": list(segments.values()),
+    }
+
+
+def read_rfm_drilldown(connection: duckdb.DuckDBPyConnection, end: date) -> RfmDrilldownResult:
+    """Per-segment aggregates of ``read_rfm_scores`` through ``end`` (no customer IDs)."""
+    return rfm_drilldown(read_rfm_scores(connection, end))

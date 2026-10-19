@@ -3,7 +3,11 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, Query
 
-from app.analytics.customers.buckets import DAYS_BETWEEN_PURCHASES_BUCKETS
+from app.analytics.customers.buckets import (
+    DAYS_BETWEEN_PURCHASES_BUCKETS,
+    PURCHASE_FREQUENCY_BUCKETS,
+    RFM_RECENCY_BUCKETS,
+)
 from app.analytics.customers.cohort_retention import read_cohort_retention
 from app.analytics.customers.coverage import read_customer_coverage
 from app.analytics.customers.days_between_purchases import read_days_between_purchases
@@ -11,7 +15,7 @@ from app.analytics.customers.historical_value import read_historical_customer_va
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
 from app.analytics.customers.repeat_purchase import read_repeat_purchase
-from app.analytics.customers.rfm import read_rfm
+from app.analytics.customers.rfm import read_rfm, read_rfm_drilldown
 from app.analytics.shared.availability import (
     Availability,
     AvailabilityState,
@@ -380,6 +384,59 @@ def _rfm_body(connection, periods) -> dict:
     }
 
 
+def _rfm_drilldown_body(connection, periods) -> dict:
+    """Current-range only: per-segment aggregates of the same population as ``rfm``."""
+    anchor = recency_anchor(periods.current)
+    result = read_rfm_drilldown(connection, anchor)
+    count = result["customer_count"]
+    total = result["gross_sales"]
+    segments = []
+    if count < RFM_MIN_CUSTOMERS:
+        availability = Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            f"RFM needs at least {RFM_MIN_CUSTOMERS} identified customers.",
+        )
+    else:
+        availability = Availability(AvailabilityState.AVAILABLE)
+        segments = [
+            {
+                "segment": segment["segment"],
+                "customer_count": segment["customer_count"],
+                "gross_sales": _rounded_money(segment["gross_sales"]),
+                "gross_sales_share": ratio(segment["gross_sales"] / total) if total else None,
+                "recency_distribution": [
+                    {
+                        "key": bucket.key,
+                        "min_days": bucket.min_days,
+                        "max_days": bucket.max_days,
+                        "customer_count": segment["recency_counts"][bucket.key],
+                    }
+                    for bucket in RFM_RECENCY_BUCKETS
+                ],
+                "frequency_distribution": [
+                    {
+                        "key": bucket.key,
+                        "min_orders": bucket.min_orders,
+                        "max_orders": bucket.max_orders,
+                        "customer_count": segment["frequency_counts"][bucket.key],
+                    }
+                    for bucket in PURCHASE_FREQUENCY_BUCKETS
+                ],
+            }
+            for segment in result["segments"]
+        ]
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "customer_count": count,
+        "recency_anchor": anchor.isoformat(),
+        "gross_sales": _rounded_money(total),
+        "segments": segments,
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -422,6 +479,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
             connection, periods
         )
         body["sections"]["rfm"] = _rfm_body(connection, periods)
+        body["sections"]["rfm_drilldown"] = _rfm_drilldown_body(connection, periods)
     return body
 
 
