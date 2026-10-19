@@ -14,14 +14,15 @@ SELECT order_id,
        product_id,
        product_name,
        CAST(quantity AS INTEGER),
-       CAST(unit_price AS DECIMAL(18,4))
+       CAST(unit_price AS DECIMAL(18,4)),
+       customer_id
 FROM staging
 ORDER BY row_number
 """
 
 _INSERT_META = """
 INSERT INTO ds.dataset_meta
-SELECT $id, $currency, $created_at, $expires_at, $token_hash, count(*)
+SELECT $id, $currency, $created_at, $expires_at, $token_hash, count(*), $has_customer_id
 FROM ds.line_items
 """
 
@@ -92,6 +93,8 @@ def import_dataset(
         working = target.with_name(f".{target.name}.importing")
         try:
             create_dataset(working)
+            customer_flag = staging.execute("SELECT has_customer_id FROM staging_meta").fetchone()
+            assert customer_flag is not None
             _copy_rows(
                 staging,
                 working,
@@ -100,6 +103,7 @@ def import_dataset(
                 token_hash,
                 created_at,
                 created_at + settings.dataset_ttl,
+                bool(customer_flag[0]),
             )
             working.rename(target)
         except BaseException:
@@ -111,7 +115,9 @@ def import_dataset(
         Path(csv_path).unlink(missing_ok=True)
 
 
-def _copy_rows(staging, working, dataset_id, currency, token_hash, created_at, expires_at) -> None:
+def _copy_rows(
+    staging, working, dataset_id, currency, token_hash, created_at, expires_at, has_customer_id
+) -> None:
     staging.execute(f"ATTACH '{_quote(working)}' AS ds")
     try:
         staging.execute("BEGIN")
@@ -126,6 +132,7 @@ def _copy_rows(staging, working, dataset_id, currency, token_hash, created_at, e
                 "created_at": created_at,
                 "expires_at": expires_at,
                 "token_hash": token_hash,
+                "has_customer_id": has_customer_id,
             },
         )
         staging.execute("COMMIT")
