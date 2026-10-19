@@ -15,7 +15,7 @@ SELECT order_id,
        product_name,
        CAST(quantity AS INTEGER),
        CAST(unit_price AS DECIMAL(18,4)),
-       max(customer_id) OVER (PARTITION BY order_id)
+       customer_id
 FROM staging
 ORDER BY row_number
 """
