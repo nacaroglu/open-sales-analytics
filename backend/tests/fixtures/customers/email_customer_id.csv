@@ -1,0 +1,2 @@
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+o1,2025-01-01,p1,Mug,1,2.00,person@example.com
