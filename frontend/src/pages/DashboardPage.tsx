@@ -42,7 +42,7 @@ function Header() {
 }
 
 function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers> }) {
-  if (query.isLoading && query.data === undefined) {
+  if (query.isPlaceholderData || (query.isLoading && query.data === undefined)) {
     return (
       <section aria-label="Customer coverage" role="status" aria-busy="true" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
         <h3 className="text-lg font-semibold">Customer coverage</h3>
@@ -56,7 +56,7 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
     return <ErrorBlock message="Something went wrong loading this data"><button type="button" className={PRIMARY} onClick={() => void query.refetch()}>Retry</button></ErrorBlock>;
   }
   const data = query.data as CustomerResponse | undefined;
-  if (data === undefined) return null;
+  if (data == null) return null;
   const tier = data.coverage.dataset.tier;
   if (tier === "missing") {
     return <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section>;
@@ -102,10 +102,10 @@ function SectionState({ section, title, onRetry }: { section: CustomerSection; t
   return null;
 }
 
-function CustomerMetricSection({ label, data, children, lowCoverage, onRetry }: { label: string; data: CustomerSection | undefined; children?: ReactNode; lowCoverage?: string; onRetry: () => void }) {
-  if (data === undefined) return null;
-  const state = <SectionState section={data} title={label} />;
-  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{state ?? children}</section>;
+function CustomerMetricSection({ label, data, children, lowCoverage, onRetry }: { label: string; data: CustomerSection | null | undefined; children?: ReactNode; lowCoverage?: string; onRetry: () => void }) {
+  if (data == null) return null;
+  const available = data.availability?.state === "available";
+  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{available ? children : <SectionState section={data} title={label} onRetry={onRetry} />}</section>;
 }
 
 function valueOf(section: CustomerSection, key: string): unknown {
