@@ -347,6 +347,17 @@ reported), `interval_count`, `contributing_customers` and nine fixed `buckets` (
 `61-90`, `91-180`, `181-365`, `366+` days), each with its `interval_count` and `share` of all intervals. Without an
 included interval the median and every share are `null` and the state is `insufficient_data`.
 
+`sections.cohort_retention` is a monthly acquisition-cohort retention matrix for the current range only (no comparison
+fields). A customer's cohort is the month of their full-history first order; rows are the cohort months from the month
+containing the range start to the month containing the range end, oldest first, so moving only the start never changes a
+row. The range end is the `data_cutoff`: customers first seen after it are not members and later activity is ignored,
+while activity before the start still counts. Each row has `cohort_month` (`YYYY-MM`), `cohort_size`, `complete_months`
+and `cells`; month `N` (0 = acquisition month) has `retained_count` (members with an identified line in that calendar
+month) and `retention` (`retained_count / cohort_size`). Each cell's `state` is `complete` (the whole month is on or
+before the cutoff), `partial` (the month contains the cutoff; counts so far) or `not_observed` (the month starts after
+the cutoff; values are `null`, never `0`). Rows are padded to the same width as the oldest cohort. Without an
+overlapping cohort `rows` is empty and the state is `insufficient_data`.
+
 Missing or suppressed coverage omits every section (`sections` is empty). The endpoint always returns `Cache-Control: no-store`.
 Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
 search, detail, download or export data, and identifiers are not written to logs.

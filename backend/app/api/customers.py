@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, Query
 
 from app.analytics.customers.buckets import DAYS_BETWEEN_PURCHASES_BUCKETS
+from app.analytics.customers.cohort_retention import read_cohort_retention
 from app.analytics.customers.coverage import read_customer_coverage
 from app.analytics.customers.days_between_purchases import read_days_between_purchases
 from app.analytics.customers.identified import read_identified_customer_count
@@ -17,6 +18,7 @@ from app.analytics.shared.availability import (
     customer_coverage_tier,
     rounded_coverage,
 )
+from app.analytics.shared.periods import recency_anchor
 from app.api.module_common import (
     cache_key,
     cached_json,
@@ -218,6 +220,51 @@ def _days_between_purchases_body(connection, periods) -> dict:
     }
 
 
+def _cohort_retention_body(connection, periods) -> dict:
+    """Current-range only: the start selects cohort rows, the range end is the cutoff."""
+    cutoff = recency_anchor(periods.current)
+    rows = read_cohort_retention(connection, periods.current.start, cutoff)
+    availability = (
+        Availability(AvailabilityState.AVAILABLE)
+        if rows
+        else Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "No identified customer was acquired in a month that overlaps the selected range, "
+            "so there is no acquisition cohort.",
+        )
+    )
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "data_cutoff": cutoff.isoformat(),
+        "rows": [
+            {
+                "cohort_month": row["cohort_month"].strftime("%Y-%m"),
+                "cohort_size": row["cohort_size"],
+                "complete_months": sum(cell["state"] == "complete" for cell in row["cells"]),
+                "cells": [
+                    {
+                        "month_offset": cell["month_offset"],
+                        "state": cell["state"],
+                        "retained_count": cell["retained_count"],
+                        "retention": (
+                            None
+                            if cell["retained_count"] is None
+                            else ratio(
+                                Decimal(cell["retained_count"]) / Decimal(row["cohort_size"])
+                            )
+                        ),
+                    }
+                    for cell in row["cells"]
+                ],
+            }
+            for row in rows
+        ],
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -255,6 +302,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
         body["sections"]["days_between_purchases"] = _days_between_purchases_body(
             connection, periods
         )
+        body["sections"]["cohort_retention"] = _cohort_retention_body(connection, periods)
     return body
 
 

@@ -357,6 +357,16 @@ METRICS: dict[str, MetricDefinition] = {
         "An interval is included when its later order is dated inside the range (both ends included); its earlier order may be before the range start; orders after the range end are ignored.",
         "No included interval (no identified repeat orders in the range): median_days null, interval_count 0, every bucket share null, insufficient_data availability.",
     ),
+    "cohort_retention": MetricDefinition(
+        "cohort_retention",
+        "Cohort retention",
+        "ratio",
+        "retained_count / cohort_size for each acquisition cohort and month offset N (0 = acquisition month); each cell is complete (whole month on or before the data cutoff), partial (month contains the cutoff, counts so far) or not_observed (month starts after the cutoff; count and retention null)",
+        "Cohort members with at least one identified line (line_items.order_date) in calendar month acquisition_month + N, dated on or before the data cutoff",
+        "Cohort size: identified customers whose acquisition_month (month of the full-history first order date) is the cohort month and whose first order is on or before the range end",
+        "Rows are the acquisition months from the month containing the range start to the month containing the range end; the data cutoff is the range end. Activity before the range start still counts; activity after the cutoff is ignored.",
+        "No acquisition cohort overlaps the range: rows empty, insufficient_data availability. Months after the cutoff are not_observed with null values, never 0.",
+    ),
 }
 
 

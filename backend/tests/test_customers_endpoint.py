@@ -136,6 +136,15 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "interval_count": 1,
         "share": 1,
     }
+    cohorts = body["sections"]["cohort_retention"]
+    assert cohorts["availability"] == {"state": "available", "reason": None}
+    assert cohorts["data_cutoff"] == "2025-01-03"
+    assert [(row["cohort_month"], row["cohort_size"]) for row in cohorts["rows"]] == [
+        ("2025-01", 2)
+    ]
+    assert cohorts["rows"][0]["cells"] == [
+        {"month_offset": 0, "state": "partial", "retained_count": 2, "retention": 1}
+    ]
     markers = ("CUSTMARKER-0001", "CUSTMARKER-0002")
     for body_text in (response.text, with_interval.text):
         assert all(marker not in body_text for marker in markers)
@@ -601,6 +610,150 @@ def test_days_between_purchases_warning_tier_matches_normal_numbers(client):
     assert normal_body["sections"]["days_between_purchases"]["median_days"] == 20.5
 
 
+COHORT_ROWS = [
+    "a1,2026-01-10,p1,Mug,1,2.00,A",
+    "a2,2026-02-05,p1,Mug,1,2.00,A",
+    "a3,2026-03-07,p1,Mug,1,2.00,A",
+    "f1,2026-01-20,p1,Mug,1,2.00,F",
+    "b1,2026-02-05,p1,Mug,1,2.00,B",
+    "g1,2026-02-25,p1,Mug,1,2.00,G",
+    "g2,2026-03-20,p1,Mug,1,2.00,G",
+    "h1,2026-03-03,p1,Mug,1,2.00,H",
+    "u1,2026-03-31,p1,Mug,1,2.00,",
+]
+
+
+def cohort_cell(offset, state, count, retention):
+    return {
+        "month_offset": offset,
+        "state": state,
+        "retained_count": count,
+        "retention": retention,
+    }
+
+
+NOT_OBSERVED_CELLS = [cohort_cell(n, "not_observed", None, None) for n in (1, 2)]
+GOLDEN_COHORTS = [
+    {
+        "cohort_month": "2026-01",
+        "cohort_size": 2,
+        "complete_months": 2,
+        "cells": [
+            cohort_cell(0, "complete", 2, 1),
+            cohort_cell(1, "complete", 1, 0.5),
+            cohort_cell(2, "partial", 1, 0.5),
+        ],
+    },
+    {
+        "cohort_month": "2026-02",
+        "cohort_size": 2,
+        "complete_months": 1,
+        "cells": [
+            cohort_cell(0, "complete", 2, 1),
+            cohort_cell(1, "partial", 0, 0),
+            NOT_OBSERVED_CELLS[1],
+        ],
+    },
+    {
+        "cohort_month": "2026-03",
+        "cohort_size": 1,
+        "complete_months": 0,
+        "cells": [cohort_cell(0, "partial", 1, 1), *NOT_OBSERVED_CELLS],
+    },
+]
+
+
+def test_cohort_retention_golden_rows_have_states_and_null_unobserved_cells(client):
+    dataset = upload(client, COHORT_ROWS)
+    cohorts = get_customers(client, dataset, start="2026-01-10", end="2026-03-15").json()[
+        "sections"
+    ]["cohort_retention"]
+
+    assert cohorts == {
+        "availability": {"state": "available", "reason": None},
+        "data_cutoff": "2026-03-15",
+        "rows": GOLDEN_COHORTS,
+    }
+    later_start = get_customers(client, dataset, start="2026-01-15", end="2026-03-15").json()
+    assert later_start["sections"]["cohort_retention"]["rows"] == GOLDEN_COHORTS
+    february = get_customers(client, dataset, start="2026-02-01", end="2026-03-15").json()
+    assert february["sections"]["cohort_retention"]["rows"] == [
+        {**row, "cells": row["cells"][:2]} for row in GOLDEN_COHORTS[1:]
+    ]
+    full = get_customers(client, dataset, start="2026-01-10", end="2026-03-31").json()
+    rows = full["sections"]["cohort_retention"]["rows"]
+    assert rows[1]["cells"][1] == cohort_cell(1, "complete", 1, 0.5)
+    assert rows[2]["cells"][0] == cohort_cell(0, "complete", 1, 1)
+    assert [row["complete_months"] for row in rows] == [3, 2, 1]
+
+
+def test_cohort_retention_rounds_retention_half_up_from_exact_counts(client):
+    rows = [f"{c}1,2026-01-0{i + 1},p1,Mug,1,2.00,{c}" for i, c in enumerate("ABC")]
+    dataset = upload(client, rows + ["a2,2026-02-01,p1,Mug,1,2.00,A"])
+    cohorts = get_customers(client, dataset).json()["sections"]["cohort_retention"]
+
+    assert cohorts["rows"][0]["cells"][1] == cohort_cell(1, "partial", 1, 0.3333)
+
+
+def test_cohort_retention_is_current_range_only(client, monkeypatch):
+    import app.api.customers as customers_api
+
+    calls = []
+    original = customers_api.read_cohort_retention
+
+    def recording(connection, start, cutoff):
+        calls.append((start.isoformat(), cutoff.isoformat()))
+        return original(connection, start, cutoff)
+
+    monkeypatch.setattr(customers_api, "read_cohort_retention", recording)
+    dataset = upload(client, COHORT_ROWS)
+    previous = get_customers(client, dataset, start="2026-03-01", end="2026-03-15").json()
+    calls_previous = list(calls)
+    calls.clear()
+    yoy = get_customers(
+        client, dataset, start="2026-03-01", end="2026-03-15", comparison="previous_year"
+    ).json()
+
+    assert previous["comparison"]["state"] == "available"
+    assert calls_previous == [("2026-03-01", "2026-03-15")]
+    assert calls == [("2026-03-01", "2026-03-15")]
+    assert previous["sections"]["cohort_retention"] == yoy["sections"]["cohort_retention"]
+    assert previous["sections"]["cohort_retention"]["rows"] == [
+        {**GOLDEN_COHORTS[2], "cells": GOLDEN_COHORTS[2]["cells"][:1]}
+    ]
+    serialized = json.dumps(previous["sections"]["cohort_retention"])
+    for field in ("comparison_value", "absolute_change", "percent_change", "change_status"):
+        assert field not in serialized
+
+
+def test_cohort_retention_without_overlapping_cohort_is_insufficient_data(client):
+    dataset = upload(client, ["a1,2026-01-10,p1,Mug,1,2.00,A", "a2,2026-02-05,p1,Mug,1,2.00,A"])
+    cohorts = get_customers(client, dataset, start="2026-02-01", end="2026-02-05").json()[
+        "sections"
+    ]["cohort_retention"]
+
+    assert cohorts["availability"]["state"] == "insufficient_data"
+    assert cohorts["availability"]["reason"]
+    assert cohorts["data_cutoff"] == "2026-02-05"
+    assert cohorts["rows"] == []
+
+
+def test_cohort_retention_warning_tier_matches_normal_numbers(client):
+    normal = upload(client, COHORT_ROWS[:-1])
+    unidentified = [f"u{day},2026-02-{day},p1,Mug,1,2.00," for day in (11, 12, 13, 14)]
+    warning = upload(client, COHORT_ROWS[:-1] + unidentified)
+    params = {"start": "2026-01-10", "end": "2026-03-15"}
+    normal_body = get_customers(client, normal, **params).json()
+    warning_body = get_customers(client, warning, **params).json()
+
+    assert normal_body["availability"]["tier"] == "normal"
+    assert warning_body["availability"]["tier"] == "warning"
+    assert (
+        warning_body["sections"]["cohort_retention"] == normal_body["sections"]["cohort_retention"]
+    )
+    assert normal_body["sections"]["cohort_retention"]["rows"] == GOLDEN_COHORTS
+
+
 def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
     import app.api.customers as customers_api
 
@@ -610,6 +763,7 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     monkeypatch.setattr(customers_api, "read_new_vs_returning", not_run)
     monkeypatch.setattr(customers_api, "read_repeat_purchase", not_run)
     monkeypatch.setattr(customers_api, "read_days_between_purchases", not_run)
+    monkeypatch.setattr(customers_api, "read_cohort_retention", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
     missing_body = get_customers(client, missing).json()
     assert missing_body["availability"]["tier"] == "missing"
@@ -630,6 +784,8 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     assert "repeat_purchase" not in suppressed_body["sections"]
     assert "days_between_purchases" not in missing_body["sections"]
     assert "days_between_purchases" not in suppressed_body["sections"]
+    assert "cohort_retention" not in missing_body["sections"]
+    assert "cohort_retention" not in suppressed_body["sections"]
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -771,6 +927,20 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     assert "lifetime" not in json.dumps(components["ComparedRatio"])
     assert {"DaysBetweenPurchasesSection", "DaysBetweenPurchasesBucket"} <= set(components)
     assert "days_between_purchases" in components["CustomerSections"]["properties"]
+    assert {"CohortRetentionSection", "CohortRetentionRow", "CohortRetentionCell"} <= set(
+        components
+    )
+    assert "cohort_retention" in components["CustomerSections"]["properties"]
+    assert set(components["CohortRetentionSection"]["properties"]) == {
+        "availability",
+        "data_cutoff",
+        "rows",
+    }
+    assert components["CohortRetentionCell"]["properties"]["state"]["enum"] == [
+        "complete",
+        "partial",
+        "not_observed",
+    ]
     assert set(components["DaysBetweenPurchasesSection"]["properties"]) == {
         "availability",
         "median_days",
