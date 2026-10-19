@@ -416,6 +416,16 @@ METRICS: dict[str, MetricDefinition] = {
         "The active reporting range, inclusive of its start and end dates.",
         "No identified customers in range: reported as 0 with zero_result availability.",
     ),
+    "customer_coverage": MetricDefinition(
+        "customer_coverage",
+        "Customer coverage",
+        "ratio",
+        "identified distinct orders / all distinct orders",
+        "Distinct orders with at least one identified customer_id",
+        "All distinct orders in the dataset or selected range",
+        "Dataset coverage determines the tier; range coverage describes the selected range.",
+        "No customer_id column is unavailable; below 50% is suppressed; zero orders have null coverage.",
+    ),
     "new_vs_returning": MetricDefinition(
         "new_vs_returning",
         "New versus returning customer gross sales",

@@ -37,6 +37,8 @@ Plan section 12 rules and their tests: validation rules `test_validation_structu
 `test_analytics_endpoint.py`; missing or invalid token `test_auth.py`, `test_delete_endpoint.py`,
 `test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
 demo mode `test_demo_mode.py`; the browser journeys `frontend/e2e/*.spec.ts` (`happy-path`, `upload`, `dashboard`, `products`, `lifecycle`).
+Phase 3B customer rules and the aggregate browser journey are covered by `test_customer_<metric>.py`,
+`test_customer_fixtures.py`, `test_customer_golden.py` and `frontend/e2e/customers.spec.ts`.
 
 ### Phase 3A metrics and their tests
 
@@ -81,11 +83,11 @@ The one accepted real wait is a bounded poll (100 tries, 0.1 s apart) until a sp
 
 ## Fixtures
 
-CSVs live in `backend/tests/fixtures/<group>/<name>.csv` (groups: `rows/`, `cross_row/`) and are loaded with
+CSVs live in `backend/tests/fixtures/<group>/<name>.csv` (groups: `rows/`, `cross_row/`, `customers/`) and are loaded with
 `Path(__file__).parent / "fixtures" / "<group>"`. Named after the rule, one violation per file. Clean files:
 `rows/clean.csv` and `cross_row/clean_multi_line_orders.csv` (no `cross_row/clean.csv`). The one file with several
 violations is `cross_row/all_rules_together.csv`, on purpose.
-A single-use CSV is written inline (`HEADER` plus rows, under `tmp_path`). `backend/app/sample/sample_sales.csv`
+A single-use CSV is written inline (`HEADER` plus rows, under `tmp_path`). Customer golden fixtures may include a sibling `.expected.json` containing exact named-range values and derivation notes. `backend/app/sample/sample_sales.csv`
 is application data, not a fixture. Frontend tests build data inline (objects typed with `frontend/src/lib/types.ts`,
 `File` objects for uploads); there is no frontend fixtures folder.
 
