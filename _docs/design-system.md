@@ -15,6 +15,7 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - Customer coverage uses a labelled white card with dataset and range order counts; low coverage uses the dashed amber warning card.
 - Insufficient-data states show the server reason as text; zero-result states show the returned zero value without an empty-data message.
 - Date range controls place the comparison select after End date and before Reset; comparison series are dashed slate-500 lines, and deltas use muted slate text without good/bad colouring.
+- Projection estimates use a visible “Estimate” badge with a dashed indigo border; projected figures and table cells repeat the “estimate” label and use the same dashed outline so the distinction is not colour-only.
 
 ## Colour roles (contrast checked with WCAG 2.x, every text pair, disabled ones included, >= 4.5:1; ratios recomputed from Tailwind 4's palette)
 
