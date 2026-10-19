@@ -82,7 +82,7 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
         </dl>
         <p className="text-sm text-slate-600">{rangeLine}</p>
       </section>
-      {tier !== "suppressed" && <CustomerMetrics data={data} />}
+      {tier !== "suppressed" && <CustomerMetrics data={data} onRetry={() => void query.refetch()} />}
     </div>
   );
 }
@@ -95,14 +95,14 @@ export function AnalysisState({ availability, metric }: { availability: { state:
 
 type CustomerSection = { availability?: { state: string; reason: string | null }; [key: string]: unknown };
 
-function SectionState({ section, title }: { section: CustomerSection; title: string }) {
+function SectionState({ section, title, onRetry }: { section: CustomerSection; title: string; onRetry: () => void }) {
   if (section.availability?.state === "insufficient_data") return <AnalysisState availability={section.availability} metric={title} />;
   if (section.availability?.state === "zero_result") return <AnalysisState availability={section.availability} metric={title} />;
-  if (section.availability?.state !== "available") return <ErrorBlock message="Something went wrong loading this data"><button type="button" className={PRIMARY}>Retry</button></ErrorBlock>;
+  if (section.availability?.state !== "available") return <ErrorBlock message="Something went wrong loading this data"><button type="button" className={PRIMARY} onClick={onRetry}>Retry</button></ErrorBlock>;
   return null;
 }
 
-function CustomerMetricSection({ label, data, children, lowCoverage }: { label: string; data: CustomerSection | undefined; children?: ReactNode; lowCoverage?: string }) {
+function CustomerMetricSection({ label, data, children, lowCoverage, onRetry }: { label: string; data: CustomerSection | undefined; children?: ReactNode; lowCoverage?: string; onRetry: () => void }) {
   if (data === undefined) return null;
   const state = <SectionState section={data} title={label} />;
   return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{state ?? children}</section>;
@@ -113,41 +113,52 @@ function valueOf(section: CustomerSection, key: string): unknown {
   return typeof item === "object" && item !== null && "value" in item ? (item as { value: unknown }).value : item;
 }
 
-function CustomerMetrics({ data }: { data: CustomerResponse }) {
+function CustomerMetrics({ data, onRetry }: { data: CustomerResponse; onRetry: () => void }) {
   const sections = data.sections as Record<string, CustomerSection>;
+  const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
   const lowCoverage = data.availability.tier === "warning" ? `Low coverage: based on ${truncatedCoverage(data.coverage.dataset.coverage)} of orders.` : undefined;
   const moneyValue = (value: unknown) => typeof value === "string" ? formatMoney(value, data.currency) : "—";
+  const percentValue = (value: unknown) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+  const cohortRows = (sections.cohort_retention?.rows as Record<string, unknown>[] | undefined) ?? [];
+  const maxCohortOffset = Math.max(-1, ...cohortRows.flatMap((row) => ((row.cells as Record<string, unknown>[] | undefined) ?? []).map((cell) => Number(cell.month_offset))));
+  const rfmSegments = (sections.rfm?.segments as Record<string, unknown>[] | undefined) ?? [];
+  const drilldown = (sections.rfm_drilldown?.segments as Record<string, unknown>[] | undefined)?.find((row) => row.segment === selectedSegment);
   return (
     <div className="space-y-8">
-      <CustomerMetricSection label="Customer key figures" data={sections.identified_customers} lowCoverage={lowCoverage}>
+      <CustomerMetricSection label="Customer key figures" data={sections.identified_customers} lowCoverage={lowCoverage} onRetry={onRetry}>
         <dl className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <MetricCard label="Identified customers" value={formatCount(Number(valueOf(sections.identified_customers ?? {}, "value") ?? 0))} />
           <MetricCard label="New-customer gross sales" value={moneyValue(valueOf(sections.new_vs_returning ?? {}, "new_customer_gross_sales"))} />
           <MetricCard label="Returning-customer gross sales" value={moneyValue(valueOf(sections.new_vs_returning ?? {}, "returning_customer_gross_sales"))} />
-          <MetricCard label="Repeat-purchase rate" value={`${Number(valueOf(sections.repeat_purchase ?? {}, "repeat_purchase_rate") ?? 0) * 100}%`} />
+          <MetricCard label="Repeat-purchase rate" value={percentValue(valueOf(sections.repeat_purchase ?? {}, "repeat_purchase_rate"))} />
           <MetricCard label="Median days between purchases" value={`${valueOf(sections.days_between_purchases ?? {}, "median_days") ?? "—"} days`} />
         </dl>
       </CustomerMetricSection>
-      <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases} lowCoverage={lowCoverage}>
+      <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases} lowCoverage={lowCoverage} onRetry={onRetry}>
         <p>Median: {String(sections.days_between_purchases?.median_days ?? "—")} days</p>
+        <div role="img" aria-label="Bar chart of days between purchase interval buckets" className="flex h-40 items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">{(((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? [])).map((bucket) => <div key={String(bucket.key)} className="flex flex-1 flex-col items-center justify-end gap-1"><div className="w-full bg-indigo-700" style={{ height: `${Math.max(4, Number(bucket.interval_count) * 8)}px` }} /><span className="text-xs">{String(bucket.key)}</span></div>)}</div>
         <AggregateTable ariaLabel="Days between purchases table" headers={["Bucket", "Intervals"]} rows={((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? []).map((bucket) => [String(bucket.key), formatCount(Number(bucket.interval_count))])} />
       </CustomerMetricSection>
-      <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention} lowCoverage={lowCoverage}>
-        <div role="table" aria-label="Cohort retention table" className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table className="w-full text-left"><thead className="bg-slate-100"><tr><th className="px-3 py-2">Cohort</th><th className="px-3 py-2">Cohort size</th><th className="px-3 py-2">Months observed</th><th className="px-3 py-2">Retention</th></tr></thead><tbody className="divide-y divide-slate-200">{((sections.cohort_retention?.rows as Record<string, unknown>[] | undefined) ?? []).map((row) => <tr key={String(row.cohort_month)}><td className="px-3 py-2">{String(row.cohort_month)}</td><td className="px-3 py-2">{formatCount(Number(row.cohort_size))}</td><td className="px-3 py-2">{formatCount(Number(row.complete_months))}</td><td className="px-3 py-2">{String(((row.cells as Record<string, unknown>[] | undefined)?.[0]?.retention ?? "—"))}</td></tr>)}</tbody></table></div>
+      <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention} lowCoverage={lowCoverage} onRetry={onRetry}>
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table aria-label="Cohort retention table" className="w-full text-left"><thead className="bg-slate-100"><tr><th className="sticky left-0 bg-slate-100 px-3 py-2">Cohort</th><th className="px-3 py-2">Cohort size</th><th className="px-3 py-2">Months observed</th>{Array.from({ length: maxCohortOffset + 1 }, (_, offset) => <th key={offset} className="px-3 py-2">Month {offset}</th>)}</tr></thead><tbody className="divide-y divide-slate-200">{cohortRows.map((row) => <tr key={String(row.cohort_month)}><td className="sticky left-0 bg-white px-3 py-2">{String(row.cohort_month)}</td><td className="px-3 py-2">{formatCount(Number(row.cohort_size))}</td><td className="px-3 py-2">{formatCount(Number(row.complete_months))}</td>{((row.cells as Record<string, unknown>[] | undefined) ?? []).map((cell) => cell.state === "not_observed" ? <td key={String(cell.month_offset)} aria-label="Not yet observed" className="border border-dashed border-slate-500 px-3 py-2">Not yet observed</td> : <td key={String(cell.month_offset)} className="px-3 py-2">{(Number(cell.retention) * 100).toFixed(1)}% ({formatCount(Number(cell.retained_count))})</td>)}</tr>)}</tbody></table></div>
       </CustomerMetricSection>
-      <CustomerMetricSection label="Historical Customer Value" data={sections.historical_customer_value} lowCoverage={lowCoverage}>
+      <CustomerMetricSection label="Historical Customer Value" data={sections.historical_customer_value} lowCoverage={lowCoverage} onRetry={onRetry}>
         <p>Observed gross sales per identified customer. Not a prediction.</p>
         <dl className="grid grid-cols-2 gap-4"><MetricCard label="Average" value={moneyValue(sections.historical_customer_value?.average)} /><MetricCard label="Median" value={moneyValue(sections.historical_customer_value?.median)} /></dl>
+        <div role="img" aria-label="Line chart of observed gross sales per identified customer by cohort age" className="h-40 rounded-lg border border-slate-200 bg-white p-4"><div className="flex h-full items-end gap-2">{(((sections.historical_customer_value?.all_cohorts as Record<string, unknown>[] | undefined) ?? [])).map((point) => <div key={String(point.month_offset)} className="flex-1 bg-indigo-700" style={{ height: `${Math.max(4, Number(point.value_per_customer ?? 0) / 10)}px` }} title={`Month ${point.month_offset}`} />)}</div></div>
+        <AggregateTable ariaLabel="Historical Customer Value table" headers={["Month", "Observed value per customer", "Cohorts"]} rows={(((sections.historical_customer_value?.all_cohorts as Record<string, unknown>[] | undefined) ?? [])).map((point) => [String(point.month_offset), moneyValue(point.value_per_customer), formatCount(Number(point.contributing_cohorts))])} />
       </CustomerMetricSection>
-      <CustomerMetricSection label="RFM segments" data={sections.rfm} lowCoverage={lowCoverage}>
+      <CustomerMetricSection label="RFM segments" data={sections.rfm} lowCoverage={lowCoverage} onRetry={onRetry}>
         <p>Segments are relative to the customers in this upload, not universal benchmarks.</p>
-        <AggregateTable ariaLabel="RFM segments table" headers={["Segment", "Customers", "Share"]} rows={((sections.rfm?.segments as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.segment), formatCount(Number(row.customer_count)), `${Number(row.share) * 100}%`])} />
+        <details><summary className="cursor-pointer font-semibold">RFM score rules</summary><p className="mt-2 text-sm text-slate-600">Recency, frequency and monetary scores are relative quintiles; ties receive the same score, and the first matching segment rule applies.</p></details>
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table aria-label="RFM segments table" className="w-full text-left"><thead className="bg-slate-100"><tr><th className="px-3 py-2">Segment</th><th className="px-3 py-2">Customers</th><th className="px-3 py-2">Share</th></tr></thead><tbody className="divide-y divide-slate-200">{rfmSegments.map((row) => <tr key={String(row.segment)}><td className="px-3 py-2"><button type="button" className={LINK} onClick={() => setSelectedSegment(String(row.segment))}>{String(row.segment)}</button></td><td className="px-3 py-2">{formatCount(Number(row.customer_count))}</td><td className="px-3 py-2">{percentValue(row.share)}</td></tr>)}</tbody></table></div>
+        {drilldown && <div role="region" aria-label="RFM segment drill-down" className="rounded-lg border border-slate-200 bg-white p-4"><h4 className="font-semibold">{String(drilldown.segment)} drill-down</h4><p>{formatCount(Number(drilldown.customer_count))} customers · {moneyValue(drilldown.gross_sales)}</p><AggregateTable ariaLabel="RFM recency distribution" headers={["Recency", "Customers"]} rows={((drilldown.recency_distribution as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count))])} /><AggregateTable ariaLabel="RFM frequency distribution" headers={["Frequency", "Customers"]} rows={((drilldown.frequency_distribution as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count))])} /></div>}
       </CustomerMetricSection>
-      <CustomerMetricSection label="Purchase frequency" data={sections.purchase_frequency} lowCoverage={lowCoverage}>
-        <AggregateTable ariaLabel="Purchase frequency table" headers={["Orders", "Customers", "Share"]} rows={((sections.purchase_frequency?.buckets as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count)), `${Number(row.share ?? 0) * 100}%`])} />
+      <CustomerMetricSection label="Purchase frequency" data={sections.purchase_frequency} lowCoverage={lowCoverage} onRetry={onRetry}>
+        <AggregateTable ariaLabel="Purchase frequency table" headers={["Orders", "Customers", "Share"]} rows={((sections.purchase_frequency?.buckets as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count)), percentValue(row.share)])} />
       </CustomerMetricSection>
-      <CustomerMetricSection label="Customer concentration" data={sections.concentration} lowCoverage={lowCoverage}>
-        <dl className="grid grid-cols-2 gap-4"><MetricCard label="Top-decile share" value={sections.concentration?.top_decile_share === null ? "—" : `${Number(sections.concentration?.top_decile_share ?? 0) * 100}%`} /><MetricCard label="Identified gross sales" value={moneyValue(sections.concentration?.identified_gross_sales)} /></dl>
+      <CustomerMetricSection label="Customer concentration" data={sections.concentration} lowCoverage={lowCoverage} onRetry={onRetry}>
+        <dl className="grid grid-cols-2 gap-4"><MetricCard label="Top-decile share" value={percentValue(sections.concentration?.top_decile_share)} /><MetricCard label="Identified gross sales" value={moneyValue(sections.concentration?.identified_gross_sales)} /></dl>
       </CustomerMetricSection>
     </div>
   );
