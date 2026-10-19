@@ -595,7 +595,7 @@ test("the first date into Start, the last into End and Reset after a narrower ra
     undefined,
     undefined,
   ]);
-  expect(queryClient.getQueryCache().getAll()).toHaveLength(3);
+  expect(queryClient.getQueryCache().getAll()).toHaveLength(5);
 });
 
 test("KPI cards, trend heading and top products all show the one response of the new range", async () => {
