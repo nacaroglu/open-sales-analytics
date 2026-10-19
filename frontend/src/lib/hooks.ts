@@ -30,7 +30,7 @@ export function useOverview(datasetId: string, start?: string, end?: string, com
 export function useCustomers(datasetId: string, start?: string, end?: string, comparison = "previous_period", enabled = true) {
   const active = enabled && tokenFor(datasetId) !== null;
   return useQuery({
-    queryKey: active ? ["customers", datasetId, start, end, comparison] : ["meta", datasetId],
+    queryKey: ["customers", datasetId, start, end, comparison],
     queryFn: ({ signal }) => getCustomers(datasetId, { start, end, comparison }, { signal }),
     enabled: active,
     placeholderData: keepPreviousData,
