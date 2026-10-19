@@ -1,0 +1,11 @@
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+o1,2025-01-01,p1,Mug,1,2.00,CUST-1
+o2,2025-01-02,p1,Mug,1,2.00,CUST-2
+o3,2025-01-03,p1,Mug,1,2.00,CUST-3
+o4,2025-01-04,p1,Mug,1,2.00,CUST-4
+o5,2025-01-05,p1,Mug,1,2.00,CUST-5
+o6,2025-01-06,p1,Mug,1,2.00,CUST-6
+o7,2025-01-07,p1,Mug,1,2.00,CUST-7
+o8,2025-01-08,p1,Mug,1,2.00,
+o9,2025-01-09,p1,Mug,1,2.00,
+o10,2025-01-10,p1,Mug,1,2.00,

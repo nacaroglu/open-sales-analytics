@@ -1,0 +1,7 @@
+{
+  "reporting_range": {"start": "2025-01-01", "end": "2025-09-30"},
+  "coverage": {"identified_orders": 19, "unidentified_orders": 1, "total_orders": 20},
+  "customer_count": 10,
+  "concentration": {"top_decile_customer_count": 1, "identified_gross_sales": "380.0000"},
+  "notes": "Golden fixture includes a pre-range first purchase, same-day orders, single-order customers, and an unidentified order."
+}

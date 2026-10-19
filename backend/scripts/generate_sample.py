@@ -17,7 +17,15 @@ from pathlib import Path
 DEFAULT_SEED = 20250101
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "app" / "sample" / "sample_sales.csv"
 
-HEADER = ["order_id", "order_date", "product_id", "product_name", "quantity", "unit_price"]
+HEADER = [
+    "order_id",
+    "order_date",
+    "product_id",
+    "product_name",
+    "quantity",
+    "unit_price",
+    "customer_id",
+]
 ORDER_COUNT = 10_000
 START = date(2025, 1, 1)
 END = date(2025, 12, 31)
@@ -111,6 +119,9 @@ def generate(seed: int = DEFAULT_SEED) -> bytes:
         order_id = f"ORD-{number:06d}"
         line_count = rng.choices(*LINES_PER_ORDER)[0]
         chosen: list[int] = []
+        if number <= 20:
+            line_count = max(line_count, 2)
+            chosen.extend([0, 1])
         while len(chosen) < line_count:
             pick = rng.choices(indexes, weights=PRODUCT_WEIGHTS)[0]
             if pick not in chosen:
@@ -120,8 +131,17 @@ def generate(seed: int = DEFAULT_SEED) -> bytes:
             quantity = rng.choices(*QUANTITIES)[0]
             percent = rng.choices(*PRICE_FACTORS)[0]
             price = _cents(round(base_cents * percent / 100))
+            customer_id = "" if rng.random() >= 0.85 else f"CUST-{((number - 1) % 250) + 1:04d}"
             writer.writerow(
-                [order_id, order_day.isoformat(), f"P{index + 1:03d}", name, quantity, price]
+                [
+                    order_id,
+                    order_day.isoformat(),
+                    f"P{index + 1:03d}",
+                    name,
+                    quantity,
+                    price,
+                    customer_id,
+                ]
             )
     return buffer.getvalue().encode("utf-8")
 

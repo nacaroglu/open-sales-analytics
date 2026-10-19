@@ -54,7 +54,9 @@ def test_different_seed_gives_different_bytes(raw):
 def test_header_is_exactly_the_six_columns(raw):
     first_line = raw.split(b"\n", 1)[0]
 
-    assert first_line == b"order_id,order_date,product_id,product_name,quantity,unit_price"
+    assert (
+        first_line == b"order_id,order_date,product_id,product_name,quantity,unit_price,customer_id"
+    )
 
 
 def test_utf8_no_bom_and_unix_line_endings(raw):
@@ -197,4 +199,5 @@ def test_no_personal_data_columns(rows):
         "product_name",
         "quantity",
         "unit_price",
+        "customer_id",
     }
