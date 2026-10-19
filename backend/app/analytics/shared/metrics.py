@@ -501,6 +501,17 @@ METRICS: dict[str, MetricDefinition] = {
         f"Fewer than {RFM_MIN_CUSTOMERS} customers: segments empty, insufficient_data "
         "availability; customer_count and gross_sales still report the real totals. " + RFM_NOTE,
     ),
+    "purchase_frequency": MetricDefinition(
+        "purchase_frequency",
+        "Purchase frequency",
+        "count",
+        "Customers grouped by their distinct identified order count through the selected end date "
+        "into fixed buckets: 1, 2, 3, 4, 5, 6-10, 11-20 and 21+.",
+        "Identified customers in each distinct-order bucket",
+        "Identified customers with at least one order on or before the selected end date",
+        "All identified orders through the selected end date; the range start has no effect. Current range only, no comparison.",
+        "No identified customers on or before the selected end date: all bucket counts are 0, shares are null, and availability is insufficient_data.",
+    ),
 }
 
 

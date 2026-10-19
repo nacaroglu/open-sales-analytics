@@ -14,6 +14,7 @@ from app.analytics.customers.days_between_purchases import read_days_between_pur
 from app.analytics.customers.historical_value import read_historical_customer_value
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
+from app.analytics.customers.purchase_frequency import read_purchase_frequency
 from app.analytics.customers.repeat_purchase import read_repeat_purchase
 from app.analytics.customers.rfm import read_rfm, read_rfm_drilldown
 from app.analytics.shared.availability import (
@@ -437,6 +438,44 @@ def _rfm_drilldown_body(connection, periods) -> dict:
     }
 
 
+def _purchase_frequency_body(connection, periods) -> dict:
+    """Current-range only: identified customers grouped by orders through range end."""
+    result = read_purchase_frequency(connection, periods.current.end)
+    count = result["customer_count"]
+    availability = (
+        Availability(AvailabilityState.AVAILABLE)
+        if count
+        else Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "No identified customers placed an order on or before the selected end date.",
+        )
+    )
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "customer_count": count,
+        "single_order_share": (
+            ratio(Decimal(result["bucket_counts"]["1"]) / Decimal(count)) if count else None
+        ),
+        "buckets": [
+            {
+                "key": bucket.key,
+                "min_orders": bucket.min_orders,
+                "max_orders": bucket.max_orders,
+                "customer_count": result["bucket_counts"][bucket.key],
+                "share": (
+                    ratio(Decimal(result["bucket_counts"][bucket.key]) / Decimal(count))
+                    if count
+                    else None
+                ),
+            }
+            for bucket in PURCHASE_FREQUENCY_BUCKETS
+        ],
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -480,6 +519,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
         )
         body["sections"]["rfm"] = _rfm_body(connection, periods)
         body["sections"]["rfm_drilldown"] = _rfm_drilldown_body(connection, periods)
+        body["sections"]["purchase_frequency"] = _purchase_frequency_body(connection, periods)
     return body
 
 
