@@ -9,6 +9,7 @@ from starlette.routing import Match, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
+from app.api.customers import router as customers_router
 from app.api.datasets import router as datasets_router
 from app.api.overview import router as overview_router
 from app.api.products import router as products_router
@@ -38,6 +39,7 @@ app = FastAPI(title="Open Sales Analytics", lifespan=lifespan)
 app.add_middleware(RequestLogMiddleware)
 register_error_handlers(app)
 app.include_router(datasets_router)
+app.include_router(customers_router)
 app.include_router(overview_router)
 app.include_router(products_router)
 

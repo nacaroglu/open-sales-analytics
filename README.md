@@ -318,6 +318,21 @@ metadata contains counts only and never customer identifiers. Date-range coverag
 with inclusive order dates; an empty range has zero counts and `coverage: null`. Tiering remains based on the whole
 dataset, so filtering dates does not make the Customers module appear or disappear.
 
+### Customers API
+
+`GET /api/datasets/{id}/customers` is bearer-token protected and accepts the same optional `start`, `end` and
+`comparison` query parameters as the Overview and Products module endpoints. With no parameters it uses the full
+dataset and the default `previous_period` comparison. Invalid dates, reversed or out-of-range dates return
+`400 invalid_range`; an unknown comparison returns `400 invalid_request`. Missing or malformed credentials return
+`401 unauthorized` with `WWW-Authenticate: Bearer`; an unknown, expired or deleted dataset returns `404 not_found`.
+
+The typed response contains `module`, `range`, `comparison`, `currency`, `availability`, `coverage` and `sections`.
+`coverage.dataset` is the stored whole-dataset coverage and `coverage.range` is the inclusive selected-range coverage;
+both contain the tier, rounded coverage ratio and identified, unidentified and total order counts. `sections` is empty
+until the later customer metric issues add aggregate sections. The endpoint always returns `Cache-Control: no-store`.
+Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
+search, detail, download or export data, and identifiers are not written to logs.
+
 ### Warnings
 
 Warnings do not reject the file. They come back in the `warnings` list of the `201` answer and on the upload screen.
