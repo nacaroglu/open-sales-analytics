@@ -13,7 +13,11 @@ test("the Phase 3 browser journey stays coherent across all modules", async ({ p
   await page.getByLabel("Start date").fill("2025-01-01");
   await page.getByLabel("End date").fill("2025-12-31");
   await page.getByLabel("Compare with").selectOption("previous_year");
-  await expect(page.getByText("2025-01-01 to 2025-12-31 compared with 2024-01-01 to 2024-12-31 (same period last year)")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Date range" })
+      .getByText("2025-01-01 to 2025-12-31 compared with 2024-01-01 to 2024-12-31 (same period last year)"),
+  ).toBeVisible();
   await expect(page.getByRole("region", { name: "Key figures" }).getByText(/vs/).first()).toBeVisible();
 
   // Products: rankings, the leading product, price history and penetration.
