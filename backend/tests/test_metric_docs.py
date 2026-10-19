@@ -23,6 +23,20 @@ PRODUCT_METRICS = (
     "basket_lift",
 )
 
+CUSTOMER_METRICS = (
+    "customer_coverage",
+    "identified_customers",
+    "new_vs_returning",
+    "repeat_purchase",
+    "days_between_purchases",
+    "cohort_retention",
+    "historical_customer_value",
+    "rfm",
+    "rfm_drilldown",
+    "purchase_frequency",
+    "concentration",
+)
+
 
 def test_product_analytics_documentation_contains_metric_keys_and_labels() -> None:
     readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
@@ -36,3 +50,22 @@ def test_product_analytics_documentation_contains_metric_keys_and_labels() -> No
     assert f"more than {MAX_DISTINCT_PRODUCTS_PER_ORDER} distinct" in section
     for window in DORMANCY_WINDOWS:
         assert str(window) in section
+
+
+def test_customer_analytics_documentation_contains_metric_keys_labels_and_thresholds() -> None:
+    readme = (Path(__file__).parents[2] / "README.md").read_text(encoding="utf-8")
+    section = readme.split("## Customer analytics", 1)[1].split("## Configuration", 1)[0]
+    for key in CUSTOMER_METRICS:
+        metric = get_metric(key)
+        assert f"`{key}`" in section
+        assert metric.label in section
+    assert "50%" in section
+    assert "80%" in section
+    assert "128" in section
+    assert "same-day" in section
+    assert "ceil(N / 10)" in section
+    assert "Not yet observed" in section
+    assert not any(
+        word in section.lower() for word in ("revenue", "anonymised", "ltv", "lifetime value")
+    )
+    assert "pseudonymous, not anonymous" in section
