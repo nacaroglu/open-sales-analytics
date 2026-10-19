@@ -11,6 +11,7 @@ from app.analytics.customers.historical_value import read_historical_customer_va
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
 from app.analytics.customers.repeat_purchase import read_repeat_purchase
+from app.analytics.customers.rfm import read_rfm
 from app.analytics.shared.availability import (
     Availability,
     AvailabilityState,
@@ -19,6 +20,7 @@ from app.analytics.shared.availability import (
     customer_coverage_tier,
     rounded_coverage,
 )
+from app.analytics.shared.metrics import RFM_MIN_CUSTOMERS, RFM_NOTE, RFM_SEGMENTS
 from app.analytics.shared.periods import recency_anchor
 from app.api.module_common import (
     cache_key,
@@ -345,6 +347,39 @@ def _historical_customer_value_body(connection, periods) -> dict:
     }
 
 
+def _rfm_body(connection, periods) -> dict:
+    """Current-range only: all identified activity through the range end, no comparison."""
+    anchor = recency_anchor(periods.current)
+    result = read_rfm(connection, anchor)
+    count = result["customer_count"]
+    if count < RFM_MIN_CUSTOMERS:
+        availability = Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            f"RFM needs at least {RFM_MIN_CUSTOMERS} identified customers.",
+        )
+        segments = []
+    else:
+        availability = Availability(AvailabilityState.AVAILABLE)
+        segments = [
+            {
+                "segment": segment.name,
+                "customer_count": result["segment_counts"][segment.name],
+                "share": ratio(Decimal(result["segment_counts"][segment.name]) / Decimal(count)),
+            }
+            for segment in RFM_SEGMENTS
+        ]
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "customer_count": count,
+        "recency_anchor": anchor.isoformat(),
+        "note": RFM_NOTE,
+        "segments": segments,
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -386,6 +421,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
         body["sections"]["historical_customer_value"] = _historical_customer_value_body(
             connection, periods
         )
+        body["sections"]["rfm"] = _rfm_body(connection, periods)
     return body
 
 
