@@ -255,6 +255,39 @@ class HistoricalCustomerValueSection(BaseModel):
     )
 
 
+class RfmSegment(BaseModel):
+    segment: str = Field(
+        description="Segment name, one of Champions, Loyal, Potential Loyalists, "
+        "Needs Attention, At Risk, Lost (in that order)."
+    )
+    customer_count: int = Field(description="Identified customers assigned to this segment.")
+    share: float = Field(
+        description="customer_count divided by the section customer_count, rounded half-up "
+        "to 4 decimals."
+    )
+
+
+class RfmSection(BaseModel):
+    """RFM segments: dataset-relative recency, frequency and monetary scores (1-5)."""
+
+    availability: AvailabilityResponse
+    customer_count: int = Field(
+        description="N: identified customers with at least one identified order on or before "
+        "the range end (the range start has no effect)."
+    )
+    recency_anchor: str = Field(
+        description="The range end (YYYY-MM-DD); recency is measured in days to this date "
+        "and later activity is ignored."
+    )
+    note: str = Field(
+        description="Segments are relative to this upload's customer base, not universal "
+        "benchmarks."
+    )
+    segments: list[RfmSegment] = Field(
+        description="All six segments in fixed order; empty when fewer than 5 customers."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
@@ -264,6 +297,7 @@ class CustomerSections(BaseModel):
     days_between_purchases: DaysBetweenPurchasesSection | None = None
     cohort_retention: CohortRetentionSection | None = None
     historical_customer_value: HistoricalCustomerValueSection | None = None
+    rfm: RfmSection | None = None
 
 
 class CustomersResponse(BaseModel):

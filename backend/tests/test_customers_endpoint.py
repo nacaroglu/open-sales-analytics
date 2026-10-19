@@ -3,7 +3,7 @@ import re
 from datetime import UTC, datetime
 
 import pytest
-from app.analytics.shared.metrics import METRICS
+from app.analytics.shared.metrics import METRICS, RFM_NOTE
 from app.auth import get_now
 from app.config import Settings, get_settings
 from app.main import app
@@ -57,6 +57,10 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
             "o2,2025-01-02,p1,Mug,1,3.00,CUSTMARKER-0002",
             "o3,2025-01-03,p1,Mug,1,4.00,",
             "o4,2025-01-04,p1,Mug,1,5.00,CUSTMARKER-0002",
+            "o5,2025-01-05,p1,Mug,1,6.00,CUSTMARKER-0003",
+            "o6,2025-01-05,p1,Mug,1,7.00,CUSTMARKER-0004",
+            "o7,2025-01-05,p1,Mug,1,8.00,CUSTMARKER-0005",
+            "o8,2025-01-06,p1,Mug,1,9.00,",
         ],
     )
     response = get_customers(client, dataset, start="2025-01-02", end="2025-01-03")
@@ -72,16 +76,16 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "reason": None,
         "warning": {
             "state": "low_coverage",
-            "reason": "Only 3 of 4 orders (75%) have a customer_id; customer results describe those orders only.",
+            "reason": "Only 6 of 8 orders (75%) have a customer_id; customer results describe those orders only.",
         },
     }
     assert body["coverage"] == {
         "dataset": {
             "tier": "warning",
             "coverage": 0.75,
-            "identified_orders": 3,
-            "unidentified_orders": 1,
-            "total_orders": 4,
+            "identified_orders": 6,
+            "unidentified_orders": 2,
+            "total_orders": 8,
         },
         "range": {
             "tier": "warning",
@@ -157,8 +161,16 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
     assert value["rows"][0]["cells"] == [
         {"month_offset": 0, "state": "partial", "value_per_customer": "2.5000"}
     ]
-    markers = ("CUSTMARKER-0001", "CUSTMARKER-0002")
-    for body_text in (response.text, with_interval.text):
+    assert body["sections"]["rfm"]["availability"]["state"] == "insufficient_data"
+    with_rfm = get_customers(client, dataset, start="2025-01-01", end="2025-01-06")
+    rfm = with_rfm.json()["sections"]["rfm"]
+    assert rfm["availability"] == {"state": "available", "reason": None}
+    assert rfm["customer_count"] == 5
+    assert set(rfm) == {"availability", "customer_count", "recency_anchor", "note", "segments"}
+    for segment in rfm["segments"]:
+        assert set(segment) == {"segment", "customer_count", "share"}
+    markers = tuple(f"CUSTMARKER-000{index}" for index in range(1, 6))
+    for body_text in (response.text, with_interval.text, with_rfm.text):
         assert all(marker not in body_text for marker in markers)
     captured = capsys.readouterr()
     log_text = captured.out + captured.err
@@ -897,6 +909,109 @@ def test_historical_customer_value_without_cohort_is_insufficient_data(client):
     assert value["all_cohorts"] == []
 
 
+RFM_ROWS = [
+    "p1,2026-03-27,p1,Mug,1,100.00,P",
+    "p2,2026-03-28,p1,Mug,1,100.00,P",
+    "p3,2026-03-29,p1,Mug,1,100.00,P",
+    "p4,2026-03-30,p1,Mug,1,100.00,P",
+    "p5,2026-03-31,p1,Mug,1,100.00,P",
+    "q1,2026-03-19,p1,Mug,1,100.00,Q",
+    "q2,2026-03-20,p1,Mug,1,100.00,Q",
+    "q3,2026-03-21,p1,Mug,1,100.00,Q",
+    "r1,2026-02-28,p1,Mug,1,150.00,R",
+    "r2,2026-03-01,p1,Mug,1,150.00,R",
+    "s1,2026-01-30,p1,Mug,1,50.00,S",
+    "t1,2025-12-31,p1,Mug,1,20.00,T",
+]
+
+GOLDEN_RFM_SEGMENTS = [
+    {"segment": "Champions", "customer_count": 2, "share": 0.4},
+    {"segment": "Loyal", "customer_count": 1, "share": 0.2},
+    {"segment": "Potential Loyalists", "customer_count": 0, "share": 0},
+    {"segment": "Needs Attention", "customer_count": 0, "share": 0},
+    {"segment": "At Risk", "customer_count": 0, "share": 0},
+    {"segment": "Lost", "customer_count": 2, "share": 0.4},
+]
+
+
+def test_rfm_golden_section_uses_all_activity_through_the_range_end(client):
+    dataset = upload(client, RFM_ROWS)
+    rfm = get_customers(client, dataset, start="2026-03-31", end="2026-03-31").json()["sections"][
+        "rfm"
+    ]
+
+    assert rfm == {
+        "availability": {"state": "available", "reason": None},
+        "customer_count": 5,
+        "recency_anchor": "2026-03-31",
+        "note": RFM_NOTE,
+        "segments": GOLDEN_RFM_SEGMENTS,
+    }
+
+
+def test_rfm_does_not_depend_on_the_request_clock(client, settings):
+    upload_time = datetime(2026, 4, 1, 12, tzinfo=UTC)
+    app.dependency_overrides[get_now] = lambda: upload_time
+    dataset = upload(client, RFM_ROWS)
+    sections = []
+    for now in (upload_time, datetime(2026, 4, 2, 6, tzinfo=UTC)):
+        app.dependency_overrides[get_now] = lambda now=now: now
+        app.dependency_overrides[get_response_cache] = lambda: ResponseCache(
+            max_entries=20, ttl_seconds=300
+        )
+        response = get_customers(client, dataset, start="2026-03-01", end="2026-03-31")
+        assert response.status_code == 200
+        sections.append(response.json()["sections"]["rfm"])
+
+    assert sections[0] == sections[1]
+    assert sections[0]["segments"] == GOLDEN_RFM_SEGMENTS
+
+
+def test_rfm_is_byte_identical_and_ignores_the_comparison_mode(client):
+    dataset = upload(client, RFM_ROWS)
+    texts = []
+    for comparison in ("previous_period", "previous_period", "previous_year"):
+        app.dependency_overrides[get_response_cache] = lambda: ResponseCache(
+            max_entries=20, ttl_seconds=300
+        )
+        body = get_customers(
+            client, dataset, start="2026-03-01", end="2026-03-31", comparison=comparison
+        ).json()
+        texts.append(json.dumps(body["sections"]["rfm"]))
+
+    assert texts[0] == texts[1] == texts[2]
+    for field in ("comparison_value", "absolute_change", "percent_change", "change_status"):
+        assert field not in texts[0]
+
+
+def test_rfm_warning_tier_matches_normal_numbers(client):
+    normal = upload(client, RFM_ROWS)
+    unidentified = [f"u{day},2026-03-{day},p1,Mug,1,999.00," for day in (10, 11, 12, 13)]
+    warning = upload(client, RFM_ROWS + unidentified)
+    params = {"start": "2026-03-01", "end": "2026-03-31"}
+    normal_body = get_customers(client, normal, **params).json()
+    warning_body = get_customers(client, warning, **params).json()
+
+    assert normal_body["availability"]["tier"] == "normal"
+    assert warning_body["availability"]["tier"] == "warning"
+    assert warning_body["sections"]["rfm"] == normal_body["sections"]["rfm"]
+    assert normal_body["sections"]["rfm"]["segments"] == GOLDEN_RFM_SEGMENTS
+
+
+def test_rfm_with_four_customers_is_insufficient_data(client):
+    dataset = upload(client, [row for row in RFM_ROWS if not row.startswith("t1")])
+    rfm = get_customers(client, dataset, start="2026-01-30", end="2026-03-31").json()["sections"][
+        "rfm"
+    ]
+
+    assert rfm["availability"] == {
+        "state": "insufficient_data",
+        "reason": "RFM needs at least 5 identified customers.",
+    }
+    assert (rfm["customer_count"], rfm["segments"]) == (4, [])
+    assert rfm["note"]
+
+
 def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
     import app.api.customers as customers_api
 
@@ -908,6 +1023,7 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     monkeypatch.setattr(customers_api, "read_days_between_purchases", not_run)
     monkeypatch.setattr(customers_api, "read_cohort_retention", not_run)
     monkeypatch.setattr(customers_api, "read_historical_customer_value", not_run)
+    monkeypatch.setattr(customers_api, "read_rfm", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
     missing_body = get_customers(client, missing).json()
     assert missing_body["availability"]["tier"] == "missing"
@@ -932,6 +1048,8 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     assert "cohort_retention" not in suppressed_body["sections"]
     assert "historical_customer_value" not in missing_body["sections"]
     assert "historical_customer_value" not in suppressed_body["sections"]
+    assert "rfm" not in missing_body["sections"]
+    assert "rfm" not in suppressed_body["sections"]
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -1147,6 +1265,27 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     for name in value_models:
         value_fields |= set(components[name]["properties"])
     assert not any("projected" in field or "predicted" in field for field in value_fields)
+    assert {"RfmSection", "RfmSegment"} <= set(components)
+    assert "rfm" in components["CustomerSections"]["properties"]
+    assert set(components["RfmSection"]["properties"]) == {
+        "availability",
+        "customer_count",
+        "recency_anchor",
+        "note",
+        "segments",
+    }
+    assert set(components["RfmSegment"]["properties"]) == {"segment", "customer_count", "share"}
+    for name in ("RfmSection", "RfmSegment"):
+        assert all(
+            prop.get("description")
+            for key, prop in components[name]["properties"].items()
+            if key != "availability"
+        ), name
+    rfm_text = json.dumps([components["RfmSection"], components["RfmSegment"]]).lower()
+    assert "customer_id" not in rfm_text
+    assert '"r"' not in rfm_text and "score" not in json.dumps(
+        list(components["RfmSegment"]["properties"])
+    )
     assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"
     ]

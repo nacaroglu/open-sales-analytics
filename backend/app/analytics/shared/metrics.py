@@ -18,6 +18,94 @@ ACQUISITION_COHORT_DEFINITION = (
     "The calendar month containing the customer's first purchase date, represented by the "
     "month's first day."
 )
+
+
+@dataclass(frozen=True)
+class RfmSegmentRule:
+    """One named RFM segment: a rule on R and FM = F + M, with inclusive bounds."""
+
+    name: str
+    rule: str
+    explanation: str
+    min_r: int
+    max_r: int
+    min_fm: int
+    max_fm: int
+
+    def matches(self, r: int, f: int, m: int) -> bool:
+        return self.min_r <= r <= self.max_r and self.min_fm <= f + m <= self.max_fm
+
+
+RFM_MIN_CUSTOMERS = 5
+RFM_SCORE_FORMULA = (
+    "Per dimension, values are ordered worst to best (recency: more days is worse; frequency "
+    "and monetary: lower is worse); worse = customers with a strictly worse value, ties = "
+    "customers with the same value (itself included), N = population size; "
+    "score = floor(5 × (2 × worse + ties) / (2 × N)) + 1, in integer arithmetic (1-5). "
+    "When every customer has the same value in a dimension, all get 3."
+)
+# Ordered: the first matching rule wins. FM = F + M (2-10).
+RFM_SEGMENTS = (
+    RfmSegmentRule(
+        "Champions",
+        "R ≥ 4 and FM ≥ 8",
+        "Bought recently, often and for a lot compared with the other customers.",
+        4,
+        5,
+        8,
+        10,
+    ),
+    RfmSegmentRule(
+        "Loyal",
+        "R ≥ 3 and FM ≥ 6",
+        "Buy regularly and spend well, and have not lapsed.",
+        3,
+        5,
+        6,
+        10,
+    ),
+    RfmSegmentRule(
+        "Potential Loyalists",
+        "R ≥ 4 and FM ≤ 5",
+        "Bought recently but not yet often or for much.",
+        4,
+        5,
+        2,
+        5,
+    ),
+    RfmSegmentRule(
+        "Needs Attention",
+        "R = 3 and FM ≤ 5",
+        "Middling recency with few or small purchases.",
+        3,
+        3,
+        2,
+        5,
+    ),
+    RfmSegmentRule(
+        "At Risk",
+        "R ≤ 2 and FM ≥ 6",
+        "Used to buy often or for a lot but have not bought for a while.",
+        1,
+        2,
+        6,
+        10,
+    ),
+    RfmSegmentRule(
+        "Lost",
+        "R ≤ 2 and FM ≤ 5",
+        "Have not bought for a while and bought rarely or for little.",
+        1,
+        2,
+        2,
+        5,
+    ),
+)
+RFM_NOTE = (
+    "RFM segments are relative to the customer base of this upload; they are not universal "
+    "benchmarks."
+)
+
 _BASKET_INSUFFICIENT_DATA = (
     "A pair is eligible only when it occurs in at least 10 shared orders and support is at "
     "least 0.1%. Orders containing more than 100 distinct products are excluded from basket "
@@ -376,6 +464,23 @@ METRICS: dict[str, MetricDefinition] = {
         "Members (customer_count, or cohort_size per cohort): identified customers whose acquisition_month is from the month containing the range start to the month containing the range end and whose first order is on or before the range end",
         "Members are selected exactly as the cohort_retention rows; the data cutoff is the range end. Sales before the range start count; sales after the cutoff are ignored. Current range only, no comparison.",
         "No acquisition cohort overlaps the range: customer_count 0, average and median null, rows and all_cohorts empty, insufficient_data availability. Members whose total value is 0: values 0.0000 with zero_result availability. not_observed cells are null; an all-cohorts offset with no complete cohort is null.",
+    ),
+    "rfm": MetricDefinition(
+        "rfm",
+        "RFM segments",
+        "count",
+        RFM_SCORE_FORMULA
+        + " Segments (FM = F + M, first matching rule wins): "
+        + "; ".join(
+            f"{segment.name}: {segment.rule} ({segment.explanation})" for segment in RFM_SEGMENTS
+        )
+        + ". Share = segment customer_count / N.",
+        "Customers per segment. Inputs per customer, from identified lines dated on or before the range end: recency = days from the latest line date to the range end; frequency = distinct order_ids; monetary = SUM(quantity × unit_price)",
+        "N: identified customers with at least one identified order on or before the range end",
+        "All identified activity through the selected end date; the range start has no effect. Current range only, no comparison. "
+        + RFM_NOTE,
+        f"Fewer than {RFM_MIN_CUSTOMERS} customers: segments empty, insufficient_data availability. "
+        + RFM_NOTE,
     ),
 }
 

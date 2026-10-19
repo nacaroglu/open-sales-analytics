@@ -368,6 +368,18 @@ cell's `value_per_customer` = the cohort's cumulative gross sales through the en
 `complete` (`value_per_customer`, `contributing_cohorts`; `null` and `0` when none is complete). Without a cohort the
 state is `insufficient_data`; members whose total value is 0 give `zero_result` with `0.0000` values.
 
+`sections.rfm` reports RFM segment counts for the current range only, with no comparison. Its population (`customer_count`,
+N) is identified customers with an identified order on or before the range end; all their identified activity through the
+end counts and the range start has no effect. Recency is days from a customer's latest identified line to the
+`recency_anchor` (the range end), frequency is distinct orders and monetary is gross sales. Each dimension is scored 1-5 from
+the customer's rank: `floor(5 × (2 × worse + ties) / (2 × N)) + 1`, where `worse` counts customers with a strictly worse
+value and `ties` those with the same value, so equal values get equal scores and a constant dimension scores 3. With
+`FM = F + M`, the first matching rule names the segment: Champions (R ≥ 4, FM ≥ 8), Loyal (R ≥ 3, FM ≥ 6), Potential
+Loyalists (R ≥ 4, FM ≤ 5), Needs Attention (R = 3, FM ≤ 5), At Risk (R ≤ 2, FM ≥ 6), Lost (R ≤ 2, FM ≤ 5). `segments`
+always lists all six in that order with `customer_count` and `share`; per-customer scores never leave the backend. Fewer
+than 5 customers gives empty `segments` and `insufficient_data`. A fixed `note` says segments are relative to this
+upload's customer base, not universal benchmarks.
+
 Missing or suppressed coverage omits every section (`sections` is empty). The endpoint always returns `Cache-Control: no-store`.
 Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
 search, detail, download or export data, and identifiers are not written to logs.
