@@ -380,6 +380,18 @@ always lists all six in that order with `customer_count` and `share`; per-custom
 than 5 customers gives empty `segments` and `insufficient_data`. A fixed `note` says segments are relative to this
 upload's customer base, not universal benchmarks.
 
+`sections.rfm_drilldown` reports aggregate figures per RFM segment, with the same population, inputs and segments as
+`sections.rfm` and no comparison. At the top level it returns `customer_count` (N, the same as `sections.rfm`),
+`recency_anchor` (the range end) and `gross_sales` (the summed monetary value of all N customers through the end, money
+rounded half-up to 4 decimals). `segments` always lists all six segments in the `sections.rfm` order; each has
+`customer_count`, `gross_sales` (its members' summed monetary value), `gross_sales_share` (segment `gross_sales` / top-level
+`gross_sales`, `null` when the total is `0`), a `recency_distribution` over six fixed buckets of days to the anchor
+(`0-30`, `31-60`, `61-90`, `91-180`, `181-365`, `366+`; `key`, `min_days`, `max_days`, `customer_count`) and a
+`frequency_distribution` over eight fixed buckets of distinct orders (`1`, `2`, `3`, `4`, `5`, `6-10`, `11-20`, `21+`;
+`key`, `min_orders`, `max_orders`, `customer_count`). Open buckets have a `null` maximum, and empty segments and buckets
+are `0`. A segment with a single member is reported like any other, since no customer identifier or score is returned. Fewer
+than 5 customers gives `insufficient_data` with the real `customer_count` and `gross_sales` and an empty `segments` list.
+
 Missing or suppressed coverage omits every section (`sections` is empty). The endpoint always returns `Cache-Control: no-store`.
 Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
 search, detail, download or export data, and identifiers are not written to logs.

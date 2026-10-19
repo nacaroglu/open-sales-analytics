@@ -169,6 +169,19 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
     assert set(rfm) == {"availability", "customer_count", "recency_anchor", "note", "segments"}
     for segment in rfm["segments"]:
         assert set(segment) == {"segment", "customer_count", "share"}
+    drilldown = with_rfm.json()["sections"]["rfm_drilldown"]
+    assert drilldown["availability"] == {"state": "available", "reason": None}
+    assert (drilldown["customer_count"], drilldown["gross_sales"]) == (5, "31.0000")
+    assert len(drilldown["segments"]) == 6
+    for segment in drilldown["segments"]:
+        assert set(segment) == {
+            "segment",
+            "customer_count",
+            "gross_sales",
+            "gross_sales_share",
+            "recency_distribution",
+            "frequency_distribution",
+        }
     markers = tuple(f"CUSTMARKER-000{index}" for index in range(1, 6))
     for body_text in (response.text, with_interval.text, with_rfm.text):
         assert all(marker not in body_text for marker in markers)
@@ -1012,6 +1025,78 @@ def test_rfm_with_four_customers_is_insufficient_data(client):
     assert rfm["note"]
 
 
+def test_rfm_drilldown_golden_section_through_the_endpoint(client):
+    dataset = upload(client, RFM_ROWS)
+    body = get_customers(client, dataset, start="2026-03-31", end="2026-03-31").json()
+    drilldown = body["sections"]["rfm_drilldown"]
+
+    assert list(body["sections"])[-2:] == ["rfm", "rfm_drilldown"]
+    assert drilldown["availability"] == {"state": "available", "reason": None}
+    assert (drilldown["customer_count"], drilldown["recency_anchor"]) == (5, "2026-03-31")
+    assert drilldown["customer_count"] == body["sections"]["rfm"]["customer_count"]
+    assert drilldown["gross_sales"] == "1170.0000"
+    assert [
+        (s["segment"], s["customer_count"], s["gross_sales"], s["gross_sales_share"])
+        for s in drilldown["segments"]
+    ] == [
+        ("Champions", 2, "800.0000", 0.6838),
+        ("Loyal", 1, "300.0000", 0.2564),
+        ("Potential Loyalists", 0, "0.0000", 0),
+        ("Needs Attention", 0, "0.0000", 0),
+        ("At Risk", 0, "0.0000", 0),
+        ("Lost", 2, "70.0000", 0.0598),
+    ]
+
+
+def test_rfm_drilldown_is_byte_identical_and_ignores_the_comparison_mode(client):
+    dataset = upload(client, RFM_ROWS)
+    texts = []
+    for comparison in ("previous_period", "previous_period", "previous_year"):
+        app.dependency_overrides[get_response_cache] = lambda: ResponseCache(
+            max_entries=20, ttl_seconds=300
+        )
+        body = get_customers(
+            client, dataset, start="2026-03-01", end="2026-03-31", comparison=comparison
+        ).json()
+        texts.append(json.dumps(body["sections"]["rfm_drilldown"]))
+
+    assert texts[0] == texts[1] == texts[2]
+    for field in ("comparison_value", "absolute_change", "percent_change", "change_status"):
+        assert field not in texts[0]
+
+
+def test_rfm_drilldown_warning_tier_matches_normal_numbers(client):
+    normal = upload(client, RFM_ROWS)
+    unidentified = [f"u{day},2026-03-{day},p1,Mug,1,999.00," for day in (10, 11, 12, 13)]
+    warning = upload(client, RFM_ROWS + unidentified)
+    params = {"start": "2026-03-01", "end": "2026-03-31"}
+    normal_body = get_customers(client, normal, **params).json()
+    warning_body = get_customers(client, warning, **params).json()
+
+    assert normal_body["availability"]["tier"] == "normal"
+    assert warning_body["availability"]["tier"] == "warning"
+    assert warning_body["sections"]["rfm_drilldown"] == normal_body["sections"]["rfm_drilldown"]
+    assert normal_body["sections"]["rfm_drilldown"]["gross_sales"] == "1170.0000"
+
+
+def test_rfm_drilldown_with_four_customers_is_insufficient_data(client):
+    dataset = upload(client, [row for row in RFM_ROWS if not row.startswith("t1")])
+    drilldown = get_customers(client, dataset, start="2026-01-30", end="2026-03-31").json()[
+        "sections"
+    ]["rfm_drilldown"]
+
+    assert drilldown == {
+        "availability": {
+            "state": "insufficient_data",
+            "reason": "RFM needs at least 5 identified customers.",
+        },
+        "customer_count": 4,
+        "recency_anchor": "2026-03-31",
+        "gross_sales": "1150.0000",
+        "segments": [],
+    }
+
+
 def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
     import app.api.customers as customers_api
 
@@ -1024,6 +1109,7 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     monkeypatch.setattr(customers_api, "read_cohort_retention", not_run)
     monkeypatch.setattr(customers_api, "read_historical_customer_value", not_run)
     monkeypatch.setattr(customers_api, "read_rfm", not_run)
+    monkeypatch.setattr(customers_api, "read_rfm_drilldown", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
     missing_body = get_customers(client, missing).json()
     assert missing_body["availability"]["tier"] == "missing"
@@ -1050,6 +1136,8 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     assert "historical_customer_value" not in suppressed_body["sections"]
     assert "rfm" not in missing_body["sections"]
     assert "rfm" not in suppressed_body["sections"]
+    assert "rfm_drilldown" not in missing_body["sections"]
+    assert "rfm_drilldown" not in suppressed_body["sections"]
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -1285,6 +1373,54 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     assert "customer_id" not in rfm_text
     assert '"r"' not in rfm_text and "score" not in json.dumps(
         list(components["RfmSegment"]["properties"])
+    )
+    drilldown_models = (
+        "RfmDrilldownSection",
+        "RfmDrilldownSegment",
+        "RfmRecencyBucket",
+        "RfmFrequencyBucket",
+    )
+    assert set(drilldown_models) <= set(components)
+    assert components["CustomerSections"]["properties"]["rfm_drilldown"]["anyOf"][0][
+        "$ref"
+    ].endswith("RfmDrilldownSection")
+    assert set(components["RfmDrilldownSection"]["properties"]) == {
+        "availability",
+        "customer_count",
+        "recency_anchor",
+        "gross_sales",
+        "segments",
+    }
+    assert set(components["RfmDrilldownSegment"]["properties"]) == {
+        "segment",
+        "customer_count",
+        "gross_sales",
+        "gross_sales_share",
+        "recency_distribution",
+        "frequency_distribution",
+    }
+    assert set(components["RfmRecencyBucket"]["properties"]) == {
+        "key",
+        "min_days",
+        "max_days",
+        "customer_count",
+    }
+    assert set(components["RfmFrequencyBucket"]["properties"]) == {
+        "key",
+        "min_orders",
+        "max_orders",
+        "customer_count",
+    }
+    for name in drilldown_models:
+        assert all(
+            prop.get("description")
+            for key, prop in components[name]["properties"].items()
+            if key != "availability"
+        ), name
+    drilldown_text = json.dumps([components[name] for name in drilldown_models]).lower()
+    assert "customer_id" not in drilldown_text
+    assert "score" not in json.dumps(
+        [list(components[name]["properties"]) for name in drilldown_models]
     )
     assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"

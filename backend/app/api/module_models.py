@@ -288,6 +288,78 @@ class RfmSection(BaseModel):
     )
 
 
+class RfmRecencyBucket(BaseModel):
+    key: str = Field(
+        description="Bucket key, one of 0-30, 31-60, 61-90, 91-180, 181-365, 366+ (in that order)."
+    )
+    min_days: int = Field(description="Smallest recency in days in this bucket (inclusive).")
+    max_days: int | None = Field(
+        description="Largest recency in days in this bucket (inclusive); null for the open "
+        "366+ bucket."
+    )
+    customer_count: int = Field(
+        description="Customers of the segment whose recency (days from their latest "
+        "identified order to recency_anchor) falls in this bucket."
+    )
+
+
+class RfmFrequencyBucket(BaseModel):
+    key: str = Field(
+        description="Bucket key, one of 1, 2, 3, 4, 5, 6-10, 11-20, 21+ (in that order)."
+    )
+    min_orders: int = Field(description="Smallest number of distinct orders (inclusive).")
+    max_orders: int | None = Field(
+        description="Largest number of distinct orders (inclusive); null for the open 21+ bucket."
+    )
+    customer_count: int = Field(
+        description="Customers of the segment whose distinct identified orders through "
+        "recency_anchor fall in this bucket."
+    )
+
+
+class RfmDrilldownSegment(BaseModel):
+    segment: str = Field(
+        description="Segment name, one of Champions, Loyal, Potential Loyalists, "
+        "Needs Attention, At Risk, Lost (in that order)."
+    )
+    customer_count: int = Field(description="Identified customers assigned to this segment.")
+    gross_sales: str = Field(
+        description="Sum of the members' identified gross sales through recency_anchor; "
+        "money, 4 decimals rounded half-up."
+    )
+    gross_sales_share: float | None = Field(
+        description="Segment gross_sales divided by the section gross_sales, rounded half-up "
+        "to 4 decimals; null when the section gross_sales is 0."
+    )
+    recency_distribution: list[RfmRecencyBucket] = Field(
+        description="Members per recency bucket; always all six buckets in fixed order."
+    )
+    frequency_distribution: list[RfmFrequencyBucket] = Field(
+        description="Members per distinct-order bucket; always all eight buckets in fixed order."
+    )
+
+
+class RfmDrilldownSection(BaseModel):
+    """Aggregate RFM segment drill-downs; no customer identifiers or per-customer scores."""
+
+    availability: AvailabilityResponse
+    customer_count: int = Field(
+        description="N: identified customers with at least one identified order on or before "
+        "the range end (the same population as sections.rfm)."
+    )
+    recency_anchor: str = Field(
+        description="The range end (YYYY-MM-DD); recency is measured in days to this date "
+        "and later activity is ignored."
+    )
+    gross_sales: str = Field(
+        description="Identified gross sales of all N customers through recency_anchor; money, "
+        "4 decimals rounded half-up."
+    )
+    segments: list[RfmDrilldownSegment] = Field(
+        description="All six segments in fixed order; empty when fewer than 5 customers."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
@@ -298,6 +370,7 @@ class CustomerSections(BaseModel):
     cohort_retention: CohortRetentionSection | None = None
     historical_customer_value: HistoricalCustomerValueSection | None = None
     rfm: RfmSection | None = None
+    rfm_drilldown: RfmDrilldownSection | None = None
 
 
 class CustomersResponse(BaseModel):

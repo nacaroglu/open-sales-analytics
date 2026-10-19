@@ -482,6 +482,25 @@ METRICS: dict[str, MetricDefinition] = {
         f"Fewer than {RFM_MIN_CUSTOMERS} customers: segments empty, insufficient_data availability. "
         + RFM_NOTE,
     ),
+    "rfm_drilldown": MetricDefinition(
+        "rfm_drilldown",
+        "RFM segment drill-downs",
+        "count",
+        "Per RFM segment (the rfm scoring and segments, all six in fixed order): customer_count; "
+        "gross_sales = SUM(monetary) of its members; gross_sales_share = segment gross_sales / "
+        "total gross_sales (null when the total is 0); recency_distribution = members per "
+        "recency bucket (0-30, 31-60, 61-90, 91-180, 181-365, 366+ days); "
+        "frequency_distribution = members per distinct-order bucket (1, 2, 3, 4, 5, 6-10, "
+        "11-20, 21+). Aggregates only, no customer identifiers.",
+        "Customers and their monetary (SUM(quantity × unit_price) of identified lines dated on "
+        "or before the range end) per segment and bucket",
+        "N and total gross_sales: identified customers with at least one identified order on "
+        "or before the range end, and the sum of their monetary values",
+        "All identified activity through the selected end date; the range start has no effect. "
+        "Current range only, no comparison. " + RFM_NOTE,
+        f"Fewer than {RFM_MIN_CUSTOMERS} customers: segments empty, insufficient_data "
+        "availability; customer_count and gross_sales still report the real totals. " + RFM_NOTE,
+    ),
 }
 
 
