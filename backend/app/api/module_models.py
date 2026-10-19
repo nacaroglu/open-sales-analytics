@@ -94,11 +94,43 @@ class NewVsReturningSection(BaseModel):
     )
 
 
+class ComparedRatio(BaseModel):
+    value: float | None = Field(
+        description="Current ratio between 0 and 1, rounded half-up to 4 decimals; null when undefined."
+    )
+    comparison_value: float | None = Field(
+        description="Comparison-period ratio, or null when unavailable or undefined."
+    )
+    absolute_change: float | None = Field(
+        description="Current ratio minus comparison ratio, rounded half-up to 4 decimals."
+    )
+    percent_change: str | None = Field(
+        description="Percentage change from the exact ratios with 2 decimals, or null."
+    )
+    change_status: str | None = Field(
+        description="Shared comparison status, or null when the change is undefined."
+    )
+
+
+class RepeatPurchaseSection(BaseModel):
+    availability: AvailabilityResponse
+    active_customers: ComparedCount = Field(
+        description="Identified customers with an order in the active range."
+    )
+    repeat_customers: ComparedCount = Field(
+        description="Active customers with two or more orders through the range end."
+    )
+    repeat_purchase_rate: ComparedRatio = Field(
+        description="repeat_customers divided by active_customers."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
     identified_customers: IdentifiedCustomersSection | None = None
     new_vs_returning: NewVsReturningSection | None = None
+    repeat_purchase: RepeatPurchaseSection | None = None
 
 
 class CustomersResponse(BaseModel):

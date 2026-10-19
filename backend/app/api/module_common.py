@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from starlette.responses import JSONResponse, Response
 
@@ -88,6 +88,48 @@ def compared(value: int | Decimal, baseline: int | Decimal | None, as_money: boo
         "percent_change": percent(change.percent_change),
         "change_status": change.status,
     }
+
+
+_RATIO_STEP = Decimal("0.0001")
+
+
+def ratio(value: Decimal) -> float:
+    """Serialize a ratio as a JSON number rounded half-up to 4 decimals."""
+    return float(value.quantize(_RATIO_STEP, rounding=ROUND_HALF_UP))
+
+
+def compared_ratio(
+    numerator: int,
+    denominator: int,
+    baseline_numerator: int | None,
+    baseline_denominator: int | None,
+) -> dict:
+    """Compare two ratios using their exact fractions.
+
+    A period with a zero denominator has no ratio, so the change is undefined. A
+    ``None`` baseline means the comparison period is unavailable.
+    """
+    current = None if denominator == 0 else Decimal(numerator) / Decimal(denominator)
+    baseline = (
+        None
+        if baseline_numerator is None or not baseline_denominator
+        else Decimal(baseline_numerator) / Decimal(baseline_denominator)
+    )
+    body: dict = {
+        "value": None if current is None else ratio(current),
+        "comparison_value": None if baseline is None else ratio(baseline),
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+    if current is not None and baseline is not None:
+        from app.analytics.shared.periods import compute_change
+
+        change = compute_change(current, baseline)
+        body["absolute_change"] = ratio(change.absolute_change)
+        body["percent_change"] = percent(change.percent_change)
+        body["change_status"] = change.status
+    return body
 
 
 def comparison_body(periods: ModulePeriods) -> dict:
