@@ -81,11 +81,11 @@ The one accepted real wait is a bounded poll (100 tries, 0.1 s apart) until a sp
 
 ## Fixtures
 
-CSVs live in `backend/tests/fixtures/<group>/<name>.csv` (groups: `rows/`, `cross_row/`) and are loaded with
+CSVs live in `backend/tests/fixtures/<group>/<name>.csv` (groups: `rows/`, `cross_row/`, `customers/`) and are loaded with
 `Path(__file__).parent / "fixtures" / "<group>"`. Named after the rule, one violation per file. Clean files:
 `rows/clean.csv` and `cross_row/clean_multi_line_orders.csv` (no `cross_row/clean.csv`). The one file with several
 violations is `cross_row/all_rules_together.csv`, on purpose.
-A single-use CSV is written inline (`HEADER` plus rows, under `tmp_path`). `backend/app/sample/sample_sales.csv`
+A single-use CSV is written inline (`HEADER` plus rows, under `tmp_path`). Customer golden fixtures may include a sibling `.expected.json` containing exact named-range values and derivation notes. `backend/app/sample/sample_sales.csv`
 is application data, not a fixture. Frontend tests build data inline (objects typed with `frontend/src/lib/types.ts`,
 `File` objects for uploads); there is no frontend fixtures folder.
 
