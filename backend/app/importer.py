@@ -21,9 +21,18 @@ ORDER BY row_number
 """
 
 _INSERT_META = """
+WITH order_coverage AS (
+    SELECT order_id, bool_or(customer_id IS NOT NULL) AS identified
+    FROM ds.line_items
+    GROUP BY order_id
+)
 INSERT INTO ds.dataset_meta
-SELECT $id, $currency, $created_at, $expires_at, $token_hash, count(*), $has_customer_id
-FROM ds.line_items
+SELECT $id, $currency, $created_at, $expires_at, $token_hash,
+       (SELECT count(*) FROM ds.line_items), $has_customer_id,
+       count(*) FILTER (WHERE identified),
+       count(*) FILTER (WHERE NOT identified),
+       count(*)
+FROM order_coverage
 """
 
 _INSERT_ORDER_FACTS = """

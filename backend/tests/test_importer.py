@@ -180,6 +180,24 @@ def test_dataset_meta_has_one_row_with_the_expected_values(uploads, settings):
     assert rows == [("ds-1", "EUR", created, created + 6 * 3600, TOKEN_HASH, 3)]
 
 
+def test_import_persists_order_level_customer_coverage_counts(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,1,C1",
+        "o1,2025-01-02,p2,Cup,1,1,C1",
+        "o2,2025-01-02,p3,Plate,1,1,",
+        header=HEADER + ",customer_id",
+    )
+    connection = open_dataset_readonly(target)
+    try:
+        assert connection.execute(
+            "SELECT identified_orders, unidentified_orders, total_orders FROM dataset_meta"
+        ).fetchone() == (1, 1, 2)
+    finally:
+        connection.close()
+
+
 def test_created_at_defaults_to_now_in_utc(uploads, settings):
     before = datetime.now(UTC).replace(microsecond=0)
     _, target = run_import(uploads, settings, "o1,2025-01-02,p1,Mug,1,1", now=None)

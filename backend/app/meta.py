@@ -2,6 +2,12 @@ from datetime import date
 
 import duckdb
 
+from app.analytics.shared.availability import (
+    CustomerCoverage,
+    customer_availability,
+    customer_coverage_tier,
+    rounded_coverage,
+)
 from app.analytics.shared.periods import _previous_calendar_year
 
 # Timestamps are formatted in SQL: DuckDB cannot hand a TIMESTAMPTZ to Python
@@ -31,7 +37,12 @@ def _availability(state: str, reason: str | None = None) -> dict[str, str | None
 
 
 def _capabilities(
-    connection: duckdb.DuckDBPyConnection, first: str, last: str, row_count: int
+    connection: duckdb.DuckDBPyConnection,
+    first: str,
+    last: str,
+    row_count: int,
+    has_customer_id: bool,
+    coverage: CustomerCoverage,
 ) -> dict:
     fact_counts = connection.execute(_FACT_COUNTS_SQL).fetchone()
     assert fact_counts is not None
@@ -54,7 +65,7 @@ def _capabilities(
         )
     )
     return {
-        "columns": {"customer_id": False},
+        "columns": {"customer_id": has_customer_id},
         "counts": {
             "orders": order_count,
             "products": product_count,
@@ -64,10 +75,7 @@ def _capabilities(
         "modules": {
             "overview": _availability("available"),
             "products": _availability("available"),
-            "customers": _availability(
-                "unavailable",
-                "Customer analytics needs an optional customer_id column, which is not supported yet.",
-            ),
+            "customers": customer_availability(has_customer_id, coverage),
         },
         "comparisons": {
             "previous_period": previous_period,
@@ -91,7 +99,46 @@ def read_meta(connection: duckdb.DuckDBPyConnection) -> dict:
     date_range = connection.execute(_DATE_RANGE_SQL).fetchone()
     assert date_range is not None  # an aggregate query always returns one row
     first, last = date_range
-    capabilities = _capabilities(connection, first, last, row_count)
+    meta_columns = {
+        name
+        for (name,) in connection.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'dataset_meta'"
+        ).fetchall()
+    }
+    order_count_row = connection.execute("SELECT count(*) FROM order_facts").fetchone()
+    assert order_count_row is not None
+    total_orders = int(order_count_row[0])
+    has_customer_id = False
+    if "has_customer_id" in meta_columns:
+        flag = connection.execute("SELECT has_customer_id FROM dataset_meta").fetchone()
+        has_customer_id = bool(flag and flag[0])
+
+    # Pre-111 files do not have persisted coverage. Treat pre-108 files (and
+    # any other file without the new fields) as missing rather than rescanning
+    # line_items during a metadata request.
+    coverage = CustomerCoverage(0, total_orders, total_orders)
+    if {"identified_orders", "unidentified_orders", "total_orders"} <= meta_columns:
+        stored = connection.execute(
+            "SELECT identified_orders, unidentified_orders, total_orders FROM dataset_meta"
+        ).fetchone()
+        assert stored is not None
+        coverage = CustomerCoverage(int(stored[0]), int(stored[1]), int(stored[2]))
+
+    capabilities = _capabilities(connection, first, last, row_count, has_customer_id, coverage)
+    tier = customer_coverage_tier(has_customer_id, coverage)
+    rounded = rounded_coverage(coverage)
+    if tier == "missing":
+        serialized_coverage = None
+    else:
+        assert rounded is not None
+        serialized_coverage = float(rounded)
+    customer_coverage_meta = {
+        "tier": tier,
+        "coverage": serialized_coverage,
+        "identified_orders": coverage.identified_orders if tier != "missing" else 0,
+        "unidentified_orders": coverage.unidentified_orders,
+        "total_orders": coverage.total_orders,
+    }
     return {
         "id": dataset_id,
         "currency": currency,
@@ -99,5 +146,6 @@ def read_meta(connection: duckdb.DuckDBPyConnection) -> dict:
         "expires_at": expires_at,
         "row_count": row_count,
         "date_range": {"min": first, "max": last},
+        "customer_coverage": customer_coverage_meta,
         "capabilities": capabilities,
     }

@@ -299,6 +299,25 @@ digit groups with two dashes such as `2024-01-000123` are rejected. An accepted 
 
 A request can also fail before the file is read: a currency that is not in the list answers `400 invalid_request`.
 
+### Customer coverage
+
+When `customer_id` is present, coverage is calculated once during import at order level, after blank IDs have been
+filled from another line in the same order:
+
+`identified distinct orders / all distinct orders`
+
+It is not a row percentage, so a five-line identified order counts once. The dataset metadata reports the counts and
+the rounded ratio, while the tier is decided from exact integer counts over the whole dataset:
+
+- below 50%: `suppressed`; Customer analytics is unavailable;
+- 50% through below 80%: `warning`; Customer analytics is available with a low-coverage warning;
+- 80% or more: `normal`; Customer analytics is available normally.
+
+Files without `customer_id` have tier `missing` and `coverage: null`, rather than zero-percent coverage. Coverage
+metadata contains counts only and never customer identifiers. Date-range coverage uses the same order-level formula
+with inclusive order dates; an empty range has zero counts and `coverage: null`. Tiering remains based on the whole
+dataset, so filtering dates does not make the Customers module appear or disappear.
+
 ### Warnings
 
 Warnings do not reject the file. They come back in the `warnings` list of the `201` answer and on the upload screen.

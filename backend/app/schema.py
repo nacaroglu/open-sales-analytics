@@ -46,7 +46,10 @@ CREATE TABLE IF NOT EXISTS dataset_meta (
     expires_at TIMESTAMPTZ NOT NULL,
     token_hash VARCHAR     NOT NULL,
     row_count  BIGINT      NOT NULL,
-    has_customer_id BOOLEAN NOT NULL DEFAULT FALSE
+    has_customer_id BOOLEAN NOT NULL DEFAULT FALSE,
+    identified_orders BIGINT NOT NULL DEFAULT 0,
+    unidentified_orders BIGINT NOT NULL DEFAULT 0,
+    total_orders BIGINT NOT NULL DEFAULT 0
 )
 """
 

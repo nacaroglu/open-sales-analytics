@@ -82,6 +82,7 @@ def test_valid_file_creates_a_dataset(client, settings, data_dir):
         "expires_at",
         "row_count",
         "date_range",
+        "customer_coverage",
         "capabilities",
     }
     assert meta["id"] == body["dataset_id"]
