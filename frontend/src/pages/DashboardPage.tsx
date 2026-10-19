@@ -22,7 +22,7 @@ import {
   describeError,
   errorKind,
 } from "../lib/errors";
-import { formatCount, formatExpiry, formatRelativeExpiry } from "../lib/format";
+import { formatCount, formatExpiry, formatMoney, formatRelativeExpiry } from "../lib/format";
 import type { CustomerResponse } from "../lib/types";
 import { clearSession, readSession, tokenFor } from "../lib/session";
 import type { Issue, Meta, Overview, Summary } from "../lib/types";
@@ -81,7 +81,7 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
         </dl>
         <p className="text-sm text-slate-600">{rangeLine}</p>
       </section>
-      {tier !== "suppressed" && <AnalysisState availability={{ state: "available", reason: null }} metric="Customer analyses" />}
+      {tier !== "suppressed" && <CustomerMetrics data={data} />}
     </div>
   );
 }
@@ -90,6 +90,73 @@ export function AnalysisState({ availability, metric }: { availability: { state:
   if (availability.state === "insufficient_data") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">Insufficient data</h3><p className="text-sm text-slate-600">{availability.reason}</p></section>;
   if (availability.state === "zero_result") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">{metric}</h3><p>0</p></section>;
   return null;
+}
+
+type CustomerSection = { availability?: { state: string; reason: string | null }; [key: string]: unknown };
+
+function SectionState({ section, title }: { section: CustomerSection; title: string }) {
+  if (section.availability?.state === "insufficient_data") return <AnalysisState availability={section.availability} metric={title} />;
+  if (section.availability?.state === "zero_result") return <AnalysisState availability={section.availability} metric={title} />;
+  if (section.availability?.state !== "available") return <ErrorBlock message="Something went wrong loading this data"><button type="button" className={PRIMARY}>Retry</button></ErrorBlock>;
+  return null;
+}
+
+function CustomerMetricSection({ label, data, children }: { label: string; data: CustomerSection | undefined; children?: ReactNode }) {
+  if (data === undefined) return null;
+  const state = <SectionState section={data} title={label} />;
+  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{state ?? children}</section>;
+}
+
+function valueOf(section: CustomerSection, key: string): unknown {
+  const item = section[key];
+  return typeof item === "object" && item !== null && "value" in item ? (item as { value: unknown }).value : item;
+}
+
+function CustomerMetrics({ data }: { data: CustomerResponse }) {
+  const sections = data.sections as Record<string, CustomerSection>;
+  const moneyValue = (value: unknown) => typeof value === "string" ? formatMoney(value, data.currency) : "—";
+  return (
+    <div className="space-y-8">
+      <CustomerMetricSection label="Customer key figures" data={sections.identified_customers}>
+        <dl className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <MetricCard label="Identified customers" value={formatCount(Number(valueOf(sections.identified_customers ?? {}, "value") ?? 0))} />
+          <MetricCard label="New-customer gross sales" value={moneyValue(valueOf(sections.new_vs_returning ?? {}, "new_customer_gross_sales"))} />
+          <MetricCard label="Returning-customer gross sales" value={moneyValue(valueOf(sections.new_vs_returning ?? {}, "returning_customer_gross_sales"))} />
+          <MetricCard label="Repeat-purchase rate" value={`${Number(valueOf(sections.repeat_purchase ?? {}, "repeat_purchase_rate") ?? 0) * 100}%`} />
+          <MetricCard label="Median days between purchases" value={`${valueOf(sections.days_between_purchases ?? {}, "median_days") ?? "—"} days`} />
+        </dl>
+      </CustomerMetricSection>
+      <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases}>
+        <p>Median: {String(sections.days_between_purchases?.median_days ?? "—")} days</p>
+        <AggregateTable ariaLabel="Days between purchases table" headers={["Bucket", "Intervals"]} rows={((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? []).map((bucket) => [String(bucket.key), formatCount(Number(bucket.interval_count))])} />
+      </CustomerMetricSection>
+      <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention}>
+        <div role="table" aria-label="Cohort retention table" className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table className="w-full text-left"><thead className="bg-slate-100"><tr><th className="px-3 py-2">Cohort</th><th className="px-3 py-2">Cohort size</th><th className="px-3 py-2">Months observed</th><th className="px-3 py-2">Retention</th></tr></thead><tbody className="divide-y divide-slate-200">{((sections.cohort_retention?.rows as Record<string, unknown>[] | undefined) ?? []).map((row) => <tr key={String(row.cohort_month)}><td className="px-3 py-2">{String(row.cohort_month)}</td><td className="px-3 py-2">{formatCount(Number(row.cohort_size))}</td><td className="px-3 py-2">{formatCount(Number(row.complete_months))}</td><td className="px-3 py-2">{String(((row.cells as Record<string, unknown>[] | undefined)?.[0]?.retention ?? "—"))}</td></tr>)}</tbody></table></div>
+      </CustomerMetricSection>
+      <CustomerMetricSection label="Historical Customer Value" data={sections.historical_customer_value}>
+        <p>Observed gross sales per identified customer. Not a prediction.</p>
+        <dl className="grid grid-cols-2 gap-4"><MetricCard label="Average" value={moneyValue(sections.historical_customer_value?.average)} /><MetricCard label="Median" value={moneyValue(sections.historical_customer_value?.median)} /></dl>
+      </CustomerMetricSection>
+      <CustomerMetricSection label="RFM segments" data={sections.rfm}>
+        <p>Segments are relative to the customers in this upload, not universal benchmarks.</p>
+        <AggregateTable ariaLabel="RFM segments table" headers={["Segment", "Customers", "Share"]} rows={((sections.rfm?.segments as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.segment), formatCount(Number(row.customer_count)), `${Number(row.share) * 100}%`])} />
+      </CustomerMetricSection>
+      <CustomerMetricSection label="Purchase frequency" data={sections.purchase_frequency}>
+        <AggregateTable ariaLabel="Purchase frequency table" headers={["Orders", "Customers", "Share"]} rows={((sections.purchase_frequency?.buckets as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count)), `${Number(row.share ?? 0) * 100}%`])} />
+      </CustomerMetricSection>
+      <CustomerMetricSection label="Customer concentration" data={sections.concentration}>
+        <dl className="grid grid-cols-2 gap-4"><MetricCard label="Top-decile share" value={sections.concentration?.top_decile_share === null ? "—" : `${Number(sections.concentration?.top_decile_share ?? 0) * 100}%`} /><MetricCard label="Identified gross sales" value={moneyValue(sections.concentration?.identified_gross_sales)} /></dl>
+      </CustomerMetricSection>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg border border-slate-200 bg-white p-4"><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className="mt-1 text-2xl font-semibold tabular-nums wrap-anywhere">{value}</dd></div>;
+}
+
+function AggregateTable({ ariaLabel, headers, rows }: { ariaLabel: string; headers: string[]; rows: string[][] }) {
+  return <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table aria-label={ariaLabel} className="w-full text-left"><thead className="bg-slate-100"><tr>{headers.map((header) => <th key={header} className="px-3 py-2 text-sm font-semibold text-slate-700">{header}</th>)}</tr></thead><tbody className="divide-y divide-slate-200">{rows.map((row, index) => <tr key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`} className="px-3 py-2 text-sm">{cell}</td>)}</tr>)}</tbody></table></div>;
 }
 
 function CannotOpen() {
