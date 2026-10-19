@@ -123,7 +123,8 @@ Below the trend, the top 10 products by gross sales:
 **Analyze another file** deletes this dataset and returns to the upload screen.
 
 The dashboard is organized into Overview, Customers and Products sections. The Customers API currently exposes
-aggregate coverage, identified-customer counts, new-versus-returning gross sales and the repeat-purchase rate; Products contains the portfolio analyses described in
+aggregate coverage, identified-customer counts, new-versus-returning gross sales, the repeat-purchase rate and the
+days between purchases; Products contains the portfolio analyses described in
 [Product analytics](#product-analytics).
 
 ## Comparisons
@@ -335,7 +336,18 @@ inclusive range, plus the shared comparison value and change fields. An empty ac
 state. `sections.new_vs_returning` splits identified gross sales in the range into new-customer sales (lines dated on
 the customer's first purchase date) and returning-customer sales (later lines), with the same comparison fields;
 classification always uses the full-history `first_order_date` from the whole upload, so moving the range start never
-turns a returning customer into a new one. Missing or suppressed coverage omits both sections. The endpoint always returns `Cache-Control: no-store`.
+turns a returning customer into a new one.
+
+`sections.days_between_purchases` reports reorder timing for the current range only (it has no comparison fields).
+Each identified customer's distinct orders are dated by their first line and sorted; each consecutive pair is one
+interval in calendar days, and two orders on the same day give `0`. An interval counts when its later order is inside
+the inclusive range, even if its earlier order is before the range start; orders after the range end are ignored. The
+section returns `median_days` (the mean of the two middle values for an even count, so it can end in `.5`; no mean is
+reported), `interval_count`, `contributing_customers` and nine fixed `buckets` (`0`, `1-7`, `8-14`, `15-30`, `31-60`,
+`61-90`, `91-180`, `181-365`, `366+` days), each with its `interval_count` and `share` of all intervals. Without an
+included interval the median and every share are `null` and the state is `insufficient_data`.
+
+Missing or suppressed coverage omits every section (`sections` is empty). The endpoint always returns `Cache-Control: no-store`.
 Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
 search, detail, download or export data, and identifiers are not written to logs.
 

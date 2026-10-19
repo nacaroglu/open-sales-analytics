@@ -347,6 +347,16 @@ METRICS: dict[str, MetricDefinition] = {
         "Activity in the active reporting range; orders counted from the start of the upload through the range end, orders after the end ignored.",
         "No active identified customers in range: rate is null with insufficient_data availability; active customers but none repeating: rate 0 with zero_result availability.",
     ),
+    "days_between_purchases": MetricDefinition(
+        "days_between_purchases",
+        "Days between purchases",
+        "days",
+        "Median of the included intervals (mean of the two middle values when the count is even; no mean is reported) plus counts and shares in fixed inclusive buckets: 0, 1-7, 8-14, 15-30, 31-60, 61-90, 91-180, 181-365, 366+ days",
+        "Intervals: calendar days between consecutive distinct identified orders of one customer, each order dated by its first line (order_facts.first_order_date); same-day orders give 0",
+        None,
+        "An interval is included when its later order is dated inside the range (both ends included); its earlier order may be before the range start; orders after the range end are ignored.",
+        "No included interval (no identified repeat orders in the range): median_days null, interval_count 0, every bucket share null, insufficient_data availability.",
+    ),
 }
 
 

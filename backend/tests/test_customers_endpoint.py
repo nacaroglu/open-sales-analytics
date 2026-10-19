@@ -54,7 +54,7 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
             "o1,2025-01-01,p1,Mug,1,2.00,CUSTMARKER-0001",
             "o2,2025-01-02,p1,Mug,1,3.00,CUSTMARKER-0002",
             "o3,2025-01-03,p1,Mug,1,4.00,",
-            "o4,2025-01-04,p1,Mug,1,5.00,CUSTMARKER-0004",
+            "o4,2025-01-04,p1,Mug,1,5.00,CUSTMARKER-0002",
         ],
     )
     response = get_customers(client, dataset, start="2025-01-02", end="2025-01-03")
@@ -120,9 +120,25 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "repeat_customers": {"value": 0, **unavailable_comparison},
         "repeat_purchase_rate": {"value": 0, **unavailable_comparison},
     }
-    markers = ("CUSTMARKER-0001", "CUSTMARKER-0002", "CUSTMARKER-0004")
-    body_text = response.text
-    assert all(marker not in body_text for marker in markers)
+    assert body["sections"]["days_between_purchases"]["interval_count"] == 0
+    with_interval = get_customers(client, dataset, start="2025-01-02", end="2025-01-04")
+    days = with_interval.json()["sections"]["days_between_purchases"]
+    assert days["availability"] == {"state": "available", "reason": None}
+    assert (days["median_days"], days["interval_count"], days["contributing_customers"]) == (
+        2,
+        1,
+        1,
+    )
+    assert days["buckets"][1] == {
+        "key": "1-7",
+        "min_days": 1,
+        "max_days": 7,
+        "interval_count": 1,
+        "share": 1,
+    }
+    markers = ("CUSTMARKER-0001", "CUSTMARKER-0002")
+    for body_text in (response.text, with_interval.text):
+        assert all(marker not in body_text for marker in markers)
     captured = capsys.readouterr()
     log_text = captured.out + captured.err
     assert all(marker not in log_text for marker in markers)
@@ -467,6 +483,124 @@ def test_repeat_purchase_warning_tier_matches_the_identified_only_numbers(client
     assert normal_body["sections"]["repeat_purchase"]["repeat_purchase_rate"]["value"] == 0.5
 
 
+DAYS_ROWS = [
+    "a1,2026-01-10,p1,Mug,1,2.00,A",
+    "a2,2026-01-10,p1,Mug,1,2.00,A",
+    "a3,2026-02-05,p1,Mug,1,2.00,A",
+    "a4,2026-03-07,p1,Mug,1,2.00,A",
+    "b1,2026-02-05,p1,Mug,1,2.00,B",
+    "b2,2026-02-20,p1,Mug,1,2.00,B",
+    "c1,2026-02-10,p1,Mug,1,2.00,C",
+]
+DAYS_KEYS = ["0", "1-7", "8-14", "15-30", "31-60", "61-90", "91-180", "181-365", "366+"]
+DAYS_LIMITS = [(0, 0), (1, 7), (8, 14), (15, 30), (31, 60), (61, 90), (91, 180), (181, 365)]
+
+
+def test_days_between_purchases_has_median_and_all_nine_buckets(client):
+    dataset = upload(client, DAYS_ROWS)
+    days = get_customers(client, dataset, start="2026-01-10", end="2026-03-07").json()["sections"][
+        "days_between_purchases"
+    ]
+
+    assert days["availability"] == {"state": "available", "reason": None}
+    assert days["median_days"] == 20.5
+    assert days["interval_count"] == 4
+    assert days["contributing_customers"] == 2
+    assert [bucket["key"] for bucket in days["buckets"]] == DAYS_KEYS
+    assert [(b["min_days"], b["max_days"]) for b in days["buckets"]] == DAYS_LIMITS + [(366, None)]
+    assert [b["interval_count"] for b in days["buckets"]] == [1, 0, 0, 3, 0, 0, 0, 0, 0]
+    assert [b["share"] for b in days["buckets"]] == [0.25, 0, 0, 0.75, 0, 0, 0, 0, 0]
+    assert set(days) == {
+        "availability",
+        "median_days",
+        "interval_count",
+        "contributing_customers",
+        "buckets",
+    }
+    serialized = json.dumps(days)
+    for field in ("comparison_value", "absolute_change", "percent_change", "change_status"):
+        assert field not in serialized
+
+
+def test_days_between_purchases_rounds_shares_half_up_from_exact_counts(client):
+    rows = [
+        "a1,2026-01-01,p1,Mug,1,2.00,A",
+        "a2,2026-01-01,p1,Mug,1,2.00,A",
+        "a3,2026-01-03,p1,Mug,1,2.00,A",
+        "a4,2026-01-04,p1,Mug,1,2.00,A",
+    ]
+    dataset = upload(client, rows)
+    days = get_customers(client, dataset).json()["sections"]["days_between_purchases"]
+
+    assert days["median_days"] == 1
+    assert days["buckets"][0]["share"] == 0.3333
+    assert days["buckets"][1]["share"] == 0.6667
+
+
+def test_days_between_purchases_is_current_range_only(client, monkeypatch):
+    import app.api.customers as customers_api
+
+    calls = []
+    original = customers_api.read_days_between_purchases
+
+    def recording(connection, start, end):
+        calls.append((start.isoformat(), end.isoformat()))
+        return original(connection, start, end)
+
+    monkeypatch.setattr(customers_api, "read_days_between_purchases", recording)
+    dataset = upload(client, DAYS_ROWS)
+    previous = get_customers(client, dataset, start="2026-03-01", end="2026-03-07").json()
+    calls_previous = list(calls)
+    calls.clear()
+    yoy = get_customers(
+        client, dataset, start="2026-03-01", end="2026-03-07", comparison="previous_year"
+    ).json()
+
+    assert previous["comparison"]["state"] == "available"
+    assert calls_previous == [("2026-03-01", "2026-03-07")]
+    assert calls == [("2026-03-01", "2026-03-07")]
+    assert (
+        previous["sections"]["days_between_purchases"] == yoy["sections"]["days_between_purchases"]
+    )
+    days = previous["sections"]["days_between_purchases"]
+    assert (days["median_days"], days["interval_count"], days["contributing_customers"]) == (
+        30,
+        1,
+        1,
+    )
+
+
+def test_days_between_purchases_without_interval_is_insufficient_data(client):
+    dataset = upload(client, DAYS_ROWS)
+    days = get_customers(client, dataset, start="2026-02-06", end="2026-02-19").json()["sections"][
+        "days_between_purchases"
+    ]
+
+    assert days["availability"]["state"] == "insufficient_data"
+    assert days["availability"]["reason"]
+    assert days["median_days"] is None
+    assert days["interval_count"] == 0
+    assert days["contributing_customers"] == 0
+    assert [b["key"] for b in days["buckets"]] == DAYS_KEYS
+    assert all(b["interval_count"] == 0 and b["share"] is None for b in days["buckets"])
+
+
+def test_days_between_purchases_warning_tier_matches_normal_numbers(client):
+    normal = upload(client, DAYS_ROWS)
+    unidentified = [f"u{day},2026-02-{day},p1,Mug,1,2.00," for day in (11, 12, 13)]
+    warning = upload(client, DAYS_ROWS + unidentified)
+    normal_body = get_customers(client, normal).json()
+    warning_body = get_customers(client, warning).json()
+
+    assert normal_body["availability"]["tier"] == "normal"
+    assert warning_body["availability"]["tier"] == "warning"
+    assert (
+        warning_body["sections"]["days_between_purchases"]
+        == normal_body["sections"]["days_between_purchases"]
+    )
+    assert normal_body["sections"]["days_between_purchases"]["median_days"] == 20.5
+
+
 def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
     import app.api.customers as customers_api
 
@@ -475,6 +609,7 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
 
     monkeypatch.setattr(customers_api, "read_new_vs_returning", not_run)
     monkeypatch.setattr(customers_api, "read_repeat_purchase", not_run)
+    monkeypatch.setattr(customers_api, "read_days_between_purchases", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
     missing_body = get_customers(client, missing).json()
     assert missing_body["availability"]["tier"] == "missing"
@@ -493,6 +628,8 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     assert suppressed_body["availability"]["state"] == "low_coverage"
     assert suppressed_body["sections"] == {}
     assert "repeat_purchase" not in suppressed_body["sections"]
+    assert "days_between_purchases" not in missing_body["sections"]
+    assert "days_between_purchases" not in suppressed_body["sections"]
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -632,6 +769,22 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     assert "repeat_purchase" in components["CustomerSections"]["properties"]
     assert "lifetime" not in json.dumps(components["RepeatPurchaseSection"])
     assert "lifetime" not in json.dumps(components["ComparedRatio"])
+    assert {"DaysBetweenPurchasesSection", "DaysBetweenPurchasesBucket"} <= set(components)
+    assert "days_between_purchases" in components["CustomerSections"]["properties"]
+    assert set(components["DaysBetweenPurchasesSection"]["properties"]) == {
+        "availability",
+        "median_days",
+        "interval_count",
+        "contributing_customers",
+        "buckets",
+    }
+    assert set(components["DaysBetweenPurchasesBucket"]["properties"]) == {
+        "key",
+        "min_days",
+        "max_days",
+        "interval_count",
+        "share",
+    }
     assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"
     ]

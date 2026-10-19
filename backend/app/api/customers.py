@@ -1,8 +1,11 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
 
+from app.analytics.customers.buckets import DAYS_BETWEEN_PURCHASES_BUCKETS
 from app.analytics.customers.coverage import read_customer_coverage
+from app.analytics.customers.days_between_purchases import read_days_between_purchases
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
 from app.analytics.customers.repeat_purchase import read_repeat_purchase
@@ -21,6 +24,7 @@ from app.api.module_common import (
     compared_ratio,
     comparison_body,
     dataset_expiry,
+    ratio,
     resolve_periods,
 )
 from app.api.module_models import CustomersResponse
@@ -176,6 +180,44 @@ def _repeat_purchase_body(connection, periods) -> dict:
     }
 
 
+def _days_between_purchases_body(connection, periods) -> dict:
+    """Current-range only: the section has no comparison values."""
+    result = read_days_between_purchases(connection, periods.current.start, periods.current.end)
+    total = result["interval_count"]
+    availability = (
+        Availability(AvailabilityState.AVAILABLE)
+        if total
+        else Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "No identified customer placed a repeat order in the selected range, "
+            "so there is no interval between purchases.",
+        )
+    )
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "median_days": result["median_days"],
+        "interval_count": total,
+        "contributing_customers": result["contributing_customers"],
+        "buckets": [
+            {
+                "key": bucket.key,
+                "min_days": bucket.min_days,
+                "max_days": bucket.max_days,
+                "interval_count": result["bucket_counts"][bucket.key],
+                "share": (
+                    ratio(Decimal(result["bucket_counts"][bucket.key]) / Decimal(total))
+                    if total
+                    else None
+                ),
+            }
+            for bucket in DAYS_BETWEEN_PURCHASES_BUCKETS
+        ],
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -210,6 +252,9 @@ def build_customers(connection, meta: dict, periods) -> dict:
         body["sections"]["identified_customers"] = _identified_customers_body(connection, periods)
         body["sections"]["new_vs_returning"] = _new_vs_returning_body(connection, periods)
         body["sections"]["repeat_purchase"] = _repeat_purchase_body(connection, periods)
+        body["sections"]["days_between_purchases"] = _days_between_purchases_body(
+            connection, periods
+        )
     return body
 
 
