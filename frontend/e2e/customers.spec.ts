@@ -4,6 +4,7 @@ import { SAMPLE_CUSTOMERS, openSample } from "./helpers";
 test("Customers shows aggregate coverage, cohorts, RFM and drill-down", async ({ page }) => {
   await openSample(page);
   await page.getByRole("link", { name: "Customers" }).click();
+  await expect(page).toHaveURL(/\/d\/[^/]+\/customers$/);
   await expect(page.getByRole("heading", { level: 2, name: "Customers" })).toBeVisible();
   const coverage = page.getByRole("region", { name: "Customer coverage" });
   await expect(coverage).toContainText(SAMPLE_CUSTOMERS.coverage);
@@ -26,5 +27,6 @@ test("Customers can be opened with an unavailable six-column upload", async ({ p
   await page.getByRole("button", { name: "Upload" }).click();
   await expect(page).toHaveURL(/\/d\/[^/]+$/);
   await page.getByRole("link", { name: "Customers" }).click();
+  await expect(page).toHaveURL(/\/d\/[^/]+\/customers$/);
   await expect(page.getByRole("heading", { level: 3, name: "Customer analytics is unavailable" })).toBeVisible();
 });
