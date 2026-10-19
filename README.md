@@ -487,6 +487,9 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
   a compliance guarantee; automated checks cannot find every kind of personal data.
 - A dataset is deleted after `DATASET_TTL_HOURS` (24 by default) by a cleanup at startup and then every
   `CLEANUP_INTERVAL_MINUTES`, or at once when you click **Analyze another file**.
+- Successful module responses may be kept in a bounded, process-local cache for `RESPONSE_CACHE_TTL_SECONDS`
+  (300 seconds by default); authorization runs on every request, entries are keyed by dataset and options, and
+  expiry or deletion removes the dataset's cached responses. The cache is not shared between instances.
 - Access needs a random bearer token. The browser keeps it in `sessionStorage`, so it is gone when the tab closes.
   The server keeps only a SHA-256 hash of it.
 - The logs are one JSON line per request with the method, path, status, duration and the dataset ID. The dataset ID is
