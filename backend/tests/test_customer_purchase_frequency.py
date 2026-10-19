@@ -36,7 +36,15 @@ def connection_with_rows(rows):
 
 def customer_rows(customer_id: str, order_count: int, start: date = date(2025, 1, 1)):
     return [
-        (f"{customer_id}-{index}", start + timedelta(days=index), "p", "Product", 1, "1.00", customer_id)
+        (
+            f"{customer_id}-{index}",
+            start + timedelta(days=index),
+            "p",
+            "Product",
+            1,
+            "1.00",
+            customer_id,
+        )
         for index in range(order_count)
     ]
 
@@ -96,16 +104,16 @@ def test_purchase_frequency_api_body_has_fixed_buckets_shares_and_no_comparison(
     assert body["availability"] == {"state": "available", "reason": None}
     assert body["customer_count"] == 2
     assert body["single_order_share"] == 0.5
-    assert [bucket["key"] for bucket in body["buckets"]] == [bucket.key for bucket in PURCHASE_FREQUENCY_BUCKETS]
+    assert [bucket["key"] for bucket in body["buckets"]] == [
+        bucket.key for bucket in PURCHASE_FREQUENCY_BUCKETS
+    ]
     assert body["buckets"][0]["share"] == 0.5
     assert body["buckets"][1]["share"] == 0.5
     assert all("comparison" not in bucket for bucket in body["buckets"])
 
 
 def test_purchase_frequency_empty_population_is_insufficient_and_keeps_eight_buckets():
-    connection = connection_with_rows(
-        [("o1", date(2025, 1, 3), "p", "Product", 1, "0.00", "C1")]
-    )
+    connection = connection_with_rows([("o1", date(2025, 1, 3), "p", "Product", 1, "0.00", "C1")])
     try:
         periods = resolve_periods(
             "2025-01-02", "2025-01-02", "previous_period", date(2025, 1, 1), date(2025, 1, 3)
@@ -118,13 +126,17 @@ def test_purchase_frequency_empty_population_is_insufficient_and_keeps_eight_buc
     assert body["customer_count"] == 0
     assert body["single_order_share"] is None
     assert len(body["buckets"]) == 8
-    assert all(bucket["customer_count"] == 0 and bucket["share"] is None for bucket in body["buckets"])
+    assert all(
+        bucket["customer_count"] == 0 and bucket["share"] is None for bucket in body["buckets"]
+    )
 
 
 def test_purchase_frequency_metric_definition_is_complete():
     metric = METRICS["purchase_frequency"]
     assert metric.unit == "count"
-    assert metric.numerator and metric.denominator and metric.time_window and metric.insufficient_data
+    assert (
+        metric.numerator and metric.denominator and metric.time_window and metric.insufficient_data
+    )
     assert "6-10" in metric.formula
     assert "range start has no effect" in metric.time_window
 
