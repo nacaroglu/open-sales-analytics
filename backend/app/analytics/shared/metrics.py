@@ -367,6 +367,16 @@ METRICS: dict[str, MetricDefinition] = {
         "Rows are the acquisition months from the month containing the range start to the month containing the range end; the data cutoff is the range end. Activity before the range start still counts; activity after the cutoff is ignored.",
         "No acquisition cohort overlaps the range: rows empty, insufficient_data availability. Months after the cutoff are not_observed with null values, never 0.",
     ),
+    "historical_customer_value": MetricDefinition(
+        "historical_customer_value",
+        "Historical Customer Value",
+        "money",
+        "average = total observed value / customer_count; median of per-customer values (mean of the two middle values for an even count); per cohort and month offset N: cumulative cohort gross sales from the acquisition month through the end of month acquisition_month + N (capped at the data cutoff) / cohort_size; all-cohorts curve: summed cumulative sales of cohorts whose cell N is complete / sum of their cohort sizes. Observed sales only, not a forecast.",
+        "Observed identified gross sales: SUM(quantity × unit_price) over the members' identified line_items dated on or before the data cutoff, including lines before the range start",
+        "Members (customer_count, or cohort_size per cohort): identified customers whose acquisition_month is from the month containing the range start to the month containing the range end and whose first order is on or before the range end",
+        "Members are selected exactly as the cohort_retention rows; the data cutoff is the range end. Sales before the range start count; sales after the cutoff are ignored. Current range only, no comparison.",
+        "No acquisition cohort overlaps the range: customer_count 0, average and median null, rows and all_cohorts empty, insufficient_data availability. Members whose total value is 0: values 0.0000 with zero_result availability. not_observed cells are null; an all-cohorts offset with no complete cohort is null.",
+    ),
 }
 
 

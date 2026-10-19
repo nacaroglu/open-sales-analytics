@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, Query
 
@@ -7,6 +7,7 @@ from app.analytics.customers.buckets import DAYS_BETWEEN_PURCHASES_BUCKETS
 from app.analytics.customers.cohort_retention import read_cohort_retention
 from app.analytics.customers.coverage import read_customer_coverage
 from app.analytics.customers.days_between_purchases import read_days_between_purchases
+from app.analytics.customers.historical_value import read_historical_customer_value
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
 from app.analytics.customers.repeat_purchase import read_repeat_purchase
@@ -26,6 +27,7 @@ from app.api.module_common import (
     compared_ratio,
     comparison_body,
     dataset_expiry,
+    money,
     ratio,
     resolve_periods,
 )
@@ -265,6 +267,84 @@ def _cohort_retention_body(connection, periods) -> dict:
     }
 
 
+_MONEY_STEP = Decimal("0.0001")
+
+
+def _rounded_money(value: Decimal | None) -> str | None:
+    """Money rounded half-up to 4 decimals; ``money()`` alone only formats."""
+    return None if value is None else money(value.quantize(_MONEY_STEP, rounding=ROUND_HALF_UP))
+
+
+def _historical_customer_value_body(connection, periods) -> dict:
+    """Current-range only: the cohort_retention members, valued up to the range end."""
+    cutoff = recency_anchor(periods.current)
+    result = read_historical_customer_value(connection, periods.current.start, cutoff)
+    count = result["customer_count"]
+    total = result["total_value"]
+    if not count:
+        availability = Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "No identified customer was acquired in a month that overlaps the selected range, "
+            "so there is no customer whose value can be observed.",
+        )
+    elif not total:
+        availability = Availability(
+            AvailabilityState.ZERO_RESULT,
+            "The identified customers acquired in the selected months have no gross sales "
+            "up to the end of the range.",
+        )
+    else:
+        availability = Availability(AvailabilityState.AVAILABLE)
+    rows = result["rows"]
+    width = len(rows[0]["cells"]) if rows else 0
+    all_cohorts = []
+    for offset in range(width):
+        complete = [
+            (row["cells"][offset]["cumulative_gross_sales"], row["cohort_size"])
+            for row in rows
+            if row["cells"][offset]["state"] == "complete"
+        ]
+        sales = sum((value for value, _ in complete if value is not None), Decimal(0))
+        size = sum(size for _, size in complete)
+        all_cohorts.append(
+            {
+                "month_offset": offset,
+                "value_per_customer": _rounded_money(sales / size) if size else None,
+                "contributing_cohorts": len(complete),
+            }
+        )
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "data_cutoff": cutoff.isoformat(),
+        "customer_count": count,
+        "average": _rounded_money(total / count) if count else None,
+        "median": _rounded_money(result["median"]),
+        "rows": [
+            {
+                "cohort_month": row["cohort_month"].strftime("%Y-%m"),
+                "cohort_size": row["cohort_size"],
+                "cells": [
+                    {
+                        "month_offset": cell["month_offset"],
+                        "state": cell["state"],
+                        "value_per_customer": (
+                            None
+                            if cell["cumulative_gross_sales"] is None
+                            else _rounded_money(cell["cumulative_gross_sales"] / row["cohort_size"])
+                        ),
+                    }
+                    for cell in row["cells"]
+                ],
+            }
+            for row in rows
+        ],
+        "all_cohorts": all_cohorts,
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -303,6 +383,9 @@ def build_customers(connection, meta: dict, periods) -> dict:
             connection, periods
         )
         body["sections"]["cohort_retention"] = _cohort_retention_body(connection, periods)
+        body["sections"]["historical_customer_value"] = _historical_customer_value_body(
+            connection, periods
+        )
     return body
 
 

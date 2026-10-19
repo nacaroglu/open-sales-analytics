@@ -1,7 +1,9 @@
 import json
+import re
 from datetime import UTC, datetime
 
 import pytest
+from app.analytics.shared.metrics import METRICS
 from app.auth import get_now
 from app.config import Settings, get_settings
 from app.main import app
@@ -144,6 +146,16 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
     ]
     assert cohorts["rows"][0]["cells"] == [
         {"month_offset": 0, "state": "partial", "retained_count": 2, "retention": 1}
+    ]
+    value = body["sections"]["historical_customer_value"]
+    assert value["availability"] == {"state": "available", "reason": None}
+    assert (value["customer_count"], value["average"], value["median"]) == (
+        2,
+        "2.5000",
+        "2.5000",
+    )
+    assert value["rows"][0]["cells"] == [
+        {"month_offset": 0, "state": "partial", "value_per_customer": "2.5000"}
     ]
     markers = ("CUSTMARKER-0001", "CUSTMARKER-0002")
     for body_text in (response.text, with_interval.text):
@@ -754,6 +766,137 @@ def test_cohort_retention_warning_tier_matches_normal_numbers(client):
     assert normal_body["sections"]["cohort_retention"]["rows"] == GOLDEN_COHORTS
 
 
+VALUE_ROWS = [
+    "a1,2026-01-10,p1,Mug,1,100.00,A",
+    "a2,2026-02-05,p1,Mug,1,30.00,A",
+    "f1,2026-01-20,p1,Mug,1,50.00,F",
+    "b1,2026-02-05,p1,Mug,1,20.00,B",
+    "b2,2026-03-10,p1,Mug,1,40.00,B",
+    "u1,2026-02-15,p1,Mug,1,999.00,",
+    "u2,2026-03-31,p1,Mug,1,1.00,",
+]
+
+
+def value_cell(offset, state, value):
+    return {"month_offset": offset, "state": state, "value_per_customer": value}
+
+
+GOLDEN_VALUE = {
+    "availability": {"state": "available", "reason": None},
+    "data_cutoff": "2026-03-31",
+    "customer_count": 3,
+    "average": "80.0000",
+    "median": "60.0000",
+    "rows": [
+        {
+            "cohort_month": "2026-01",
+            "cohort_size": 2,
+            "cells": [
+                value_cell(0, "complete", "75.0000"),
+                value_cell(1, "complete", "90.0000"),
+                value_cell(2, "complete", "90.0000"),
+            ],
+        },
+        {
+            "cohort_month": "2026-02",
+            "cohort_size": 1,
+            "cells": [
+                value_cell(0, "complete", "20.0000"),
+                value_cell(1, "complete", "60.0000"),
+                value_cell(2, "not_observed", None),
+            ],
+        },
+    ],
+    "all_cohorts": [
+        {"month_offset": 0, "value_per_customer": "56.6667", "contributing_cohorts": 2},
+        {"month_offset": 1, "value_per_customer": "80.0000", "contributing_cohorts": 2},
+        {"month_offset": 2, "value_per_customer": "90.0000", "contributing_cohorts": 1},
+    ],
+}
+
+
+def test_historical_customer_value_golden_section_matches_cohort_rows(client):
+    dataset = upload(client, VALUE_ROWS)
+    sections = get_customers(client, dataset, start="2026-01-10", end="2026-03-31").json()[
+        "sections"
+    ]
+    value = sections["historical_customer_value"]
+
+    assert value == GOLDEN_VALUE
+    retention = sections["cohort_retention"]
+    assert [
+        (row["cohort_month"], row["cohort_size"], [c["state"] for c in row["cells"]])
+        for row in value["rows"]
+    ] == [
+        (row["cohort_month"], row["cohort_size"], [c["state"] for c in row["cells"]])
+        for row in retention["rows"]
+    ]
+    assert value["data_cutoff"] == retention["data_cutoff"]
+
+
+def test_historical_customer_value_is_current_range_only(client, monkeypatch):
+    import app.api.customers as customers_api
+
+    calls = []
+    original = customers_api.read_historical_customer_value
+
+    def recording(connection, start, cutoff):
+        calls.append((start.isoformat(), cutoff.isoformat()))
+        return original(connection, start, cutoff)
+
+    monkeypatch.setattr(customers_api, "read_historical_customer_value", recording)
+    dataset = upload(client, VALUE_ROWS)
+    params = {"start": "2026-02-20", "end": "2026-03-31"}
+    previous = get_customers(client, dataset, **params).json()
+    calls_previous = list(calls)
+    calls.clear()
+    yoy = get_customers(client, dataset, comparison="previous_year", **params).json()
+
+    assert previous["comparison"]["state"] == "available"
+    assert calls_previous == [("2026-02-20", "2026-03-31")]
+    assert calls == [("2026-02-20", "2026-03-31")]
+    section = previous["sections"]["historical_customer_value"]
+    assert section == yoy["sections"]["historical_customer_value"]
+    assert (section["customer_count"], section["average"], section["median"]) == (
+        1,
+        "60.0000",
+        "60.0000",
+    )
+    serialized = json.dumps(section)
+    for field in ("comparison_value", "absolute_change", "percent_change", "change_status"):
+        assert field not in serialized
+
+
+def test_historical_customer_value_warning_tier_matches_normal_numbers(client):
+    normal = upload(client, [row for row in VALUE_ROWS if not row.endswith(",")])
+    warning = upload(client, VALUE_ROWS)
+    params = {"start": "2026-01-10", "end": "2026-03-10"}
+    normal_body = get_customers(client, normal, **params).json()
+    warning_body = get_customers(client, warning, **params).json()
+
+    assert normal_body["availability"]["tier"] == "normal"
+    assert warning_body["availability"]["tier"] == "warning"
+    assert (
+        warning_body["sections"]["historical_customer_value"]
+        == normal_body["sections"]["historical_customer_value"]
+    )
+    assert normal_body["sections"]["historical_customer_value"]["average"] == "80.0000"
+
+
+def test_historical_customer_value_without_cohort_is_insufficient_data(client):
+    dataset = upload(client, ["a1,2026-01-10,p1,Mug,1,2.00,A", "a2,2026-02-05,p1,Mug,1,2.00,A"])
+    value = get_customers(client, dataset, start="2026-02-01", end="2026-02-05").json()["sections"][
+        "historical_customer_value"
+    ]
+
+    assert value["availability"]["state"] == "insufficient_data"
+    assert value["availability"]["reason"]
+    assert value["data_cutoff"] == "2026-02-05"
+    assert (value["customer_count"], value["average"], value["median"]) == (0, None, None)
+    assert value["rows"] == []
+    assert value["all_cohorts"] == []
+
+
 def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
     import app.api.customers as customers_api
 
@@ -764,6 +907,7 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     monkeypatch.setattr(customers_api, "read_repeat_purchase", not_run)
     monkeypatch.setattr(customers_api, "read_days_between_purchases", not_run)
     monkeypatch.setattr(customers_api, "read_cohort_retention", not_run)
+    monkeypatch.setattr(customers_api, "read_historical_customer_value", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
     missing_body = get_customers(client, missing).json()
     assert missing_body["availability"]["tier"] == "missing"
@@ -786,6 +930,8 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
     assert "days_between_purchases" not in suppressed_body["sections"]
     assert "cohort_retention" not in missing_body["sections"]
     assert "cohort_retention" not in suppressed_body["sections"]
+    assert "historical_customer_value" not in missing_body["sections"]
+    assert "historical_customer_value" not in suppressed_body["sections"]
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -955,6 +1101,68 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
         "interval_count",
         "share",
     }
+    value_models = {
+        "HistoricalCustomerValueSection",
+        "HistoricalCustomerValueRow",
+        "HistoricalCustomerValueCell",
+        "HistoricalCustomerValueCurvePoint",
+    }
+    assert value_models <= set(components)
+    assert "historical_customer_value" in components["CustomerSections"]["properties"]
+    assert set(components["HistoricalCustomerValueSection"]["properties"]) == {
+        "availability",
+        "data_cutoff",
+        "customer_count",
+        "average",
+        "median",
+        "rows",
+        "all_cohorts",
+    }
+    for name in value_models - {"HistoricalCustomerValueSection"}:
+        assert all(prop.get("description") for prop in components[name]["properties"].values()), (
+            name
+        )
+    section_props = components["HistoricalCustomerValueSection"]["properties"]
+    assert all(
+        prop.get("description") for key, prop in section_props.items() if key != "availability"
+    )
+    assert components["HistoricalCustomerValueCell"]["properties"]["state"]["enum"] == [
+        "complete",
+        "partial",
+        "not_observed",
+    ]
+    banned = ("lifetime", "ltv", "clv")
+    referenced = _referenced_components(components, "CustomersResponse")
+    for name in referenced:
+        component = components[name]
+        texts = [component.get("description", "")]
+        for key, prop in component.get("properties", {}).items():
+            texts += [key, prop.get("description", "")]
+        lowered = " ".join(texts).lower()
+        assert not any(word in lowered for word in banned), name
+    for key, metric in METRICS.items():
+        assert not any(word in key.lower() or word in metric.label.lower() for word in banned)
+    assert METRICS["historical_customer_value"].label == "Historical Customer Value"
+    value_fields = set()
+    for name in value_models:
+        value_fields |= set(components[name]["properties"])
+    assert not any("projected" in field or "predicted" in field for field in value_fields)
     assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"
     ]
+
+
+def _referenced_components(components, root):
+    """Names of the component schemas reachable from ``root`` through ``$ref``."""
+    seen, pending = set(), [root]
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        text = json.dumps(components[name])
+        pending += [ref.rsplit("/", 1)[-1] for ref in _REF.findall(text)]
+    return seen
+
+
+_REF = re.compile(r'"\$ref": "([^"]+)"')
