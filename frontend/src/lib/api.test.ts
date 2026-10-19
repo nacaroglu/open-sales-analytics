@@ -5,6 +5,7 @@ import {
   createSampleDataset,
   deleteDataset,
   getAnalytics,
+  getCustomers,
   getConfig,
   getHealth,
   getMeta,
@@ -161,6 +162,14 @@ test("overview sends comparison with the date range", async () => {
   fetchMock.mockImplementation(async () => json({}));
   await getOverview("d1", { start: "2025-03-10", end: "2025-03-10", comparison: "previous_year" });
   expect(lastCall().url).toBe("/api/datasets/d1/overview?start=2025-03-10&end=2025-03-10&comparison=previous_year");
+});
+
+test("customers sends range, comparison, and authorization", async () => {
+  saveSession({ id: "d1", token: "tok" });
+  fetchMock.mockImplementation(async () => json({}));
+  await getCustomers("d1", { start: "2025-03-10", end: "2025-03-20", comparison: "previous_year" });
+  expect(lastCall().url).toBe("/api/datasets/d1/customers?start=2025-03-10&end=2025-03-20&comparison=previous_year");
+  expect(headersOf(lastCall().init).get("Authorization")).toBe("Bearer tok");
 });
 
 test("delete resolves on an empty 204 without parsing", async () => {

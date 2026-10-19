@@ -12,7 +12,7 @@ import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
 import ComparisonDates from "../components/ComparisonDates";
 import { ProductDetailView, ProductsView } from "./ProductsPage";
-import { useAnalytics, useMeta, useOverview } from "../lib/hooks";
+import { useAnalytics, useCustomers, useMeta, useOverview } from "../lib/hooks";
 import {
   EXPIRED_SENTENCE,
   EXPIRED_TITLE,
@@ -22,7 +22,8 @@ import {
   describeError,
   errorKind,
 } from "../lib/errors";
-import { formatExpiry, formatRelativeExpiry } from "../lib/format";
+import { formatCount, formatExpiry, formatRelativeExpiry } from "../lib/format";
+import type { CustomerResponse } from "../lib/types";
 import { clearSession, readSession, tokenFor } from "../lib/session";
 import type { Issue, Meta, Overview, Summary } from "../lib/types";
 
@@ -37,6 +38,58 @@ const VALUE = "mt-1 text-base font-semibold tabular-nums wrap-anywhere";
 
 function Header() {
   return <h1 className="text-3xl font-bold text-indigo-700">Open Sales Analytics</h1>;
+}
+
+function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers> }) {
+  if (query.isLoading && query.data === undefined) {
+    return (
+      <section aria-label="Customer coverage" role="status" aria-busy="true" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
+        <h3 className="text-lg font-semibold">Customer coverage</h3>
+        <div className="animate-pulse motion-reduce:animate-none h-6 w-24 rounded bg-slate-200" />
+        <div className="animate-pulse motion-reduce:animate-none h-6 w-24 rounded bg-slate-200" />
+        <div className="animate-pulse motion-reduce:animate-none h-6 w-24 rounded bg-slate-200" />
+      </section>
+    );
+  }
+  if (query.isError && query.data === undefined) {
+    return <ErrorBlock message="Something went wrong loading this data"><button type="button" className={PRIMARY} onClick={() => void query.refetch()}>Retry</button></ErrorBlock>;
+  }
+  const data = query.data as CustomerResponse | undefined;
+  if (data === undefined) return null;
+  const tier = data.coverage.dataset.tier;
+  if (tier === "missing") {
+    return <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">The file has no customer_id column.</p></section>;
+  }
+  const dataset = data.coverage.dataset;
+  const range = data.coverage.range;
+  const shownCoverage = dataset.coverage === null ? "—" : `${Math.floor(dataset.coverage * 1000) / 10}%`;
+  const rangeLine = range.coverage === null
+    ? "No orders in the selected range."
+    : `In the selected range: ${formatCount(range.identified_orders)} of ${formatCount(range.total_orders)} orders have a customer ID (${Math.floor(range.coverage * 1000) / 10}%).`;
+  const updating = query.isFetching && query.isPlaceholderData;
+  return (
+    <div className="space-y-4">
+      {updating && <span className="text-sm text-slate-600" role="status">Updating…</span>}
+      <section aria-label="Customer coverage" className={`rounded-lg border bg-white p-4 space-y-2 ${tier === "warning" ? "border-dashed border-amber-700 bg-amber-50" : "border-slate-200"}`}>
+        <h3 className="text-lg font-semibold">Customer coverage</h3>
+        {tier === "suppressed" && <p className="font-semibold">Customer analytics is hidden: coverage below 50%</p>}
+        {tier === "warning" && <p role="status" className="text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · Low coverage</p>}
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div><dt className="text-sm font-medium text-slate-600">Customer coverage</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{shownCoverage}</dd></div>
+          <div><dt className="text-sm font-medium text-slate-600">Identified orders</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{formatCount(dataset.identified_orders)}</dd></div>
+          <div><dt className="text-sm font-medium text-slate-600">Unidentified orders</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{formatCount(dataset.unidentified_orders)}</dd></div>
+        </dl>
+        <p className="text-sm text-slate-600">{rangeLine}</p>
+      </section>
+      {tier !== "suppressed" && <AnalysisState availability={{ state: "available", reason: null }} metric="Customer analyses" />}
+    </div>
+  );
+}
+
+export function AnalysisState({ availability, metric }: { availability: { state: string; reason: string | null }; metric: string }) {
+  if (availability.state === "insufficient_data") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">Insufficient data</h3><p className="text-sm text-slate-600">{availability.reason}</p></section>;
+  if (availability.state === "zero_result") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">{metric}</h3><p>0</p></section>;
+  return null;
 }
 
 function CannotOpen() {
@@ -312,6 +365,8 @@ export default function DashboardPage({
   const legacyTestFixtures = import.meta.env.MODE === "test";
   const analytics = useAnalytics(datasetId, applied.start, applied.end, legacyTestFixtures || (meta.data !== undefined && !modern));
   const overview = useOverview(datasetId, applied.start, applied.end, comparison, meta.data !== undefined && modern);
+  const customerCapability = meta.data?.capabilities?.modules.customers;
+  const customers = useCustomers(datasetId, applied.start, applied.end, comparison, modern && customerCapability?.state === "available" && location.pathname.endsWith("/customers"));
   const moduleQuery = modern ? overview : analytics;
   const [leaving, setLeaving] = useState(false);
   // Once the server said 404 or 401 for this dataset the page stays on that
@@ -321,6 +376,7 @@ export default function DashboardPage({
   const kinds = [
     meta.error === null ? null : errorKind(meta.error),
     moduleQuery.error === null ? null : errorKind(moduleQuery.error),
+    customers.error === null ? null : errorKind(customers.error),
   ];
   const terminal = kinds.includes("expired")
     ? "expired"
@@ -339,6 +395,7 @@ export default function DashboardPage({
     queryClient.removeQueries({ queryKey: ["meta", datasetId] });
     queryClient.removeQueries({ queryKey: ["analytics", datasetId] });
     queryClient.removeQueries({ queryKey: ["overview", datasetId] });
+    queryClient.removeQueries({ queryKey: ["customers", datasetId] });
   }, [terminal, datasetId, queryClient]);
 
   const hasToken = tokenFor(datasetId) !== null;
@@ -518,13 +575,11 @@ export default function DashboardPage({
       {section === "customers" && (
         <section aria-label="Customers" className="space-y-8">
           <h2 className="text-xl font-semibold text-slate-900">Customers</h2>
-          <CapabilityState data={data} failed={meta.isError} onRetry={() => void meta.refetch()}>
-            {unavailable ? (
-              <UnavailableCard reason={capability?.reason ?? "This section is not available."} />
-            ) : (
-              <section aria-label="Customer analyses" />
-            )}
-          </CapabilityState>
+          {!modern ? (
+            <CapabilityState data={data} failed={meta.isError} onRetry={() => void meta.refetch()}>
+              {unavailable ? <UnavailableCard reason={capability?.reason ?? "This section is not available."} /> : <section aria-label="Customer analyses" />}
+            </CapabilityState>
+          ) : modern && !unavailable ? <CustomerCoverageView query={customers} /> : <UnavailableCard reason={capability?.reason ?? "The file has no customer_id column."} />}
         </section>
       )}
 
