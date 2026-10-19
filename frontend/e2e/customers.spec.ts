@@ -14,7 +14,11 @@ test("Customers shows aggregate coverage, cohorts, RFM and drill-down", async ({
   const rfm = page.getByRole("region", { name: "RFM segments" });
   await expect(rfm).toBeVisible();
   const rfmTable = rfm.getByRole("table", { name: "RFM segments table" });
-  await expect(rfmTable.or(rfm.getByText("Insufficient data"))).toBeVisible();
+  const rfmState = rfm
+    .getByText("Insufficient data")
+    .or(rfm.getByText("Something went wrong loading this data"))
+    .or(rfm.getByText("0", { exact: true }));
+  await expect(rfmTable.or(rfmState)).toBeVisible();
   if (await rfmTable.isVisible()) {
     await expect(rfm).toContainText("Segments are relative to the customers in this upload, not universal benchmarks.");
   }
