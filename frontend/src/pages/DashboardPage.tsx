@@ -42,7 +42,7 @@ function Header() {
 }
 
 function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers> }) {
-  if (query.isLoading && query.data === undefined) {
+  if (query.isPlaceholderData || (query.isLoading && query.data === undefined)) {
     return (
       <section aria-label="Customer coverage" role="status" aria-busy="true" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
         <h3 className="text-lg font-semibold">Customer coverage</h3>
