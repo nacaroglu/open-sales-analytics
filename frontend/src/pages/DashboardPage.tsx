@@ -42,7 +42,7 @@ function Header() {
 }
 
 function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers> }) {
-  if (query.isLoading && query.data === undefined) {
+  if (query.isPlaceholderData || (query.isLoading && query.data === undefined)) {
     return (
       <section aria-label="Customer coverage" role="status" aria-busy="true" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
         <h3 className="text-lg font-semibold">Customer coverage</h3>
@@ -102,8 +102,8 @@ function SectionState({ section, title }: { section: CustomerSection; title: str
   return null;
 }
 
-function CustomerMetricSection({ label, data, children, lowCoverage }: { label: string; data: CustomerSection | undefined; children?: ReactNode; lowCoverage?: string }) {
-  if (data === undefined) return null;
+function CustomerMetricSection({ label, data, children, lowCoverage }: { label: string; data: CustomerSection | null | undefined; children?: ReactNode; lowCoverage?: string }) {
+  if (data == null) return null;
   const state = <SectionState section={data} title={label} />;
   return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{state ?? children}</section>;
 }
@@ -114,7 +114,7 @@ function valueOf(section: CustomerSection, key: string): unknown {
 }
 
 function CustomerMetrics({ data }: { data: CustomerResponse }) {
-  const sections = data.sections as Record<string, CustomerSection>;
+  const sections = (data.sections ?? {}) as Record<string, CustomerSection | null | undefined>;
   const lowCoverage = data.availability.tier === "warning" ? `Low coverage: based on ${truncatedCoverage(data.coverage.dataset.coverage)} of orders.` : undefined;
   const moneyValue = (value: unknown) => typeof value === "string" ? formatMoney(value, data.currency) : "—";
   return (

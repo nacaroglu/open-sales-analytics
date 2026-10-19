@@ -7,7 +7,7 @@ taxes or shipping in it.
 
 Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) | [Demo walkthrough](#demo-walkthrough) |
 [Explore the results](#explore-the-results) |
-[Product analytics](#product-analytics) | [Comparisons](#comparisons) |
+[Product analytics](#product-analytics) | [Customer analytics](#customer-analytics) | [Comparisons](#comparisons) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
 [Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
 
@@ -53,7 +53,7 @@ Steps 1 needs [uv](https://docs.astral.sh/uv/); the rest needs only Docker.
 ### 1. Generate the sample data
 
 ```bash
-uv run python backend/scripts/generate_sample.py --seed 20260101
+uv run python backend/scripts/generate_sample.py
 ```
 
 This writes `backend/app/sample/sample_sales.csv`. The seed makes the file deterministic,
@@ -67,10 +67,10 @@ head -n 4 backend/app/sample/sample_sales.csv
 ```
 
 ```
-order_id,order_date,product_id,product_name,quantity,unit_price
-ORD-000001,2025-01-01,P034,Sunglasses,1,46.00
-ORD-000002,2025-01-01,P009,Leather Wallet,2,45.00
-ORD-000003,2025-01-01,P001,Ceramic Mug,1,13.20
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+ORD-000001,2025-01-01,P001,Ceramic Mug,1,12.00,CUST-0001
+ORD-000001,2025-01-01,P002,Travel Tumbler,3,24.00,CUST-0001
+ORD-000002,2025-01-01,P001,Ceramic Mug,1,13.20,CUST-0002
 ```
 
 ### 2. Build the image
@@ -104,10 +104,10 @@ The dashboard opens on the full period of the data, 2025-01-01 to 2025-12-31:
 
 | Metric              | Expected value |
 | ------------------- | -------------- |
-| Rows                | 14,229         |
-| Gross sales         | $677,997.40    |
+| Rows                | 14,270         |
+| Gross sales         | $677,998.60    |
 | Orders              | 10,000         |
-| Units sold          | 24,183         |
+| Units sold          | 24,145         |
 | Average order value | $67.80         |
 
 ![Dashboard with KPIs and the weekly gross sales trend](_docs/images/demo-dashboard.png)
@@ -122,9 +122,8 @@ Below the trend, the top 10 products by gross sales:
 
 **Analyze another file** deletes this dataset and returns to the upload screen.
 
-The dashboard is organized into Overview, Customers and Products sections. The Customers API currently exposes
-aggregate coverage, identified-customer counts, new-versus-returning gross sales, the repeat-purchase rate and the
-days between purchases; Products contains the portfolio analyses described in
+The dashboard is organized into Overview, Customers and Products sections. The Customers API exposes aggregate
+coverage and customer analyses; Products contains the portfolio analyses described in
 [Product analytics](#product-analytics).
 
 ## Comparisons
@@ -171,6 +170,49 @@ overview KPIs and trends; `GET /api/datasets/{id}/products` returns the portfoli
 `GET /api/datasets/{id}/products/detail?product_id=...` returns one product's detail analyses. Dataset endpoints require
 the dataset's bearer token.
 
+## Customer analytics
+
+Customer analytics is aggregate-only. It describes identified orders and never displays a customer identifier,
+customer list or per-customer amount. The active reporting range includes both its start and end dates unless a row
+is explicitly described as full history through the selected end date. The worked figures below use the committed
+`backend/tests/fixtures/customers/golden_customers.csv` fixture: 20 orders, 19 identified orders, 10 customers and
+380.0000 identified gross sales in 2025-01-01 through 2025-09-30.
+
+| UI label and key | Formula, window and anchor | Insufficient data and zero result | Worked example |
+| --- | --- | --- | --- |
+| Customer coverage — `customer_coverage` | Distinct identified orders / all distinct orders; counted per order, for the dataset and selected range | No `customer_id` column is unavailable, below 50% is suppressed, and no orders has null coverage | 19 / 20 = 95.0% in the golden fixture |
+| Identified customers — `identified_customers` | Distinct `customer_id` values with an identified line in the active range; range start and end are inclusive | No identified customer returns 0 with `zero_result` | The golden range has 10 |
+| New versus returning customer gross sales — `new_vs_returning` | Split `SUM(quantity × unit_price)` by whether each line is on the customer's first full-history order date or after it; history is through the range end | No identified rows returns zero money values with `zero_result` | CUST-01's 2024-12-15 purchase makes its 2025 sales returning |
+| Repeat-purchase rate — `repeat_purchase` | Active customers with at least two distinct orders through the selected end / active identified customers; orders before the range start count | No active customers is `insufficient_data`; active customers with no repeat is exactly 0 (`zero_result`) | Same-day orders are distinct orders, not distinct dates |
+| Days between purchases — `days_between_purchases` | Median calendar-day interval between consecutive distinct orders; an interval is included when its later order is in the range, and same-day orders give 0 | No interval has null median and `insufficient_data`; fixed buckets are 0, 1-7, 8-14, 15-30, 31-60, 61-90, 91-180, 181-365 and 366+ | A same-day pair contributes to bucket 0 |
+| Cohort retention — `cohort_retention` | Retained customers / full-history acquisition-cohort size, by calendar month offset; cohorts use all history through the selected end | Missing cohorts are `insufficient_data`; a right-edge cell is `Not yet observed`, never 0% | Month 0 is 100.0% for each non-empty cohort |
+| Historical Customer Value — `historical_customer_value` | Observed identified gross sales through the end date / identified customer count; median is the middle per-customer value; cohort curves use cumulative sales | No cohort is `insufficient_data`; zero observed sales is a zero result; this is observed data, not a prediction | The golden fixture has 380.0000 across its 10 identified customers |
+| RFM segments — `rfm` | Recency is days before the selected end date; frequency is distinct orders; monetary is identified gross sales. Each dimension uses relative quintile scores and FM = F + M | Fewer than 5 customers is `insufficient_data`; ties use the same score and the full score-to-segment table in the registry | Scores are relative to this upload, not universal benchmarks |
+| RFM segment drill-downs — `rfm_drilldown` | Aggregate segment gross sales plus fixed recency (0-30 through 366+) and frequency (1, 2, 3, 4, 5, 6-10, 11-20, 21+) buckets; no rows per customer | Fewer than 5 customers is `insufficient_data`; zero gross sales has a null share | The golden fixture includes tied values without an ID tie-break |
+| Purchase frequency — `purchase_frequency` | Customers grouped by distinct identified orders through the selected end into 1, 2, 3, 4, 5, 6-10, 11-20 and 21+ | No identified customers gives empty counts, null shares and `insufficient_data` | A customer with two orders is in bucket 2 |
+| Customer concentration — `concentration` | Top-decile gross sales / identified gross sales; for N customers the top group has `ceil(N / 10)` largest range sales values, with no tie-break at the cut-off | Fewer than 10 customers or zero identified gross sales is `insufficient_data` and has a null share | With N=10, sales 1000, 500 and eight 100s gives 1000 / 2300 = 0.4348 |
+
+The 50% and 80% coverage tiers are inclusive as follows: below 50% is hidden, 50.0% up to but not including 80%
+is a low-coverage warning, and 80% or more is normal. The UI truncates the displayed percentage to one decimal;
+it does not round across a tier boundary. Coverage is order-level, not line-level. A file without the column is
+unavailable rather than 0%.
+
+Customer identity and cohorts use full history through the selected end date. Moving the range start later does not
+reclassify a customer as new or change cohort membership. RFM recency and cohort maturity are anchored to the selected
+end date, never to today. A partial or future cohort cell is **Not yet observed**, not a zero result.
+
+Upload consistency rules are exact: blanks within an order are filled from its single non-blank ID; two different
+IDs reject the whole upload; an all-blank order remains unidentified. The default `customer_id` limit is 128
+characters. The best-effort checks reject obvious email addresses, obvious phone numbers and values over that limit;
+they cannot identify names, postal addresses, national ID numbers, reversible encodings or unusual phone formats.
+
+The customer data is pseudonymous, not anonymous. Use a UUID or internal key, or a hash with a secret salt kept outside
+the file. Responses contain aggregate counts and sums only: there is no customer list, search, download or export, and
+customer IDs, cohort membership and RFM records are not logged. Customer data lives only in the dataset DuckDB file,
+is removed with that file after `DATASET_TTL_HOURS` (24 by default) or immediately with **Analyze another file**, and
+the raw CSV is deleted after import. The Projected 12-Month Customer Value is a separate future metric, not this
+observed measure.
+
 ## Configuration
 
 The server reads these environment variables when it starts. Every variable is optional.
@@ -198,7 +240,8 @@ example, `MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` exits with `
 ## Dataset contract
 
 One row is one product line within one completed order. The file must have these six required columns plus one optional
-column (the same table is on the upload screen):
+column (the same table is on the upload screen). See [Customer analytics](#customer-analytics) for the meaning and
+privacy limits of `customer_id`:
 
 | Column | Type | Rule |
 | --- | --- | --- |
@@ -435,7 +478,7 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 ## Privacy
 
 - The raw CSV is deleted as soon as the import ends, on success and on failure.
-- Only the six required columns and optional `customer_id` are stored, in one DuckDB file per dataset under `DATASET_DIR`, with private permissions
+- The required columns and optional `customer_id` are stored, in one DuckDB file per dataset under `DATASET_DIR`, with private permissions
   (`0600` for the file, `0700` for the directories).
 - Customer IDs are pseudonymous data, not anonymous data. They are kept for the dataset's 24-hour lifetime. Use a hashed
   identifier, UUID or non-personal internal key; never upload a direct identifier such as an email address, phone number
@@ -477,6 +520,7 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 - Surviving a restart is best effort, and only when `DATASET_DIR` is on a volume.
 - No accounts and no sharing. A dataset is reachable only with its token, which stays in one browser tab.
 - One currency per file.
+- No customer-level lists, exports or searches are provided; customer figures cover identified orders only.
 - Gross sales only: no refunds, discounts, taxes or shipping.
 - 50 MB and 500,000 rows by default.
 - Desktop and tablet widths (768 px and up). Phones are not supported (see
