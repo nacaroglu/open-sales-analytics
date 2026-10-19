@@ -373,6 +373,9 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
   never contain tokens, file contents, file names, product names or order IDs. Error logs hold exception class names
   and stack frames, never exception messages.
 - Nothing is sent to other services.
+- When customer IDs are supplied, the per-dataset DuckDB file also contains `customer_facts`: one row per identified
+  customer with full-history first/last order dates, acquisition month, distinct lifetime orders, units and gross
+  sales. It contains no rows for unidentified orders and expires with the dataset; it is not a separate shared database.
 
 ## Demo mode
 
@@ -404,7 +407,8 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 ## Architecture
 
 A React (Vite) front end with Recharts talks JSON to a FastAPI back end. Each dataset is one DuckDB file under
-`DATASET_DIR`; validation and analytics are SQL over that file. An in-process background task removes expired
+`DATASET_DIR`; validation and analytics are SQL over that file. Canonical import builds reusable `order_facts`,
+`product_facts` and, when identified customer data exists, full-history `customer_facts` in the same file. An in-process background task removes expired
 datasets. The Docker image is a single container in which FastAPI serves both the API and the built front end from one
 origin on port 8000. The full specification is in [`_docs/plan.md`](_docs/plan.md) (architecture in section 7), and the
 backlog is in [`_docs/tasks.md`](_docs/tasks.md).

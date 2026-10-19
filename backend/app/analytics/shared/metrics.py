@@ -3,12 +3,21 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-_UNITS = frozenset({"money", "count", "ratio", "percent", "days"})
+_UNITS = frozenset({"money", "count", "ratio", "percent", "days", "date"})
 _ACTIVE_RANGE = "The active reporting range, inclusive of its start and end dates."
 DORMANCY_WINDOWS = (30, 60, 90)
 BASKET_MIN_SHARED_ORDERS = 10
 BASKET_MIN_SUPPORT = Decimal("0.001")
 MAX_DISTINCT_PRODUCTS_PER_ORDER = 100
+
+FIRST_PURCHASE_DEFINITION = (
+    "A customer's earliest order date across the complete uploaded history; all orders on "
+    "that date are first-purchase orders."
+)
+ACQUISITION_COHORT_DEFINITION = (
+    "The calendar month containing the customer's first purchase date, represented by the "
+    "month's first day."
+)
 _BASKET_INSUFFICIENT_DATA = (
     "A pair is eligible only when it occurs in at least 10 shared orders and support is at "
     "least 0.1%. Orders containing more than 100 distinct products are excluded from basket "
@@ -48,6 +57,26 @@ class MetricDefinition:
 
 
 METRICS: dict[str, MetricDefinition] = {
+    "first_purchase": MetricDefinition(
+        "first_purchase",
+        "First purchase",
+        "date",
+        FIRST_PURCHASE_DEFINITION,
+        "MIN(order_date) across full history",
+        None,
+        "Complete uploaded history, independent of reporting range.",
+        "No identified customer orders: no customer fact exists.",
+    ),
+    "acquisition_cohort": MetricDefinition(
+        "acquisition_cohort",
+        "Acquisition cohort",
+        "date",
+        ACQUISITION_COHORT_DEFINITION,
+        "first day of the month containing first purchase",
+        None,
+        "Complete uploaded history, independent of reporting range.",
+        "No identified customer orders: no customer fact exists.",
+    ),
     "gross_sales": MetricDefinition(
         "gross_sales",
         "Gross sales",

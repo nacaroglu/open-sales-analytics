@@ -38,6 +38,19 @@ CREATE TABLE IF NOT EXISTS product_facts (
 )
 """
 
+CUSTOMER_FACTS_DDL = """
+CREATE TABLE IF NOT EXISTS customer_facts (
+    customer_id          VARCHAR       NOT NULL,
+    first_order_date     DATE          NOT NULL,
+    acquisition_month    DATE          NOT NULL,
+    first_day_orders     INTEGER       NOT NULL,
+    last_order_date      DATE          NOT NULL,
+    lifetime_orders      INTEGER       NOT NULL,
+    lifetime_units       BIGINT        NOT NULL,
+    lifetime_gross_sales DECIMAL(18,4) NOT NULL
+)
+"""
+
 DATASET_META_DDL = """
 CREATE TABLE IF NOT EXISTS dataset_meta (
     id         VARCHAR     NOT NULL,
@@ -71,6 +84,7 @@ def create_dataset(path: str | os.PathLike[str]) -> None:
         connection.execute(LINE_ITEMS_DDL)
         connection.execute(ORDER_FACTS_DDL)
         connection.execute(PRODUCT_FACTS_DDL)
+        connection.execute(CUSTOMER_FACTS_DDL)
         connection.execute(DATASET_META_DDL)
     finally:
         connection.close()

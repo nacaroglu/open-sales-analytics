@@ -25,7 +25,7 @@ def test_every_metric_has_the_required_nonempty_contract_fields():
     for metric in METRICS.values():
         assert all(getattr(metric, field).strip() for field in required)
         assert metric.denominator is None or metric.denominator.strip()
-        assert metric.unit in {"money", "count", "ratio", "percent", "days"}
+        assert metric.unit in {"money", "count", "ratio", "percent", "days", "date"}
 
 
 def test_api_kpi_keys_are_documented_by_the_registry(tmp_path):
