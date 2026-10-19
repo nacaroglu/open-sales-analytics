@@ -123,7 +123,7 @@ Below the trend, the top 10 products by gross sales:
 **Analyze another file** deletes this dataset and returns to the upload screen.
 
 The dashboard is organized into Overview, Customers and Products sections. The Customers API currently exposes
-aggregate coverage and identified-customer counts; Products contains the portfolio analyses described in
+aggregate coverage, identified-customer counts and new-versus-returning gross sales; Products contains the portfolio analyses described in
 [Product analytics](#product-analytics).
 
 ## Comparisons
@@ -332,7 +332,10 @@ The typed response contains `module`, `range`, `comparison`, `currency`, `availa
 both contain the tier, rounded coverage ratio and identified, unidentified and total order counts. When coverage is
 normal or warning, `sections.identified_customers` reports the distinct identified customers with activity in the
 inclusive range, plus the shared comparison value and change fields. An empty active population is a `zero_result`
-state. Missing or suppressed coverage omits the section. The endpoint always returns `Cache-Control: no-store`.
+state. `sections.new_vs_returning` splits identified gross sales in the range into new-customer sales (lines dated on
+the customer's first purchase date) and returning-customer sales (later lines), with the same comparison fields;
+classification always uses the full-history `first_order_date` from the whole upload, so moving the range start never
+turns a returning customer into a new one. Missing or suppressed coverage omits both sections. The endpoint always returns `Cache-Control: no-store`.
 Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
 search, detail, download or export data, and identifiers are not written to logs.
 
