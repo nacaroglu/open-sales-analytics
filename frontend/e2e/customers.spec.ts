@@ -13,6 +13,8 @@ test("Customers shows aggregate coverage, cohorts, RFM and drill-down", async ({
   await expect(page.getByRole("heading", { level: 3, name: "RFM segments" })).toBeVisible();
   await expect(page.getByRole("table", { name: "RFM segments table" })).toBeVisible();
   await expect(page.getByText("Segments are relative to the customers in this upload, not universal benchmarks.")).toBeVisible();
+  await page.getByRole("region", { name: "RFM segments" }).getByRole("button").first().click();
+  await expect(page.getByRole("region", { name: "RFM segment drill-down" })).toBeVisible();
 });
 
 test("Customers can be opened with an unavailable six-column upload", async ({ page }) => {
