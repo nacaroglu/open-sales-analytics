@@ -6,7 +6,11 @@ from typing import TypedDict
 
 import duckdb
 
-from app.analytics.customers.historical_value import read_cumulative_value_by_cohort_age
+from app.analytics.customers.historical_value import (
+    CumulativeValueCell,
+    CumulativeValueRow,
+    read_cumulative_value_by_cohort_age,
+)
 from app.analytics.customers.projection_eligibility import (
     _cohort_horizon_end,
     evaluate_projection_eligibility,
@@ -48,7 +52,7 @@ def _month_offset(cohort_month: date, cutoff: date) -> int:
     return (cutoff.year - cohort_month.year) * 12 + cutoff.month - cohort_month.month
 
 
-def _monthly_sales(cells: list[dict]) -> list[Decimal]:
+def _monthly_sales(cells: list[CumulativeValueCell]) -> list[Decimal]:
     previous = Decimal(0)
     sales: list[Decimal] = []
     for cell in cells[:PROJECTION_HORIZON_MONTHS]:
@@ -71,7 +75,7 @@ def calculate_projection(connection: duckdb.DuckDBPyConnection, cutoff: date) ->
     assert first_row is not None and first_row[0] is not None
     rows = read_cumulative_value_by_cohort_age(connection, first_row[0], cutoff)
 
-    prepared: list[tuple[dict, list[Decimal], int, bool]] = []
+    prepared: list[tuple[CumulativeValueRow, list[Decimal], int, bool]] = []
     for row in rows:
         cohort_month = row["cohort_month"]
         observed_age_months = min(max(_month_offset(cohort_month, cutoff), 0), 11) + 1
