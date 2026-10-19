@@ -10,7 +10,6 @@ Usage::
 """
 
 import argparse
-import csv
 import random
 from calendar import monthrange
 from datetime import date
@@ -54,7 +53,9 @@ def _customer(index: int) -> str:
     return f"C-{index:04x}"
 
 
-def generate(seed: int = DEFAULT_SEED, rows: int = DEFAULT_ROWS, without_customer_id: bool = False) -> bytes:
+def generate(
+    seed: int = DEFAULT_SEED, rows: int = DEFAULT_ROWS, without_customer_id: bool = False
+) -> bytes:
     """Return deterministic benchmark CSV bytes for ``seed`` and ``rows``."""
     if rows < 1:
         raise ValueError("rows must be positive")
@@ -90,7 +91,7 @@ def generate(seed: int = DEFAULT_SEED, rows: int = DEFAULT_ROWS, without_custome
                 if product not in product_indices:
                     product_indices.append(product)
 
-        for line_number, product_index in enumerate(product_indices):
+        for product_index in product_indices:
             product_id, product_name = products[product_index]
             quantity = 1 + rng.randrange(5)
             unit_price = 5 + (product_index * 7 + rng.randrange(900)) / 100
@@ -110,8 +111,12 @@ def generate(seed: int = DEFAULT_SEED, rows: int = DEFAULT_ROWS, without_custome
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="deterministic seed (default: 20251019)")
-    parser.add_argument("--rows", type=int, default=DEFAULT_ROWS, help="data rows (default: 500000)")
+    parser.add_argument(
+        "--seed", type=int, default=DEFAULT_SEED, help="deterministic seed (default: 20251019)"
+    )
+    parser.add_argument(
+        "--rows", type=int, default=DEFAULT_ROWS, help="data rows (default: 500000)"
+    )
     parser.add_argument("--output", type=Path, required=True, help="destination CSV path")
     parser.add_argument(
         "--without-customer-id",

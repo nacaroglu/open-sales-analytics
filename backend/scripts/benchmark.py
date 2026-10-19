@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 """Measure Phase 3 import and module response budgets on a local CSV.
 
 The upload transfer is intentionally excluded: import timing starts with the
@@ -27,13 +29,12 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 import duckdb
-from fastapi.testclient import TestClient
-
 from app.auth import get_now
 from app.config import Settings, get_settings
 from app.ingest import CreatedDataset, ingest_csv
 from app.main import app
 from app.response_cache import ResponseCache, get_response_cache
+from fastapi.testclient import TestClient
 
 IMPORT_BUDGET = 30.0
 UNCACHED_BUDGET = 3.0
