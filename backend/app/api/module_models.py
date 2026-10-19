@@ -360,6 +360,31 @@ class RfmDrilldownSection(BaseModel):
     )
 
 
+class PurchaseFrequencyBucket(BaseModel):
+    key: str
+    min_orders: int
+    max_orders: int | None
+    customer_count: int
+    share: float | None = Field(
+        description="Customers in this bucket divided by customer_count, rounded half-up to 4 decimals."
+    )
+
+
+class PurchaseFrequencySection(BaseModel):
+    """Aggregate identified-customer order frequency through the range end."""
+
+    availability: AvailabilityResponse
+    customer_count: int = Field(
+        description="Identified customers with at least one order on or before the range end."
+    )
+    single_order_share: float | None = Field(
+        description="The share of identified customers with exactly one order through the range end."
+    )
+    buckets: list[PurchaseFrequencyBucket] = Field(
+        description="All eight fixed order-frequency buckets, in order."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
@@ -371,6 +396,7 @@ class CustomerSections(BaseModel):
     historical_customer_value: HistoricalCustomerValueSection | None = None
     rfm: RfmSection | None = None
     rfm_drilldown: RfmDrilldownSection | None = None
+    purchase_frequency: PurchaseFrequencySection | None = None
 
 
 class CustomersResponse(BaseModel):
