@@ -337,6 +337,16 @@ METRICS: dict[str, MetricDefinition] = {
         "The active reporting range, with customer first_order_date taken from complete uploaded history.",
         "No identified rows in range: all values are 0.0000 with zero_result availability; unavailable comparisons have null comparison fields.",
     ),
+    "repeat_purchase": MetricDefinition(
+        "repeat_purchase",
+        "Repeat-purchase rate",
+        "ratio",
+        "repeat_customers / active_customers",
+        "Active identified customers with at least 2 distinct order_ids dated on or before the range end, including orders before the range start",
+        "Identified customers with at least one order in the active range (active_customers)",
+        "Activity in the active reporting range; orders counted from the start of the upload through the range end, orders after the end ignored.",
+        "No active identified customers in range: rate is null with insufficient_data availability; active customers but none repeating: rate 0 with zero_result availability.",
+    ),
 }
 
 

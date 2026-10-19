@@ -123,7 +123,7 @@ Below the trend, the top 10 products by gross sales:
 **Analyze another file** deletes this dataset and returns to the upload screen.
 
 The dashboard is organized into Overview, Customers and Products sections. The Customers API currently exposes
-aggregate coverage, identified-customer counts and new-versus-returning gross sales; Products contains the portfolio analyses described in
+aggregate coverage, identified-customer counts, new-versus-returning gross sales and the repeat-purchase rate; Products contains the portfolio analyses described in
 [Product analytics](#product-analytics).
 
 ## Comparisons

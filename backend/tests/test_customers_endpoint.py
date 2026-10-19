@@ -111,6 +111,15 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "returning_customer_gross_sales": {"value": "0.0000", **unavailable_comparison},
         "identified_gross_sales": {"value": "3.0000", **unavailable_comparison},
     }
+    assert body["sections"]["repeat_purchase"] == {
+        "availability": {
+            "state": "zero_result",
+            "reason": "No active identified customer had two or more orders by the end of the range.",
+        },
+        "active_customers": {"value": 1, **unavailable_comparison},
+        "repeat_customers": {"value": 0, **unavailable_comparison},
+        "repeat_purchase_rate": {"value": 0, **unavailable_comparison},
+    }
     markers = ("CUSTMARKER-0001", "CUSTMARKER-0002", "CUSTMARKER-0004")
     body_text = response.text
     assert all(marker not in body_text for marker in markers)
@@ -263,15 +272,214 @@ def test_new_vs_returning_zero_result(client):
         assert section[key]["value"] == "0.0000"
 
 
+REPEAT_ROWS = [
+    "a1,2026-01-10,p1,Mug,1,1.00,A",
+    "a2,2026-01-10,p1,Mug,1,1.00,A",
+    "a3,2026-02-05,p1,Mug,1,1.00,A",
+    "b1,2026-02-05,p1,Mug,1,1.00,B",
+    "b2,2026-02-20,p1,Mug,1,1.00,B",
+    "c1,2026-02-10,p1,Mug,1,1.00,C",
+    "c2,2026-03-03,p1,Mug,1,1.00,C",
+    "d1,2026-01-05,p1,Mug,1,1.00,D",
+    "e1,2026-02-12,p1,Mug,1,1.00,E",
+    "e1,2026-02-12,p2,Cup,1,1.00,E",
+]
+
+
+def test_repeat_purchase_previous_period_compares_exact_fractions(client):
+    dataset = upload(client, REPEAT_ROWS)
+    body = get_customers(client, dataset, start="2026-02-11", end="2026-02-28").json()
+
+    assert body["comparison"]["comparison"] == {"start": "2026-01-24", "end": "2026-02-10"}
+    assert body["sections"]["identified_customers"]["value"]["value"] == 2
+    assert body["sections"]["repeat_purchase"] == {
+        "availability": {"state": "available", "reason": None},
+        "active_customers": {
+            "value": 2,
+            "comparison_value": 3,
+            "absolute_change": -1,
+            "percent_change": "-33.33",
+            "change_status": "comparable",
+        },
+        "repeat_customers": {
+            "value": 1,
+            "comparison_value": 1,
+            "absolute_change": 0,
+            "percent_change": "0.00",
+            "change_status": "comparable",
+        },
+        "repeat_purchase_rate": {
+            "value": 0.5,
+            "comparison_value": 0.3333,
+            "absolute_change": 0.1667,
+            "percent_change": "50.00",
+            "change_status": "comparable",
+        },
+    }
+
+
+def test_repeat_purchase_unavailable_comparison_is_not_queried(client, monkeypatch):
+    import app.api.customers as customers_api
+
+    calls = []
+    original = customers_api.read_repeat_purchase
+
+    def recording(connection, start, end):
+        calls.append((start.isoformat(), end.isoformat()))
+        return original(connection, start, end)
+
+    monkeypatch.setattr(customers_api, "read_repeat_purchase", recording)
+    dataset = upload(client, REPEAT_ROWS)
+    body = get_customers(client, dataset, start="2026-02-01", end="2026-02-28").json()
+
+    assert body["comparison"]["comparison"]["start"] == "2026-01-04"
+    assert body["comparison"]["state"] == "unavailable"
+    assert calls == [("2026-02-01", "2026-02-28")]
+    unavailable = {
+        "comparison_value": None,
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+    assert body["sections"]["identified_customers"]["value"]["value"] == 4
+    assert body["sections"]["repeat_purchase"] == {
+        "availability": {"state": "available", "reason": None},
+        "active_customers": {"value": 4, **unavailable},
+        "repeat_customers": {"value": 2, **unavailable},
+        "repeat_purchase_rate": {"value": 0.5, **unavailable},
+    }
+
+    calls.clear()
+    default = get_customers(client, dataset).json()
+    assert default["comparison"]["state"] == "unavailable"
+    assert calls == [("2026-01-05", "2026-03-03")]
+    assert default["sections"]["repeat_purchase"]["repeat_purchase_rate"] == {
+        "value": 0.6,
+        **unavailable,
+    }
+
+
+def test_repeat_purchase_rounds_the_current_rate_half_up(client):
+    dataset = upload(client, REPEAT_ROWS)
+    body = get_customers(client, dataset, start="2026-02-01", end="2026-02-10").json()
+    section = body["sections"]["repeat_purchase"]
+
+    assert section["active_customers"]["value"] == 3
+    assert section["repeat_customers"]["value"] == 1
+    assert section["repeat_purchase_rate"]["value"] == 0.3333
+
+
+def test_repeat_purchase_without_active_customers_is_insufficient_data(client):
+    dataset = upload(
+        client,
+        [
+            "a1,2025-01-01,p1,Mug,1,2.00,C1",
+            "a2,2025-01-02,p1,Mug,1,2.00,C1",
+            "u1,2025-01-10,p1,Mug,1,2.00,",
+            "a3,2025-01-20,p1,Mug,1,2.00,C1",
+        ],
+    )
+    body = get_customers(client, dataset, start="2025-01-10", end="2025-01-10").json()
+    section = body["sections"]["repeat_purchase"]
+
+    assert body["comparison"]["state"] == "available"
+    assert section["availability"]["state"] == "insufficient_data"
+    assert section["availability"]["reason"]
+    assert section["active_customers"]["value"] == 0
+    assert section["repeat_customers"]["value"] == 0
+    assert section["active_customers"]["comparison_value"] == 0
+    assert section["active_customers"]["change_status"] == "no_change"
+    assert section["repeat_purchase_rate"] == {
+        "value": None,
+        "comparison_value": None,
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+    assert "NaN" not in json.dumps(body)
+
+
+def test_repeat_purchase_zero_comparison_population_keeps_count_changes(client):
+    dataset = upload(
+        client,
+        [
+            "a1,2025-01-01,p1,Mug,1,2.00,C1",
+            "u1,2025-01-02,p1,Mug,1,2.00,",
+            "a2,2025-01-03,p1,Mug,1,2.00,C1",
+        ],
+    )
+    body = get_customers(client, dataset, start="2025-01-03", end="2025-01-03").json()
+    section = body["sections"]["repeat_purchase"]
+
+    assert body["comparison"]["comparison"] == {"start": "2025-01-02", "end": "2025-01-02"}
+    assert section["availability"] == {"state": "available", "reason": None}
+    assert section["active_customers"] == {
+        "value": 1,
+        "comparison_value": 0,
+        "absolute_change": 1,
+        "percent_change": None,
+        "change_status": "no_prior_value",
+    }
+    assert section["repeat_purchase_rate"] == {
+        "value": 1.0,
+        "comparison_value": None,
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+
+
+def test_repeat_purchase_zero_current_population_keeps_comparison_rate(client):
+    dataset = upload(
+        client,
+        [
+            "a1,2025-01-01,p1,Mug,1,2.00,C1",
+            "a2,2025-01-02,p1,Mug,1,2.00,C1",
+            "u1,2025-01-03,p1,Mug,1,2.00,",
+        ],
+    )
+    body = get_customers(client, dataset, start="2025-01-03", end="2025-01-03").json()
+    rate = body["sections"]["repeat_purchase"]["repeat_purchase_rate"]
+
+    assert rate == {
+        "value": None,
+        "comparison_value": 1.0,
+        "absolute_change": None,
+        "percent_change": None,
+        "change_status": None,
+    }
+
+
+def test_repeat_purchase_warning_tier_matches_the_identified_only_numbers(client):
+    identified = [
+        "a1,2025-01-01,p1,Mug,1,2.00,C1",
+        "a2,2025-01-02,p1,Mug,1,2.00,C1",
+        "b1,2025-01-02,p1,Mug,1,2.00,C2",
+    ]
+    normal = upload(client, identified)
+    warning = upload(client, identified + ["u1,2025-01-02,p1,Mug,1,2.00,"])
+    normal_body = get_customers(client, normal).json()
+    warning_body = get_customers(client, warning).json()
+
+    assert normal_body["availability"]["tier"] == "normal"
+    assert warning_body["availability"]["tier"] == "warning"
+    assert warning_body["sections"]["repeat_purchase"] == normal_body["sections"]["repeat_purchase"]
+    assert normal_body["sections"]["repeat_purchase"]["repeat_purchase_rate"]["value"] == 0.5
+
+
 def test_missing_and_suppressed_coverage_omit_identified_customer_section(client, monkeypatch):
     import app.api.customers as customers_api
 
     def not_run(*args):
-        raise AssertionError("new_vs_returning must not be queried")
+        raise AssertionError("customer sections must not be queried")
 
     monkeypatch.setattr(customers_api, "read_new_vs_returning", not_run)
+    monkeypatch.setattr(customers_api, "read_repeat_purchase", not_run)
     missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
-    assert get_customers(client, missing).json()["sections"] == {}
+    missing_body = get_customers(client, missing).json()
+    assert missing_body["availability"]["tier"] == "missing"
+    assert missing_body["availability"]["state"] == "unavailable"
+    assert missing_body["sections"] == {}
     suppressed = upload(
         client,
         [
@@ -280,7 +488,11 @@ def test_missing_and_suppressed_coverage_omit_identified_customer_section(client
             "o3,2025-01-03,p1,Mug,1,2.00,",
         ],
     )
-    assert get_customers(client, suppressed).json()["sections"] == {}
+    suppressed_body = get_customers(client, suppressed).json()
+    assert suppressed_body["availability"]["tier"] == "suppressed"
+    assert suppressed_body["availability"]["state"] == "low_coverage"
+    assert suppressed_body["sections"] == {}
+    assert "repeat_purchase" not in suppressed_body["sections"]
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -359,8 +571,14 @@ def test_customer_availability_tiers_are_200_states(client, header, rows, tier, 
         assert section["new_customer_gross_sales"]["value"] == identified_sales
         assert section["returning_customer_gross_sales"]["value"] == "0.0000"
         assert section["identified_gross_sales"]["value"] == identified_sales
+        repeat = body["sections"]["repeat_purchase"]
+        assert repeat["active_customers"]["value"] == (2 if tier == "warning" else 3)
+        assert repeat["repeat_customers"]["value"] == 0
+        assert repeat["repeat_purchase_rate"]["value"] == 0
+        assert repeat["availability"]["state"] == "zero_result"
     if tier in {"missing", "suppressed"}:
         assert "new_vs_returning" not in body["sections"]
+        assert "repeat_purchase" not in body["sections"]
 
 
 @pytest.mark.parametrize(
@@ -409,6 +627,11 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     assert "customer_id" not in serialized
     assert "customer_ids" not in serialized
     assert "NewVsReturningSection" in json.dumps(schema["components"]["schemas"])
+    components = schema["components"]["schemas"]
+    assert {"RepeatPurchaseSection", "ComparedRatio"} <= set(components)
+    assert "repeat_purchase" in components["CustomerSections"]["properties"]
+    assert "lifetime" not in json.dumps(components["RepeatPurchaseSection"])
+    assert "lifetime" not in json.dumps(components["ComparedRatio"])
     assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"
     ]

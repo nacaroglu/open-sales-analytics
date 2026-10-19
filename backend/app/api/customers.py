@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from app.analytics.customers.coverage import read_customer_coverage
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
+from app.analytics.customers.repeat_purchase import read_repeat_purchase
 from app.analytics.shared.availability import (
     Availability,
     AvailabilityState,
@@ -17,6 +18,7 @@ from app.api.module_common import (
     cache_key,
     cached_json,
     compared,
+    compared_ratio,
     comparison_body,
     dataset_expiry,
     resolve_periods,
@@ -128,6 +130,52 @@ def _new_vs_returning_body(connection, periods) -> dict:
     }
 
 
+def _repeat_purchase_body(connection, periods) -> dict:
+    current = read_repeat_purchase(connection, periods.current.start, periods.current.end)
+    baseline = (
+        read_repeat_purchase(
+            connection,
+            periods.comparison.comparison_start,
+            periods.comparison.comparison_end,
+        )
+        if periods.comparison.available
+        else None
+    )
+    active = current["active_customers"]
+    repeat = current["repeat_customers"]
+    if not active:
+        availability = Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "No identified customers placed an order in the selected range, "
+            "so the repeat-purchase rate is undefined.",
+        )
+    elif not repeat:
+        availability = Availability(
+            AvailabilityState.ZERO_RESULT,
+            "No active identified customer had two or more orders by the end of the range.",
+        )
+    else:
+        availability = Availability(AvailabilityState.AVAILABLE)
+    return {
+        "availability": {
+            "state": availability.state,
+            "reason": availability.reason,
+        },
+        "active_customers": compared(
+            active, None if baseline is None else baseline["active_customers"], as_money=False
+        ),
+        "repeat_customers": compared(
+            repeat, None if baseline is None else baseline["repeat_customers"], as_money=False
+        ),
+        "repeat_purchase_rate": compared_ratio(
+            repeat,
+            active,
+            None if baseline is None else baseline["repeat_customers"],
+            None if baseline is None else baseline["active_customers"],
+        ),
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -161,6 +209,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
     if tier in {"normal", "warning"}:
         body["sections"]["identified_customers"] = _identified_customers_body(connection, periods)
         body["sections"]["new_vs_returning"] = _new_vs_returning_body(connection, periods)
+        body["sections"]["repeat_purchase"] = _repeat_purchase_body(connection, periods)
     return body
 
 
