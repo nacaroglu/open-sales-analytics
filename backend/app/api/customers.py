@@ -15,6 +15,8 @@ from app.analytics.customers.days_between_purchases import read_days_between_pur
 from app.analytics.customers.historical_value import read_historical_customer_value
 from app.analytics.customers.identified import read_identified_customer_count
 from app.analytics.customers.new_vs_returning import read_new_vs_returning
+from app.analytics.customers.projection import read_projected_customer_value
+from app.analytics.customers.projection_eligibility import evaluate_projection_eligibility
 from app.analytics.customers.purchase_frequency import read_purchase_frequency
 from app.analytics.customers.repeat_purchase import read_repeat_purchase
 from app.analytics.customers.rfm import read_rfm, read_rfm_drilldown
@@ -512,6 +514,39 @@ def _concentration_body(connection, periods) -> dict:
     }
 
 
+def _projection_body(connection, cutoff: date) -> dict:
+    eligibility = evaluate_projection_eligibility(connection, cutoff)
+    result = read_projected_customer_value(connection, cutoff)
+    value = None
+    if result is not None:
+        value = {
+            "customers": result["headline"]["customers"],
+            "contributing_mature_cohorts": result["headline"]["contributing_mature_cohorts"],
+            "observed_per_customer": result["headline"]["observed_per_customer"],
+            "projected_per_customer_estimate": result["headline"]["projected_per_customer"],
+            "total_per_customer_estimate": result["headline"]["total_per_customer"],
+            "cohorts": [
+                {
+                    "cohort_month": cohort["cohort_month"],
+                    "customers": cohort["customers"],
+                    "observed_age_months": cohort["observed_age_months"],
+                    "mature": cohort["mature"],
+                    "observed_per_customer": cohort["observed_per_customer"],
+                    "projected_per_customer_estimate": cohort["projected_per_customer"],
+                    "total_per_customer_estimate": cohort["total_per_customer"],
+                }
+                for cohort in result["cohorts"]
+            ],
+        }
+    return {
+        "is_estimate": True,
+        "horizon_months": 12,
+        "data_cutoff": cutoff.isoformat(),
+        "eligibility": eligibility,
+        "value": value,
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -539,6 +574,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
                 customer_coverage_tier(has_customer_id, dataset_coverage), range_coverage
             ),
         },
+        "projected_12_month_customer_value": _projection_body(connection, periods.current.end),
         "sections": {},
     }
     tier = customer_coverage_tier(has_customer_id, dataset_coverage)

@@ -55,10 +55,26 @@ class CapabilityColumnsModel(BaseModel):
     customer_id: bool
 
 
+class ProjectionEligibilityModel(BaseModel):
+    status: str
+    data_cutoff: str
+    conditions: list[dict]
+
+
+class ProjectionAvailabilityModel(BaseModel):
+    state: AvailabilityState
+    reason: str | None
+    eligibility: ProjectionEligibilityModel
+
+
+class CustomerModuleModel(AvailabilityModel):
+    projection: ProjectionAvailabilityModel
+
+
 class CapabilityModulesModel(BaseModel):
     overview: AvailabilityModel
     products: AvailabilityModel
-    customers: AvailabilityModel
+    customers: CustomerModuleModel
 
 
 class CapabilityComparisonsModel(BaseModel):

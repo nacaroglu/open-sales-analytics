@@ -128,5 +128,45 @@ export interface CustomerResponse {
   currency: string;
   availability: Availability & { tier: CustomerCoverageValue["tier"]; warning?: Availability | null };
   coverage: { dataset: CustomerCoverageValue; range: CustomerCoverageValue };
+  projected_12_month_customer_value: Projected12MonthCustomerValue;
   sections: Record<string, unknown>;
+}
+
+export interface ProjectionEligibilityCondition {
+  code: string;
+  label: string;
+  actual: number | string | null;
+  threshold: number | string;
+  passed: boolean;
+}
+
+export interface ProjectedCustomerValueCohort {
+  cohort_month: string;
+  customers: number;
+  observed_age_months: number;
+  mature: boolean;
+  observed_per_customer: string;
+  projected_per_customer_estimate: string;
+  total_per_customer_estimate: string;
+}
+
+export interface ProjectedCustomerValue {
+  customers: number;
+  contributing_mature_cohorts: number;
+  observed_per_customer: string;
+  projected_per_customer_estimate: string;
+  total_per_customer_estimate: string;
+  cohorts: ProjectedCustomerValueCohort[];
+}
+
+export interface Projected12MonthCustomerValue {
+  is_estimate: boolean;
+  horizon_months: number;
+  data_cutoff: string;
+  eligibility: {
+    status: "eligible" | "ineligible" | "unavailable";
+    data_cutoff: string;
+    conditions: ProjectionEligibilityCondition[];
+  };
+  value: ProjectedCustomerValue | null;
 }

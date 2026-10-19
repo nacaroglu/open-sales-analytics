@@ -2,6 +2,7 @@ from datetime import date
 
 import duckdb
 
+from app.analytics.customers.projection_eligibility import evaluate_projection_eligibility
 from app.analytics.shared.availability import (
     CustomerCoverage,
     customer_availability,
@@ -64,6 +65,17 @@ def _capabilities(
             f"The comparison needs data from {first_previous_year}, but the dataset starts on {first_day}.",
         )
     )
+    projection_eligibility = evaluate_projection_eligibility(connection, last_day)
+    projection_state = {
+        "eligible": "available",
+        "ineligible": "insufficient_data",
+        "unavailable": "unavailable",
+    }[projection_eligibility["status"]]
+    projection_reason = {
+        "available": None,
+        "insufficient_data": "The projection eligibility requirements are not met.",
+        "unavailable": "Projection eligibility requires a customer_id column.",
+    }[projection_state]
     return {
         "columns": {"customer_id": has_customer_id},
         "counts": {
@@ -75,7 +87,14 @@ def _capabilities(
         "modules": {
             "overview": _availability("available"),
             "products": _availability("available"),
-            "customers": customer_availability(has_customer_id, coverage),
+            "customers": {
+                **customer_availability(has_customer_id, coverage),
+                "projection": {
+                    "state": projection_state,
+                    "reason": projection_reason,
+                    "eligibility": projection_eligibility,
+                },
+            },
         },
         "comparisons": {
             "previous_period": previous_period,

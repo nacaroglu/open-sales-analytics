@@ -10,6 +10,19 @@ BASKET_MIN_SHARED_ORDERS = 10
 BASKET_MIN_SUPPORT = Decimal("0.001")
 MAX_DISTINCT_PRODUCTS_PER_ORDER = 100
 
+PROJECTION_HISTORY_MONTHS = 18
+PROJECTION_MIN_IDENTIFIED_CUSTOMERS = 500
+PROJECTION_MIN_CUSTOMER_COVERAGE = Decimal("0.7000")
+PROJECTION_MATURE_COHORTS = 5
+PROJECTION_HORIZON_MONTHS = 12
+
+PROJECTION_CONDITION_LABELS = {
+    "history_months": "At least 18 months of order history",
+    "identified_customers": "At least 500 identified customers",
+    "customer_coverage": "Customer coverage of at least 70%",
+    "mature_cohorts": "At least 5 monthly cohorts with 12 months of observed behaviour",
+}
+
 FIRST_PURCHASE_DEFINITION = (
     "A customer's earliest order date across the complete uploaded history; all orders on "
     "that date are first-purchase orders."
@@ -475,6 +488,16 @@ METRICS: dict[str, MetricDefinition] = {
         "Members (customer_count, or cohort_size per cohort): identified customers whose acquisition_month is from the month containing the range start to the month containing the range end and whose first order is on or before the range end",
         "Members are selected exactly as the cohort_retention rows; the data cutoff is the range end. Sales before the range start count; sales after the cutoff are ignored. Current range only, no comparison.",
         "No acquisition cohort overlaps the range: customer_count 0, average and median null, rows and all_cohorts empty, insufficient_data availability. Members whose total value is 0: values 0.0000 with zero_result availability. not_observed cells are null; an all-cohorts offset with no complete cohort is null.",
+    ),
+    "projected_customer_value": MetricDefinition(
+        "projected_customer_value",
+        "Projected 12-Month Customer Value",
+        "money",
+        "Weighted observed value plus mature-cohort incremental value for age months 0 through 11.",
+        "SUM(customer_count × per-customer observed or projected value)",
+        "SUM(customer_count)",
+        "Full identified customer history through the selected data cutoff.",
+        "Only eligible datasets with 18 months, 500 identified customers, 70% coverage and five mature cohorts.",
     ),
     "rfm": MetricDefinition(
         "rfm",

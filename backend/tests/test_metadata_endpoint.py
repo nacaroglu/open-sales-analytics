@@ -104,6 +104,44 @@ def test_capabilities_contain_fact_counts_and_dataset_comparison_states(client, 
             "customers": {
                 "state": "unavailable",
                 "reason": "The file has no customer_id column.",
+                "projection": {
+                    "state": "unavailable",
+                    "reason": "Projection eligibility requires a customer_id column.",
+                    "eligibility": {
+                        "status": "unavailable",
+                        "data_cutoff": "2024-03-01",
+                        "conditions": [
+                            {
+                                "code": "history_months",
+                                "label": "At least 18 months of order history",
+                                "actual": 12,
+                                "threshold": 18,
+                                "passed": False,
+                            },
+                            {
+                                "code": "identified_customers",
+                                "label": "At least 500 identified customers",
+                                "actual": 0,
+                                "threshold": 500,
+                                "passed": False,
+                            },
+                            {
+                                "code": "customer_coverage",
+                                "label": "Customer coverage of at least 70%",
+                                "actual": None,
+                                "threshold": "0.7000",
+                                "passed": False,
+                            },
+                            {
+                                "code": "mature_cohorts",
+                                "label": "At least 5 monthly cohorts with 12 months of observed behaviour",
+                                "actual": 0,
+                                "threshold": 5,
+                                "passed": False,
+                            },
+                        ],
+                    },
+                },
             },
         },
         "comparisons": {
