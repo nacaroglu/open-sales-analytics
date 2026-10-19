@@ -48,10 +48,10 @@ Control borders use `border-slate-500` (4.8:1 on white, 4.6 on slate-50, above t
 Spacing steps 1, 2, 3, 4, 6, 8 only. Page padding `px-8 py-8`; gap between sections `space-y-8`; card padding `p-4` (KPI) or `p-6`
 (chart section); table cell `px-3 py-2`; inside a card `space-y-2`; label to control `mt-1`; button gap `gap-3`.
 
-## Layout (768 px and up)
+## Layout (360 px and up)
 
-Supported: desktop and tablet, 768 px and wider, no horizontal page scroll at 768 px. Phones are not supported. Page: `<main className="mx-auto max-w-5xl px-8 py-8 space-y-8">`. Dashboard, top to bottom, each a `<section aria-label="...">` stacked full width: Date range, Key figures, Sales trend, Top products (the four names from #27).
-Key figures: `grid grid-cols-2 lg:grid-cols-4 gap-4`. At 768 px the cards are ~340 px wide, so `$1,234,567,890.12` fits at `text-2xl`; from 1024 px they are narrower, hence `lg:text-xl` and `wrap-anywhere`, which wraps rather than overflows.
+Supported: phone, tablet and desktop widths, 360 px and wider, with no horizontal page scroll. Page: `<main className="mx-auto max-w-5xl px-8 py-8 space-y-8">`. Dashboard, top to bottom, each a `<section aria-label="...">` stacked full width: Date range, Key figures, Sales trend, Top products (the four names from #27).
+At 360 px, the `flex-wrap` date controls, navigation and button groups wrap inside the page; controls retain the 40 px button/input height. Key figures use `grid grid-cols-2 lg:grid-cols-4 gap-4`; long values use `wrap-anywhere` rather than causing page overflow. Wide tables and heatmaps scroll inside their own `overflow-x-auto` wrapper; the document itself never scrolls horizontally.
 
 Date range section (#27 + #31) is one card `rounded-lg border border-slate-200 bg-white p-4 space-y-4`, top to bottom: right-aligned primary **Analyze another file**;
 the dataset facts `<dl className="grid grid-cols-2 lg:grid-cols-4 gap-4">`, each a `<dt>` (card-label classes) over a `<dd className="mt-1 text-base font-semibold tabular-nums wrap-anywhere">`,

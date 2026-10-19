@@ -526,7 +526,7 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 - No customer-level lists, exports or searches are provided; customer figures cover identified orders only.
 - Gross sales only: no refunds, discounts, taxes or shipping.
 - 50 MB and 500,000 rows by default.
-- Desktop and tablet widths (768 px and up). Phones are not supported (see
+- Phone, tablet and desktop widths (360 px and up); wide tables scroll inside their own region (see
   [`_docs/design-system.md`](_docs/design-system.md)).
 
 ## Architecture
@@ -664,7 +664,8 @@ requests from forks and from Dependabot.
 ### Browser test
 
 A small Playwright suite (Chromium, `frontend/e2e/`) covers the primary journeys: Try sample data, a valid upload,
-an invalid upload, the date range and Reset, Analyze another file, and an expired dataset.
+an invalid upload, the date range and Reset, Analyze another file, the cross-module customer journey, responsive
+layouts at 360/768/1280 px, and an expired dataset.
 Install the browser once (about 150 MB, stored outside the repository), then run it from `frontend/`:
 
 ```sh
