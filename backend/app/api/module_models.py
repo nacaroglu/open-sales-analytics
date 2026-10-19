@@ -255,6 +255,55 @@ class HistoricalCustomerValueSection(BaseModel):
     )
 
 
+class ProjectionEligibilityCondition(BaseModel):
+    code: str
+    label: str
+    actual: int | str | None
+    threshold: int | str
+    passed: bool
+
+
+class ProjectionEligibilityResponse(BaseModel):
+    status: Literal["eligible", "ineligible", "unavailable"]
+    data_cutoff: str
+    conditions: list[ProjectionEligibilityCondition]
+
+
+class ProjectedCustomerValueCohort(BaseModel):
+    cohort_month: str
+    customers: int
+    observed_age_months: int
+    mature: bool
+    observed_per_customer: str
+    projected_per_customer_estimate: str = Field(
+        description="Estimate: projected incremental customer value for the remaining age months."
+    )
+    total_per_customer_estimate: str = Field(
+        description="Estimate: observed plus projected customer value through the fixed horizon."
+    )
+
+
+class ProjectedCustomerValue(BaseModel):
+    customers: int
+    contributing_mature_cohorts: int
+    observed_per_customer: str
+    projected_per_customer_estimate: str = Field(
+        description="Estimate: weighted mature-cohort value for the unobserved age months."
+    )
+    total_per_customer_estimate: str = Field(
+        description="Estimate: observed value plus the projected mature-cohort top-up."
+    )
+    cohorts: list[ProjectedCustomerValueCohort]
+
+
+class Projected12MonthCustomerValue(BaseModel):
+    is_estimate: bool = Field(description="Estimate: this block includes a projected value.")
+    horizon_months: int
+    data_cutoff: str
+    eligibility: ProjectionEligibilityResponse
+    value: ProjectedCustomerValue | None
+
+
 class RfmSegment(BaseModel):
     segment: str = Field(
         description="Segment name, one of Champions, Loyal, Potential Loyalists, "
@@ -420,6 +469,7 @@ class CustomersResponse(BaseModel):
     currency: str
     availability: CustomerAvailabilityResponse
     coverage: CustomerCoverageEnvelope
+    projected_12_month_customer_value: Projected12MonthCustomerValue
     sections: CustomerSections
 
 
