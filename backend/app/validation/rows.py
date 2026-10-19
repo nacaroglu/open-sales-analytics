@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 import duckdb
 
 from app.validation.result import MAX_REPORTED_ERRORS, Issue, ValidationResult
-from app.validation.structure import REQUIRED_COLUMNS
+from app.validation.structure import OPTIONAL_COLUMNS, REQUIRED_COLUMNS
 
 MAX_QUANTITY = 2_147_483_647
 MAX_PRICE_INTEGER_DIGITS = 14  # DECIMAL(18,4)
@@ -18,10 +18,51 @@ _PRICE_ROUNDED_OK = (
     f"{_PRICE_SHAPE} AND {_PRICE_INTEGER_DIGITS} <= {MAX_PRICE_INTEGER_DIGITS} "
     f"AND {_PRICE_DECIMALS} <= {MAX_PRICE_DECIMALS}"
 )
+_CUSTOMER_PRIVACY_REASON = "Automated checks cannot find every kind of personal data."
+_CUSTOMER_EMAIL_SHAPE = r"'[^@\s]+@[^@\s]+\.[A-Za-z]{2,}'"
+_CUSTOMER_PHONE_SHAPE = r"'^\+?[0-9 .()\-]+$'"
+_CUSTOMER_PHONE_DIGITS = "length(regexp_replace(customer_id, '[^0-9]', '', 'g'))"
+_CUSTOMER_PHONE_SEPARATORS = (
+    "length(customer_id) - length(regexp_replace(customer_id, '[-.]', '', 'g'))"
+)
 
 
 def _shown(column: str) -> str:
     return f"'''' || left({column}, {_SHOWN}) || ''''"
+
+
+def _customer_id_checks() -> list[tuple[str, str, str, str]]:
+    """Return customer checks in their required precedence order."""
+    not_email = f"NOT regexp_matches(customer_id, {_CUSTOMER_EMAIL_SHAPE})"
+    phone_shape = f"regexp_full_match(customer_id, {_CUSTOMER_PHONE_SHAPE})"
+    phone_signal = (
+        "(left(customer_id, 1) = '+' OR customer_id LIKE '% %' "
+        "OR customer_id LIKE '%(%' OR customer_id LIKE '%)%' "
+        f"OR {_CUSTOMER_PHONE_SEPARATORS} >= 2)"
+    )
+    phone = f"{phone_shape} AND {_CUSTOMER_PHONE_DIGITS} BETWEEN 7 AND 15 AND {phone_signal}"
+    return [
+        (
+            "customer_id",
+            "customer_id_too_long",
+            "customer_id IS NOT NULL AND length(customer_id) > $customer_id_max_length",
+            f"'customer_id is too long. Use an opaque ID such as a hashed value or UUID. {_CUSTOMER_PRIVACY_REASON}'",
+        ),
+        (
+            "customer_id",
+            "customer_id_looks_like_email",
+            "customer_id IS NOT NULL AND length(customer_id) <= $customer_id_max_length "
+            f"AND regexp_matches(customer_id, {_CUSTOMER_EMAIL_SHAPE})",
+            f"'customer_id looks like an email address. Use an opaque ID such as a hashed value or UUID. {_CUSTOMER_PRIVACY_REASON}'",
+        ),
+        (
+            "customer_id",
+            "customer_id_looks_like_phone",
+            "customer_id IS NOT NULL AND length(customer_id) <= $customer_id_max_length "
+            f"AND {not_email} AND {phone}",
+            f"'customer_id looks like a phone number. Use an opaque ID such as a hashed value or UUID. {_CUSTOMER_PRIVACY_REASON}'",
+        ),
+    ]
 
 
 # (field, code, condition, reason expression). Every condition other than
@@ -67,7 +108,7 @@ _CHECKS: list[tuple[str, str, str, str]] = [
 
 
 def _select(field: str, code: str, condition: str, reason: str) -> str:
-    position = REQUIRED_COLUMNS.index(field) + 1
+    position = (*REQUIRED_COLUMNS, *OPTIONAL_COLUMNS).index(field) + 1
     return (
         f"SELECT row_number, {position} AS position, '{field}' AS field, '{code}' AS code, "
         f"{reason} AS reason FROM staging WHERE {condition}"
@@ -151,7 +192,7 @@ FROM staging_malformed
 """
 
 _ISSUES_SQL = "CREATE OR REPLACE TEMP TABLE row_issues AS " + " UNION ALL ".join(
-    [_select(*check) for check in _CHECKS]
+    [_select(*check) for check in _CHECKS + _customer_id_checks()]
     + [
         _MALFORMED_ROW_SQL,
         _DUPLICATE_LINE_SQL,
@@ -167,7 +208,9 @@ _ZERO_PRICE_SQL = (
 
 
 def validate_rows(
-    connection: duckdb.DuckDBPyConnection, today: date | None = None
+    connection: duckdb.DuckDBPyConnection,
+    today: date | None = None,
+    customer_id_max_length: int = 128,
 ) -> ValidationResult:
     """Run the row-level and cross-row rules as SQL over the tables made by ``stage_csv``.
 
@@ -177,7 +220,10 @@ def validate_rows(
     today = today or datetime.now(UTC).date()
     result = ValidationResult()
 
-    connection.execute(_ISSUES_SQL, {"today": today.isoformat()})
+    connection.execute(
+        _ISSUES_SQL,
+        {"today": today.isoformat(), "customer_id_max_length": customer_id_max_length},
+    )
     try:
         count_row = connection.execute("SELECT count(*) FROM row_issues").fetchone()
         assert count_row is not None  # count(*) always returns one row

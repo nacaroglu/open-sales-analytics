@@ -40,6 +40,104 @@ def summary(result):
     return [(e.row_number, e.field, e.code) for e in result.errors]
 
 
+def run_customer_text(tmp_path, customer_id, max_length=128):
+    return (
+        run_text(
+            tmp_path,
+            HEADER + f",customer_id\no1,2025-01-02,p1,Mug,1,9.99,{customer_id}\n",
+        )
+        if max_length == 128
+        else _run_customer_with_limit(tmp_path, customer_id, max_length)
+    )
+
+
+def _run_customer_with_limit(tmp_path, customer_id, max_length):
+    path = tmp_path / "customer-upload.csv"
+    path.write_text(
+        HEADER + f",customer_id\no1,2025-01-02,p1,Mug,1,9.99,{customer_id}\n",
+        encoding="utf-8",
+    )
+    connection = stage_csv(path)
+    try:
+        return validate_rows(connection, TODAY, max_length)
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(
+    "customer_id",
+    [
+        "3f2b8c1e-9a4d-4e2b-8f6a-1c2d3e4f5a6b",
+        "a" * 64,
+        "a" * 32,
+        "1234567",
+        "000123456789",
+        "2024-000123",
+        "CUST-0001-0002",
+        "cust@123",
+        "@handle",
+        "a@b",
+        "ORD-1@2",
+    ],
+)
+def test_customer_id_guardrails_accept_opaque_and_non_matching_values(tmp_path, customer_id):
+    result = run_customer_text(tmp_path, customer_id)
+
+    assert result.errors == []
+
+
+@pytest.mark.parametrize(
+    ("customer_id", "code"),
+    [
+        ("jane@example.com", "customer_id_looks_like_email"),
+        ("JANE.DOE@EXAMPLE.CO.UK", "customer_id_looks_like_email"),
+        ("user+tag@mail.example.org", "customer_id_looks_like_email"),
+        ("Jane <jane@example.com>", "customer_id_looks_like_email"),
+        ("+90 532 123 45 67", "customer_id_looks_like_phone"),
+        ("+15551234567", "customer_id_looks_like_phone"),
+        ("(555) 123-4567", "customer_id_looks_like_phone"),
+        ("555-123-4567", "customer_id_looks_like_phone"),
+        ("555.123.4567", "customer_id_looks_like_phone"),
+    ],
+)
+def test_customer_id_guardrails_reject_exact_email_and_phone_heuristics(
+    tmp_path, customer_id, code
+):
+    result = run_customer_text(tmp_path, customer_id)
+
+    assert summary(result) == [(2, "customer_id", code)]
+    assert "jane@example.com" not in result.errors[0].reason
+    assert "Automated checks cannot find every kind of personal data." in result.errors[0].reason
+
+
+@pytest.mark.parametrize("value", ["ü" * 128, "a" * 10])
+def test_customer_id_length_counts_unicode_characters_and_accepts_limit(tmp_path, value):
+    result = _run_customer_with_limit(tmp_path, value, 128 if len(value) == 128 else 10)
+
+    assert result.errors == []
+
+
+@pytest.mark.parametrize("value", ["ü" * 129, "a" * 11])
+def test_customer_id_length_rejects_value_over_configured_limit(tmp_path, value):
+    limit = 128 if len(value) == 129 else 10
+    result = _run_customer_with_limit(tmp_path, value, limit)
+
+    assert summary(result) == [(2, "customer_id", "customer_id_too_long")]
+    assert value not in result.errors[0].reason
+
+
+def test_customer_id_checks_have_length_email_phone_precedence(tmp_path):
+    result = _run_customer_with_limit(tmp_path, "jane@example.com", 5)
+
+    assert summary(result) == [(2, "customer_id", "customer_id_too_long")]
+
+
+def test_blank_customer_ids_are_not_checked(tmp_path):
+    result = run_customer_text(tmp_path, "")
+
+    assert result.errors == []
+
+
 # --- one fixture file per rule ------------------------------------------------
 
 
