@@ -104,8 +104,8 @@ function SectionState({ section, title }: { section: CustomerSection; title: str
 
 function CustomerMetricSection({ label, data, children, lowCoverage }: { label: string; data: CustomerSection | null | undefined; children?: ReactNode; lowCoverage?: string }) {
   if (data == null) return null;
-  const state = <SectionState section={data} title={label} />;
-  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{state ?? children}</section>;
+  const available = data.availability?.state === "available";
+  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{available ? children : <SectionState section={data} title={label} />}</section>;
 }
 
 function valueOf(section: CustomerSection, key: string): unknown {
