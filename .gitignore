@@ -27,4 +27,5 @@ playwright-report/
 
 # Local data
 /tmp_datasets/
+tmp_benchmarks/
 *.duckdb

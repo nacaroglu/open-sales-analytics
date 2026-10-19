@@ -539,6 +539,7 @@ backlog is in [`_docs/tasks.md`](_docs/tasks.md).
 
 How work is organized: [`_docs/process.md`](_docs/process.md). Testing conventions:
 [`_docs/testing-guidelines.md`](_docs/testing-guidelines.md).
+Performance baseline commands and results: [`_docs/benchmarks.md`](_docs/benchmarks.md).
 
 From the repository root:
 
