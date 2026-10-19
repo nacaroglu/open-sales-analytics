@@ -153,6 +153,43 @@ class DaysBetweenPurchasesSection(BaseModel):
     )
 
 
+class CohortRetentionCell(BaseModel):
+    month_offset: int = Field(description="Months since the acquisition month (0 = acquisition).")
+    state: Literal["complete", "partial", "not_observed"] = Field(
+        description="complete: the whole month is on or before data_cutoff; partial: the month "
+        "contains data_cutoff but does not end on it (counts so far); not_observed: the month "
+        "starts after data_cutoff (counts are null)."
+    )
+    retained_count: int | None = Field(
+        description="Cohort members with an identified line in this month, on or before "
+        "data_cutoff; null when not_observed."
+    )
+    retention: float | None = Field(
+        description="retained_count divided by cohort_size, rounded half-up to 4 decimals; "
+        "null when not_observed."
+    )
+
+
+class CohortRetentionRow(BaseModel):
+    cohort_month: str = Field(description="Acquisition month, YYYY-MM.")
+    cohort_size: int = Field(
+        description="Identified customers whose full-history first order is in this month "
+        "and on or before data_cutoff."
+    )
+    complete_months: int = Field(description="Number of complete cells in the row.")
+    cells: list[CohortRetentionCell] = Field(
+        description="Cells ordered by month_offset; every row has the same number of cells."
+    )
+
+
+class CohortRetentionSection(BaseModel):
+    availability: AvailabilityResponse
+    data_cutoff: str = Field(description="The range end (YYYY-MM-DD); later activity is ignored.")
+    rows: list[CohortRetentionRow] = Field(
+        description="Acquisition cohorts overlapping the range, oldest first."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
@@ -160,6 +197,7 @@ class CustomerSections(BaseModel):
     new_vs_returning: NewVsReturningSection | None = None
     repeat_purchase: RepeatPurchaseSection | None = None
     days_between_purchases: DaysBetweenPurchasesSection | None = None
+    cohort_retention: CohortRetentionSection | None = None
 
 
 class CustomersResponse(BaseModel):
