@@ -489,6 +489,16 @@ METRICS: dict[str, MetricDefinition] = {
         "Members are selected exactly as the cohort_retention rows; the data cutoff is the range end. Sales before the range start count; sales after the cutoff are ignored. Current range only, no comparison.",
         "No acquisition cohort overlaps the range: customer_count 0, average and median null, rows and all_cohorts empty, insufficient_data availability. Members whose total value is 0: values 0.0000 with zero_result availability. not_observed cells are null; an all-cohorts offset with no complete cohort is null.",
     ),
+    "projected_customer_value": MetricDefinition(
+        "projected_customer_value",
+        "Projected 12-Month Customer Value",
+        "money",
+        "Weighted observed value plus mature-cohort incremental value for age months 0 through 11.",
+        "SUM(customer_count × per-customer observed or projected value)",
+        "SUM(customer_count)",
+        "Full identified customer history through the selected data cutoff.",
+        "Only eligible datasets with 18 months, 500 identified customers, 70% coverage and five mature cohorts.",
+    ),
     "rfm": MetricDefinition(
         "rfm",
         "RFM segments",
