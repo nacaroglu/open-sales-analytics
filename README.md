@@ -122,8 +122,9 @@ Below the trend, the top 10 products by gross sales:
 
 **Analyze another file** deletes this dataset and returns to the upload screen.
 
-The dashboard is organized into Overview, Customers and Products sections. Customers is not available yet in this
-release; Products contains the portfolio analyses described in [Product analytics](#product-analytics).
+The dashboard is organized into Overview, Customers and Products sections. The Customers API currently exposes
+aggregate coverage and identified-customer counts; Products contains the portfolio analyses described in
+[Product analytics](#product-analytics).
 
 ## Comparisons
 

@@ -49,11 +49,17 @@ class CustomerCoverageEnvelope(BaseModel):
 
 
 class ComparedCount(BaseModel):
-    value: int
-    comparison_value: int | None
-    absolute_change: int | None
-    percent_change: str | None
-    change_status: str | None
+    value: int = Field(description="Current count in the active range.")
+    comparison_value: int | None = Field(
+        description="The corresponding count in the selected comparison period."
+    )
+    absolute_change: int | None = Field(description="Current count minus comparison count.")
+    percent_change: str | None = Field(
+        description="API-rounded percentage change, or null for a non-comparable baseline."
+    )
+    change_status: str | None = Field(
+        description="Comparison status such as comparable, no_prior_value, or no_change."
+    )
 
 
 class IdentifiedCustomersSection(BaseModel):
@@ -77,20 +83,6 @@ class ComparedMoney(BaseModel):
         description="The corresponding value in the selected comparison period."
     )
     absolute_change: str | None = Field(description="Current value minus comparison value.")
-    percent_change: str | None = Field(
-        description="API-rounded percentage change, or null for a non-comparable baseline."
-    )
-    change_status: str | None = Field(
-        description="Comparison status such as comparable, no_prior_value, or no_change."
-    )
-
-
-class ComparedCount(BaseModel):
-    value: int = Field(description="Current count in the active range.")
-    comparison_value: int | None = Field(
-        description="The corresponding count in the selected comparison period."
-    )
-    absolute_change: int | None = Field(description="Current count minus comparison count.")
     percent_change: str | None = Field(
         description="API-rounded percentage change, or null for a non-comparable baseline."
     )
