@@ -8,13 +8,6 @@ export const SAMPLE_KPIS = {
   averageOrderValue: "$67.80",
 };
 
-export const SAMPLE_CUSTOMERS = {
-  coverage: "88.4%",
-  identifiedOrders: "8,846",
-  unidentifiedOrders: "1,154",
-  identifiedCustomers: "250",
-};
-
 // A small file whose figures can be checked by hand: 3 orders, 7 units, 47.50 gross.
 export const VALID_CSV = [
   "order_id,order_date,product_id,product_name,quantity,unit_price",
