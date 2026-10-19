@@ -190,6 +190,71 @@ class CohortRetentionSection(BaseModel):
     )
 
 
+class HistoricalCustomerValueCell(BaseModel):
+    month_offset: int = Field(description="Months since the acquisition month (0 = acquisition).")
+    state: Literal["complete", "partial", "not_observed"] = Field(
+        description="The matching cohort_retention cell state: complete (the whole month is on "
+        "or before data_cutoff), partial (the month contains data_cutoff; sales so far) or "
+        "not_observed (the month starts after data_cutoff; value is null)."
+    )
+    value_per_customer: str | None = Field(
+        description="Observed cumulative identified gross sales of the cohort from its "
+        "acquisition month through the end of this month (capped at data_cutoff), divided by "
+        "cohort_size; money, 4 decimals rounded half-up; null when not_observed."
+    )
+
+
+class HistoricalCustomerValueRow(BaseModel):
+    cohort_month: str = Field(description="Acquisition month, YYYY-MM.")
+    cohort_size: int = Field(
+        description="Identified customers whose full-history first order is in this month "
+        "and on or before data_cutoff."
+    )
+    cells: list[HistoricalCustomerValueCell] = Field(
+        description="Cells ordered by month_offset, the same offsets as cohort_retention."
+    )
+
+
+class HistoricalCustomerValueCurvePoint(BaseModel):
+    month_offset: int = Field(description="Months since the acquisition month (0 = acquisition).")
+    value_per_customer: str | None = Field(
+        description="Summed cumulative gross sales of the cohorts whose cell at this offset is "
+        "complete, divided by the sum of their cohort sizes; money, 4 decimals rounded "
+        "half-up; null when no cohort is complete at this offset."
+    )
+    contributing_cohorts: int = Field(
+        description="Number of cohorts whose cell at this offset is complete."
+    )
+
+
+class HistoricalCustomerValueSection(BaseModel):
+    """Observed Historical Customer Value: gross sales already observed, not a forecast."""
+
+    availability: AvailabilityResponse
+    data_cutoff: str = Field(description="The range end (YYYY-MM-DD); later activity is ignored.")
+    customer_count: int = Field(
+        description="Identified customers in the acquisition cohorts overlapping the range "
+        "(the cohort_retention members)."
+    )
+    average: str | None = Field(
+        description="Observed identified gross sales of these customers up to data_cutoff "
+        "(including sales before the range start) divided by customer_count; money, 4 "
+        "decimals rounded half-up; null when customer_count is 0."
+    )
+    median: str | None = Field(
+        description="Median observed per-customer gross sales up to data_cutoff (mean of the "
+        "two middle values for an even count); money, 4 decimals rounded half-up; null when "
+        "customer_count is 0."
+    )
+    rows: list[HistoricalCustomerValueRow] = Field(
+        description="Cumulative value per customer by cohort age, one row per cohort_retention "
+        "row, oldest first."
+    )
+    all_cohorts: list[HistoricalCustomerValueCurvePoint] = Field(
+        description="All-cohorts curve over complete cells, one point per month_offset."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
@@ -198,6 +263,7 @@ class CustomerSections(BaseModel):
     repeat_purchase: RepeatPurchaseSection | None = None
     days_between_purchases: DaysBetweenPurchasesSection | None = None
     cohort_retention: CohortRetentionSection | None = None
+    historical_customer_value: HistoricalCustomerValueSection | None = None
 
 
 class CustomersResponse(BaseModel):

@@ -358,6 +358,16 @@ before the cutoff), `partial` (the month contains the cutoff; counts so far) or 
 the cutoff; values are `null`, never `0`). Rows are padded to the same width as the oldest cohort. Without an
 overlapping cohort `rows` is empty and the state is `insufficient_data`.
 
+`sections.historical_customer_value` reports observed Historical Customer Value (gross sales already observed, not a
+forecast) for the current range only. Its population is the members of the `cohort_retention` rows; a customer's value is
+their identified gross sales dated on or before the `data_cutoff` (the range end), including sales before the range start.
+It returns `customer_count`, `average` (total value / `customer_count`) and `median` (mean of the two middle values for
+an even count), money rounded half-up to 4 decimals. `rows` mirrors the `cohort_retention` rows and cell states, with each
+cell's `value_per_customer` = the cohort's cumulative gross sales through the end of month `N` (capped at the cutoff) /
+`cohort_size` (`null` when `not_observed`). `all_cohorts` is one point per month offset over the cohorts whose cell is
+`complete` (`value_per_customer`, `contributing_cohorts`; `null` and `0` when none is complete). Without a cohort the
+state is `insufficient_data`; members whose total value is 0 give `zero_result` with `0.0000` values.
+
 Missing or suppressed coverage omits every section (`sections` is empty). The endpoint always returns `Cache-Control: no-store`.
 Customer responses are aggregate-only by design: they never return customer identifiers, customer-level objects,
 search, detail, download or export data, and identifiers are not written to logs.
