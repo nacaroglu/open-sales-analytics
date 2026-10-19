@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { getAnalytics, getConfig, getMeta, getOverview, getProductDetail, getProducts } from "./api";
+import { getAnalytics, getConfig, getCustomers, getMeta, getOverview, getProductDetail, getProducts } from "./api";
 import { tokenFor } from "./session";
 
 export function useMeta(datasetId: string) {
@@ -25,6 +25,17 @@ export function useAnalytics(datasetId: string, start?: string, end?: string, en
 export function useOverview(datasetId: string, start?: string, end?: string, comparison = "previous_period", enabled = true) {
   const active = enabled && tokenFor(datasetId) !== null;
   return useQuery({ queryKey: active ? ["overview", datasetId, start, end, comparison] : ["meta", datasetId], queryFn: ({ signal }) => getOverview(datasetId, { start, end, comparison }, { signal }), enabled: active, placeholderData: keepPreviousData, staleTime: Infinity });
+}
+
+export function useCustomers(datasetId: string, start?: string, end?: string, comparison = "previous_period", enabled = true) {
+  const active = enabled && tokenFor(datasetId) !== null;
+  return useQuery({
+    queryKey: active ? ["customers", datasetId, start, end, comparison] : ["meta", datasetId],
+    queryFn: ({ signal }) => getCustomers(datasetId, { start, end, comparison }, { signal }),
+    enabled: active,
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+  });
 }
 
 export function useConfig() {
