@@ -47,7 +47,7 @@ def get_customers(client, dataset, **params):
     )
 
 
-def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client):
+def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, capsys):
     dataset = upload(
         client,
         [
@@ -89,9 +89,66 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client):
             "total_orders": 2,
         },
     }
-    assert body["sections"] == {}
+    assert body["sections"]["identified_customers"] == {
+        "availability": {"state": "available", "reason": None},
+        "value": {
+            "value": 1,
+            "comparison_value": None,
+            "absolute_change": None,
+            "percent_change": None,
+            "change_status": None,
+        },
+    }
     body_text = response.text
     assert all(marker not in body_text for marker in ("CUSTMARKER-0001", "CUSTMARKER-0002"))
+    captured = capsys.readouterr()
+    log_text = captured.out + captured.err
+    assert all(marker not in log_text for marker in ("CUSTMARKER-0001", "CUSTMARKER-0002"))
+
+
+def test_identified_customers_comparison_uses_shared_change_semantics(client):
+    dataset = upload(
+        client,
+        [
+            "o1,2026-02-28,p1,Mug,1,2.00,C1",
+            "o2,2026-03-01,p1,Mug,1,2.00,C1",
+            "o3,2026-03-15,p1,Mug,1,2.00,C2",
+        ],
+    )
+    response = get_customers(client, dataset, start="2026-03-01", end="2026-03-01")
+    value = response.json()["sections"]["identified_customers"]["value"]
+    assert value == {
+        "value": 1,
+        "comparison_value": 1,
+        "absolute_change": 0,
+        "percent_change": "0.00",
+        "change_status": "comparable",
+    }
+
+
+def test_identified_customers_zero_result_is_available_as_a_section(client):
+    dataset = upload(
+        client,
+        ["o1,2025-01-01,p1,Mug,1,2.00,C1", "o2,2025-01-03,p1,Mug,1,2.00,C2"],
+    )
+    response = get_customers(client, dataset, start="2025-01-02", end="2025-01-02")
+    section = response.json()["sections"]["identified_customers"]
+    assert section["availability"]["state"] == "zero_result"
+    assert section["value"]["value"] == 0
+
+
+def test_missing_and_suppressed_coverage_omit_identified_customer_section(client):
+    missing = upload(client, ["o1,2025-01-01,p1,Mug,1,2.00"], REQUIRED)
+    assert get_customers(client, missing).json()["sections"] == {}
+    suppressed = upload(
+        client,
+        [
+            "o1,2025-01-01,p1,Mug,1,2.00,C1",
+            "o2,2025-01-02,p1,Mug,1,2.00,",
+            "o3,2025-01-03,p1,Mug,1,2.00,",
+        ],
+    )
+    assert get_customers(client, suppressed).json()["sections"] == {}
 
 
 def test_customers_default_and_comparison_are_shared_with_other_modules(client):
@@ -158,7 +215,12 @@ def test_customer_availability_tiers_are_200_states(client, header, rows, tier, 
     body = response.json()
     assert body["availability"]["tier"] == tier
     assert body["availability"]["state"] == state
-    assert body["sections"] == {}
+    if tier in {"missing", "suppressed"}:
+        assert body["sections"] == {}
+    else:
+        assert body["sections"]["identified_customers"]["value"]["value"] == (
+            2 if tier == "warning" else 3
+        )
 
 
 @pytest.mark.parametrize(

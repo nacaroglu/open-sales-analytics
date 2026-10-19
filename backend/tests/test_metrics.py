@@ -16,6 +16,8 @@ def test_metric_registry_is_nonempty_unique_and_contains_existing_api_kpis():
     assert keys
     assert len(keys) == len(set(keys))
     assert {"gross_sales", "orders", "units_sold", "average_order_value"} <= set(keys)
+    assert METRICS["identified_customers"].unit == "count"
+    assert METRICS["identified_customers"].denominator is None
     assert all(key == metric.key for key, metric in METRICS.items())
 
 

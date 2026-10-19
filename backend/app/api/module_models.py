@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -48,22 +48,12 @@ class CustomerCoverageEnvelope(BaseModel):
     range: CustomerCoverageResponse
 
 
-class CustomersResponse(BaseModel):
-    module: Literal["customers"]
-    range: ModuleRange
-    comparison: ComparisonResponse
-    currency: str
-    availability: CustomerAvailabilityResponse
-    coverage: CustomerCoverageEnvelope
-    sections: dict[str, Any]
-
-
-class ComparedMoney(BaseModel):
-    value: str = Field(description="Current gross-sales or money value in the active range.")
-    comparison_value: str | None = Field(
-        description="The corresponding value in the selected comparison period."
+class ComparedCount(BaseModel):
+    value: int = Field(description="Current count in the active range.")
+    comparison_value: int | None = Field(
+        description="The corresponding count in the selected comparison period."
     )
-    absolute_change: str | None = Field(description="Current value minus comparison value.")
+    absolute_change: int | None = Field(description="Current count minus comparison count.")
     percent_change: str | None = Field(
         description="API-rounded percentage change, or null for a non-comparable baseline."
     )
@@ -72,12 +62,27 @@ class ComparedMoney(BaseModel):
     )
 
 
-class ComparedCount(BaseModel):
-    value: int = Field(description="Current count in the active range.")
-    comparison_value: int | None = Field(
-        description="The corresponding count in the selected comparison period."
+class IdentifiedCustomersSection(BaseModel):
+    availability: AvailabilityResponse
+    value: ComparedCount
+
+
+class CustomersResponse(BaseModel):
+    module: Literal["customers"]
+    range: ModuleRange
+    comparison: ComparisonResponse
+    currency: str
+    availability: CustomerAvailabilityResponse
+    coverage: CustomerCoverageEnvelope
+    sections: dict[str, IdentifiedCustomersSection]
+
+
+class ComparedMoney(BaseModel):
+    value: str = Field(description="Current gross-sales or money value in the active range.")
+    comparison_value: str | None = Field(
+        description="The corresponding value in the selected comparison period."
     )
-    absolute_change: int | None = Field(description="Current count minus comparison count.")
+    absolute_change: str | None = Field(description="Current value minus comparison value.")
     percent_change: str | None = Field(
         description="API-rounded percentage change, or null for a non-comparable baseline."
     )
