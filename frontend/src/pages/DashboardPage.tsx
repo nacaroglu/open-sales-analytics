@@ -24,6 +24,7 @@ import {
 } from "../lib/errors";
 import { formatCount, formatExpiry, formatMoney, formatRelativeExpiry } from "../lib/format";
 import type { CustomerResponse } from "../lib/types";
+import { lowCoverageExplanation, suppressedExplanation, truncatedCoverage, unavailableExplanation } from "../lib/customerCopy";
 import { clearSession, readSession, tokenFor } from "../lib/session";
 import type { Issue, Meta, Overview, Summary } from "../lib/types";
 
@@ -58,22 +59,22 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
   if (data === undefined) return null;
   const tier = data.coverage.dataset.tier;
   if (tier === "missing") {
-    return <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">The file has no customer_id column.</p></section>;
+    return <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section>;
   }
   const dataset = data.coverage.dataset;
   const range = data.coverage.range;
-  const shownCoverage = dataset.coverage === null ? "—" : `${Math.floor(dataset.coverage * 1000) / 10}%`;
+  const shownCoverage = truncatedCoverage(dataset.coverage);
   const rangeLine = range.coverage === null
     ? "No orders in the selected range."
-    : `In the selected range: ${formatCount(range.identified_orders)} of ${formatCount(range.total_orders)} orders have a customer ID (${Math.floor(range.coverage * 1000) / 10}%).`;
+    : `In the selected range: ${formatCount(range.identified_orders)} of ${formatCount(range.total_orders)} orders have a customer ID (${truncatedCoverage(range.coverage)}).`;
   const updating = query.isFetching && query.isPlaceholderData;
   return (
     <div className="space-y-4">
       {updating && <span className="text-sm text-slate-600" role="status">Updating…</span>}
       <section aria-label="Customer coverage" className={`rounded-lg border bg-white p-4 space-y-2 ${tier === "warning" ? "border-dashed border-amber-700 bg-amber-50" : "border-slate-200"}`}>
         <h3 className="text-lg font-semibold">Customer coverage</h3>
-        {tier === "suppressed" && <p className="font-semibold">Customer analytics is hidden: coverage below 50%</p>}
-        {tier === "warning" && <p role="status" className="text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · Low coverage</p>}
+        {tier === "suppressed" && <><p className="font-semibold">Customer analytics is hidden: coverage below 50%</p><p>{suppressedExplanation(dataset.coverage, dataset.identified_orders, dataset.total_orders, true)}</p></>}
+        {tier === "warning" && <><p role="status" className="text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · Low coverage</p><p>{lowCoverageExplanation(dataset.coverage ?? 0, dataset.identified_orders, dataset.total_orders)}</p></>}
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div><dt className="text-sm font-medium text-slate-600">Customer coverage</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{shownCoverage}</dd></div>
           <div><dt className="text-sm font-medium text-slate-600">Identified orders</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{formatCount(dataset.identified_orders)}</dd></div>
@@ -101,10 +102,10 @@ function SectionState({ section, title }: { section: CustomerSection; title: str
   return null;
 }
 
-function CustomerMetricSection({ label, data, children }: { label: string; data: CustomerSection | undefined; children?: ReactNode }) {
+function CustomerMetricSection({ label, data, children, lowCoverage }: { label: string; data: CustomerSection | undefined; children?: ReactNode; lowCoverage?: string }) {
   if (data === undefined) return null;
   const state = <SectionState section={data} title={label} />;
-  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{state ?? children}</section>;
+  return <section aria-label={label} className="space-y-4"><h3 className="text-lg font-semibold text-slate-900">{label}</h3>{lowCoverage && <p role="status" className="text-sm text-amber-900"><span aria-hidden>⚠</span> <strong>Warning</strong> · {lowCoverage}</p>}{state ?? children}</section>;
 }
 
 function valueOf(section: CustomerSection, key: string): unknown {
@@ -114,10 +115,11 @@ function valueOf(section: CustomerSection, key: string): unknown {
 
 function CustomerMetrics({ data }: { data: CustomerResponse }) {
   const sections = data.sections as Record<string, CustomerSection>;
+  const lowCoverage = data.availability.tier === "warning" ? `Low coverage: based on ${truncatedCoverage(data.coverage.dataset.coverage)} of orders.` : undefined;
   const moneyValue = (value: unknown) => typeof value === "string" ? formatMoney(value, data.currency) : "—";
   return (
     <div className="space-y-8">
-      <CustomerMetricSection label="Customer key figures" data={sections.identified_customers}>
+      <CustomerMetricSection label="Customer key figures" data={sections.identified_customers} lowCoverage={lowCoverage}>
         <dl className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <MetricCard label="Identified customers" value={formatCount(Number(valueOf(sections.identified_customers ?? {}, "value") ?? 0))} />
           <MetricCard label="New-customer gross sales" value={moneyValue(valueOf(sections.new_vs_returning ?? {}, "new_customer_gross_sales"))} />
@@ -126,25 +128,25 @@ function CustomerMetrics({ data }: { data: CustomerResponse }) {
           <MetricCard label="Median days between purchases" value={`${valueOf(sections.days_between_purchases ?? {}, "median_days") ?? "—"} days`} />
         </dl>
       </CustomerMetricSection>
-      <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases}>
+      <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases} lowCoverage={lowCoverage}>
         <p>Median: {String(sections.days_between_purchases?.median_days ?? "—")} days</p>
         <AggregateTable ariaLabel="Days between purchases table" headers={["Bucket", "Intervals"]} rows={((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? []).map((bucket) => [String(bucket.key), formatCount(Number(bucket.interval_count))])} />
       </CustomerMetricSection>
-      <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention}>
+      <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention} lowCoverage={lowCoverage}>
         <div role="table" aria-label="Cohort retention table" className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table className="w-full text-left"><thead className="bg-slate-100"><tr><th className="px-3 py-2">Cohort</th><th className="px-3 py-2">Cohort size</th><th className="px-3 py-2">Months observed</th><th className="px-3 py-2">Retention</th></tr></thead><tbody className="divide-y divide-slate-200">{((sections.cohort_retention?.rows as Record<string, unknown>[] | undefined) ?? []).map((row) => <tr key={String(row.cohort_month)}><td className="px-3 py-2">{String(row.cohort_month)}</td><td className="px-3 py-2">{formatCount(Number(row.cohort_size))}</td><td className="px-3 py-2">{formatCount(Number(row.complete_months))}</td><td className="px-3 py-2">{String(((row.cells as Record<string, unknown>[] | undefined)?.[0]?.retention ?? "—"))}</td></tr>)}</tbody></table></div>
       </CustomerMetricSection>
-      <CustomerMetricSection label="Historical Customer Value" data={sections.historical_customer_value}>
+      <CustomerMetricSection label="Historical Customer Value" data={sections.historical_customer_value} lowCoverage={lowCoverage}>
         <p>Observed gross sales per identified customer. Not a prediction.</p>
         <dl className="grid grid-cols-2 gap-4"><MetricCard label="Average" value={moneyValue(sections.historical_customer_value?.average)} /><MetricCard label="Median" value={moneyValue(sections.historical_customer_value?.median)} /></dl>
       </CustomerMetricSection>
-      <CustomerMetricSection label="RFM segments" data={sections.rfm}>
+      <CustomerMetricSection label="RFM segments" data={sections.rfm} lowCoverage={lowCoverage}>
         <p>Segments are relative to the customers in this upload, not universal benchmarks.</p>
         <AggregateTable ariaLabel="RFM segments table" headers={["Segment", "Customers", "Share"]} rows={((sections.rfm?.segments as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.segment), formatCount(Number(row.customer_count)), `${Number(row.share) * 100}%`])} />
       </CustomerMetricSection>
-      <CustomerMetricSection label="Purchase frequency" data={sections.purchase_frequency}>
+      <CustomerMetricSection label="Purchase frequency" data={sections.purchase_frequency} lowCoverage={lowCoverage}>
         <AggregateTable ariaLabel="Purchase frequency table" headers={["Orders", "Customers", "Share"]} rows={((sections.purchase_frequency?.buckets as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count)), `${Number(row.share ?? 0) * 100}%`])} />
       </CustomerMetricSection>
-      <CustomerMetricSection label="Customer concentration" data={sections.concentration}>
+      <CustomerMetricSection label="Customer concentration" data={sections.concentration} lowCoverage={lowCoverage}>
         <dl className="grid grid-cols-2 gap-4"><MetricCard label="Top-decile share" value={sections.concentration?.top_decile_share === null ? "—" : `${Number(sections.concentration?.top_decile_share ?? 0) * 100}%`} /><MetricCard label="Identified gross sales" value={moneyValue(sections.concentration?.identified_gross_sales)} /></dl>
       </CustomerMetricSection>
     </div>
@@ -646,7 +648,7 @@ export default function DashboardPage({
             <CapabilityState data={data} failed={meta.isError} onRetry={() => void meta.refetch()}>
               {unavailable ? <UnavailableCard reason={capability?.reason ?? "This section is not available."} /> : <section aria-label="Customer analyses" />}
             </CapabilityState>
-          ) : modern && !unavailable ? <CustomerCoverageView query={customers} /> : <UnavailableCard reason={capability?.reason ?? "The file has no customer_id column."} />}
+          ) : modern && !unavailable ? <CustomerCoverageView query={customers} /> : modern && !legacyTestFixtures ? <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section> : <UnavailableCard reason={capability?.reason ?? "The file has no customer_id column."} />}
         </section>
       )}
 
