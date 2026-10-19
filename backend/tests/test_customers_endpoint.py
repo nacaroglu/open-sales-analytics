@@ -1030,7 +1030,12 @@ def test_rfm_drilldown_golden_section_through_the_endpoint(client):
     body = get_customers(client, dataset, start="2026-03-31", end="2026-03-31").json()
     drilldown = body["sections"]["rfm_drilldown"]
 
-    assert list(body["sections"])[-3:] == ["rfm", "rfm_drilldown", "purchase_frequency"]
+    assert list(body["sections"])[-4:] == [
+        "rfm",
+        "rfm_drilldown",
+        "purchase_frequency",
+        "concentration",
+    ]
     assert drilldown["availability"] == {"state": "available", "reason": None}
     assert (drilldown["customer_count"], drilldown["recency_anchor"]) == (5, "2026-03-31")
     assert drilldown["customer_count"] == body["sections"]["rfm"]["customer_count"]

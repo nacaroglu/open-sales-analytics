@@ -9,6 +9,7 @@ from app.analytics.customers.buckets import (
     RFM_RECENCY_BUCKETS,
 )
 from app.analytics.customers.cohort_retention import read_cohort_retention
+from app.analytics.customers.concentration import read_concentration
 from app.analytics.customers.coverage import read_customer_coverage
 from app.analytics.customers.days_between_purchases import read_days_between_purchases
 from app.analytics.customers.historical_value import read_historical_customer_value
@@ -25,7 +26,12 @@ from app.analytics.shared.availability import (
     customer_coverage_tier,
     rounded_coverage,
 )
-from app.analytics.shared.metrics import RFM_MIN_CUSTOMERS, RFM_NOTE, RFM_SEGMENTS
+from app.analytics.shared.metrics import (
+    CONCENTRATION_MIN_CUSTOMERS,
+    RFM_MIN_CUSTOMERS,
+    RFM_NOTE,
+    RFM_SEGMENTS,
+)
 from app.analytics.shared.periods import recency_anchor
 from app.api.module_common import (
     cache_key,
@@ -476,6 +482,36 @@ def _purchase_frequency_body(connection, periods) -> dict:
     }
 
 
+def _concentration_body(connection, periods) -> dict:
+    """Current-range top-decile concentration with no comparison values."""
+    result = read_concentration(connection, periods.current.start, periods.current.end)
+    count = result["customer_count"]
+    total = result["identified_gross_sales"]
+    if count < CONCENTRATION_MIN_CUSTOMERS:
+        availability = Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "Concentration needs at least 10 identified customers in the range.",
+        )
+        share = None
+    elif not total:
+        availability = Availability(
+            AvailabilityState.INSUFFICIENT_DATA,
+            "Concentration is undefined when identified gross sales are zero.",
+        )
+        share = None
+    else:
+        availability = Availability(AvailabilityState.AVAILABLE)
+        share = ratio(result["top_decile_gross_sales"] / total)
+    return {
+        "availability": {"state": availability.state, "reason": availability.reason},
+        "top_decile_share": share,
+        "top_decile_customer_count": result["top_decile_customer_count"],
+        "customer_count": count,
+        "top_decile_gross_sales": _rounded_money(result["top_decile_gross_sales"]),
+        "identified_gross_sales": _rounded_money(total),
+    }
+
+
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]
@@ -520,6 +556,7 @@ def build_customers(connection, meta: dict, periods) -> dict:
         body["sections"]["rfm"] = _rfm_body(connection, periods)
         body["sections"]["rfm_drilldown"] = _rfm_drilldown_body(connection, periods)
         body["sections"]["purchase_frequency"] = _purchase_frequency_body(connection, periods)
+        body["sections"]["concentration"] = _concentration_body(connection, periods)
     return body
 
 

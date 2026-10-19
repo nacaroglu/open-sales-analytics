@@ -37,6 +37,7 @@ class RfmSegmentRule:
 
 
 RFM_MIN_CUSTOMERS = 5
+CONCENTRATION_MIN_CUSTOMERS = 10
 RFM_SCORE_FORMULA = (
     "Per dimension, values are ordered worst to best (recency: more days is worse; frequency "
     "and monetary: lower is worse); worse = customers with a strictly worse value, ties = "
@@ -511,6 +512,16 @@ METRICS: dict[str, MetricDefinition] = {
         "Identified customers with at least one order on or before the selected end date",
         "All identified orders through the selected end date; the range start has no effect. Current range only, no comparison.",
         "No identified customers on or before the selected end date: all bucket counts are 0, shares are null, and availability is insufficient_data.",
+    ),
+    "concentration": MetricDefinition(
+        "concentration",
+        "Customer concentration",
+        "ratio",
+        "top_decile_gross_sales / identified_gross_sales, where the top decile has ceil(N / 10) customers ranked by range gross sales",
+        "SUM of the ceil(N / 10) largest identified customer gross-sales values in the active range",
+        "SUM(quantity × unit_price) for all identified line items in the active range",
+        _ACTIVE_RANGE,
+        "Fewer than 10 identified customers, or zero identified gross sales: share is null with insufficient_data availability.",
     ),
 }
 
