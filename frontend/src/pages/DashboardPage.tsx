@@ -11,6 +11,7 @@ import KpiCards from "../components/KpiCards";
 import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
 import ComparisonDates from "../components/ComparisonDates";
+import ProjectionPanel from "../components/ProjectionPanel";
 import { ProductDetailView, ProductsView } from "./ProductsPage";
 import { useAnalytics, useCustomers, useMeta, useOverview } from "../lib/hooks";
 import {
@@ -59,7 +60,7 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
   if (data == null) return null;
   const tier = data.coverage.dataset.tier;
   if (tier === "missing") {
-    return <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section>;
+    return <div className="space-y-8"><section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section><ProjectionPanel projection={data.projected_12_month_customer_value} currency={data.currency} onRetry={() => void query.refetch()} /></div>;
   }
   const dataset = data.coverage.dataset;
   const range = data.coverage.range;
@@ -82,7 +83,7 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
         </dl>
         <p className="text-sm text-slate-600">{rangeLine}</p>
       </section>
-      {tier !== "suppressed" && <CustomerMetrics data={data} onRetry={() => void query.refetch()} />}
+      {tier === "suppressed" ? <ProjectionPanel projection={data.projected_12_month_customer_value} currency={data.currency} updating={query.isFetching && query.isPlaceholderData} onRetry={() => void query.refetch()} /> : <CustomerMetrics data={data} onRetry={() => void query.refetch()} updating={query.isFetching && query.isPlaceholderData} />}
     </div>
   );
 }
@@ -113,7 +114,7 @@ function valueOf(section: CustomerSection, key: string): unknown {
   return typeof item === "object" && item !== null && "value" in item ? (item as { value: unknown }).value : item;
 }
 
-function CustomerMetrics({ data, onRetry }: { data: CustomerResponse; onRetry: () => void }) {
+function CustomerMetrics({ data, onRetry, updating }: { data: CustomerResponse; onRetry: () => void; updating?: boolean }) {
   const sections = data.sections as Record<string, CustomerSection>;
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
   const lowCoverage = data.availability.tier === "warning" ? `Low coverage: based on ${truncatedCoverage(data.coverage.dataset.coverage)} of orders.` : undefined;
@@ -151,6 +152,7 @@ function CustomerMetrics({ data, onRetry }: { data: CustomerResponse; onRetry: (
         <div role="img" aria-label="Line chart of observed gross sales per identified customer by cohort age" className="h-40 rounded-lg border border-slate-200 bg-white p-4"><div className="flex h-full items-end gap-2">{(((sections.historical_customer_value?.all_cohorts as Record<string, unknown>[] | undefined) ?? [])).map((point) => <div key={String(point.month_offset)} className="flex-1 bg-indigo-700" style={{ height: `${Math.max(4, Number(point.value_per_customer ?? 0) / 10)}px` }} title={`Month ${point.month_offset}`} />)}</div></div>
         <AggregateTable ariaLabel="Historical Customer Value table" headers={["Month", "Observed value per customer", "Cohorts"]} rows={(((sections.historical_customer_value?.all_cohorts as Record<string, unknown>[] | undefined) ?? [])).map((point) => [String(point.month_offset), moneyValue(point.value_per_customer), formatCount(Number(point.contributing_cohorts))])} />
       </CustomerMetricSection>
+      <ProjectionPanel projection={data.projected_12_month_customer_value} currency={data.currency} updating={updating} onRetry={onRetry} />
       <CustomerMetricSection label="RFM segments" data={sections.rfm} lowCoverage={lowCoverage} onRetry={onRetry}>
         <p>Segments are relative to the customers in this upload, not universal benchmarks.</p>
         <details><summary className="cursor-pointer font-semibold">RFM score rules</summary><p className="mt-2 text-sm text-slate-600">Recency, frequency and monetary scores are relative quintiles; ties receive the same score, and the first matching segment rule applies.</p></details>
