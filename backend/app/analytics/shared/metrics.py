@@ -10,6 +10,19 @@ BASKET_MIN_SHARED_ORDERS = 10
 BASKET_MIN_SUPPORT = Decimal("0.001")
 MAX_DISTINCT_PRODUCTS_PER_ORDER = 100
 
+PROJECTION_HISTORY_MONTHS = 18
+PROJECTION_MIN_IDENTIFIED_CUSTOMERS = 500
+PROJECTION_MIN_CUSTOMER_COVERAGE = Decimal("0.7000")
+PROJECTION_MATURE_COHORTS = 5
+PROJECTION_HORIZON_MONTHS = 12
+
+PROJECTION_CONDITION_LABELS = {
+    "history_months": "At least 18 months of order history",
+    "identified_customers": "At least 500 identified customers",
+    "customer_coverage": "Customer coverage of at least 70%",
+    "mature_cohorts": "At least 5 monthly cohorts with 12 months of observed behaviour",
+}
+
 FIRST_PURCHASE_DEFINITION = (
     "A customer's earliest order date across the complete uploaded history; all orders on "
     "that date are first-purchase orders."
