@@ -11,7 +11,7 @@ RUN npm run build
 
 # Stage 2: build the virtual environment from uv.lock, without the dev group.
 # `--locked` fails the build if uv.lock does not match pyproject.toml.
-FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d AS backend-deps
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS backend-deps
 COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
 ENV UV_PYTHON_DOWNLOADS=0 UV_LINK_MODE=copy
 WORKDIR /app
@@ -19,7 +19,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
 # Stage 3: runtime. Only the virtual environment, backend/app and the built frontend.
-FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
     DATASET_DIR=/data
