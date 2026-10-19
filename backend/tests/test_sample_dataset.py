@@ -122,7 +122,7 @@ def test_dates_are_iso_within_2025_and_cover_every_month(rows):
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", r["order_date"])
         dates.append(date.fromisoformat(r["order_date"]))
 
-    assert min(dates) >= date(2025, 1, 1)
+    assert min(dates) >= date(2024, 1, 1)
     assert max(dates) <= date(2025, 12, 31)
     assert {d.month for d in dates} == set(range(1, 13))
 

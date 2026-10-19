@@ -27,8 +27,11 @@ HEADER = [
     "customer_id",
 ]
 ORDER_COUNT = 10_000
-START = date(2025, 1, 1)
+START = date(2024, 1, 1)
 END = date(2025, 12, 31)
+CUSTOMER_COUNT = 1_800
+NEW_CUSTOMERS_PER_MONTH = 75
+IDENTIFIED_ORDER_RATE = 0.85
 
 # (product name, base price in cents)
 PRODUCTS = [
@@ -109,6 +112,13 @@ def generate(seed: int = DEFAULT_SEED) -> bytes:
     days = _days()
     day_weights = [MONTH_FACTOR[d.month] * WEEKDAY_FACTOR[d.weekday()] for d in days]
     order_days = sorted(rng.choices(days, weights=day_weights, k=ORDER_COUNT))
+    customer_ids: list[str] = []
+    while len(customer_ids) < CUSTOMER_COUNT:
+        candidate = f"CUST-{rng.getrandbits(48):012x}"
+        if candidate not in customer_ids:
+            customer_ids.append(candidate)
+    month_customer_counts: dict[tuple[int, int], int] = {}
+    next_customer = 0
 
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer, lineterminator="\n")
@@ -126,12 +136,21 @@ def generate(seed: int = DEFAULT_SEED) -> bytes:
             pick = rng.choices(indexes, weights=PRODUCT_WEIGHTS)[0]
             if pick not in chosen:
                 chosen.append(pick)
+        month = (order_day.year, order_day.month)
+        assigned_this_month = month_customer_counts.get(month, 0)
+        if assigned_this_month < NEW_CUSTOMERS_PER_MONTH:
+            customer_id = customer_ids[next_customer]
+            next_customer += 1
+            month_customer_counts[month] = assigned_this_month + 1
+        elif rng.random() < IDENTIFIED_ORDER_RATE:
+            customer_id = rng.choice(customer_ids[:next_customer])
+        else:
+            customer_id = ""
         for index in sorted(chosen):
             name, base_cents = PRODUCTS[index]
             quantity = rng.choices(*QUANTITIES)[0]
             percent = rng.choices(*PRICE_FACTORS)[0]
             price = _cents(round(base_cents * percent / 100))
-            customer_id = "" if rng.random() >= 0.85 else f"CUST-{((number - 1) % 250) + 1:04d}"
             writer.writerow(
                 [
                     order_id,

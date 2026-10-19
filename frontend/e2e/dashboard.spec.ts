@@ -18,6 +18,6 @@ test("a date range changes the values and granularity and Reset restores them", 
   await expect(kpis.orders).toHaveText(SAMPLE_KPIS.orders);
   await expect(kpis.unitsSold).toHaveText(SAMPLE_KPIS.unitsSold);
   await expect(trend.getByRole("heading", { name: "Gross sales — weekly" })).toBeVisible();
-  await expect(page.getByLabel("Start date")).toHaveValue("2025-01-01");
+  await expect(page.getByLabel("Start date")).toHaveValue("2024-01-01");
   await expect(page.getByLabel("End date")).toHaveValue("2025-12-31");
 });

@@ -7,9 +7,10 @@ import { ApiError } from "../lib/api";
 import { readSession, saveSession } from "../lib/session";
 import type { Issue, Meta, Summary } from "../lib/types";
 
-const { getMeta, getAnalytics, remove } = vi.hoisted(() => ({
+const { getMeta, getAnalytics, getCustomers, remove } = vi.hoisted(() => ({
   getMeta: vi.fn(),
   getAnalytics: vi.fn(),
+  getCustomers: vi.fn(),
   remove: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   getMeta,
   getAnalytics,
+  getCustomers,
   deleteDataset: remove,
 }));
 
@@ -76,6 +78,7 @@ afterEach(() => {
   cleanup();
   getMeta.mockReset();
   getAnalytics.mockReset();
+  getCustomers.mockReset();
   remove.mockReset();
   dismiss.mockReset();
   window.sessionStorage.clear();
@@ -121,6 +124,51 @@ test("section navigation opens Customers and Products while keeping the shared r
   expect(screen.getByRole("region", { name: "Product analyses" })).toBeInTheDocument();
   expect(screen.getByLabelText("Start date")).toHaveValue("2025-03-10");
   expect(screen.getByRole("link", { name: "Products" })).toHaveAttribute("aria-current", "page");
+});
+
+test("Customers presents an eligible projection from the single customer response", async () => {
+  const customerCapabilities = {
+    ...capabilities,
+    columns: { customer_id: true },
+    modules: { ...capabilities.modules, customers: { state: "available" as const, reason: null } },
+  };
+  getMeta.mockResolvedValue({ ...meta, capabilities: customerCapabilities });
+  getCustomers.mockResolvedValue({
+    module: "customers",
+    range: { start: "2025-03-01", end: "2025-03-31" },
+    comparison: { mode: "previous_period", current: { start: "2025-03-01", end: "2025-03-31" }, comparison: { start: "2025-01-29", end: "2025-02-28" }, state: "available", reason: null },
+    currency: "EUR",
+    availability: { tier: "normal", state: "available", reason: null, warning: null },
+    coverage: {
+      dataset: { tier: "normal", coverage: 0.8, identified_orders: 8, unidentified_orders: 2, total_orders: 10 },
+      range: { tier: "normal", coverage: 0.8, identified_orders: 8, unidentified_orders: 2, total_orders: 10 },
+    },
+    projected_12_month_customer_value: {
+      is_estimate: true,
+      horizon_months: 12,
+      data_cutoff: "2025-03-31",
+      eligibility: { status: "eligible", data_cutoff: "2025-03-31", conditions: [] },
+      value: {
+        customers: 500,
+        contributing_mature_cohorts: 5,
+        observed_per_customer: "10.6000",
+        projected_per_customer_estimate: "0.0750",
+        total_per_customer_estimate: "10.6750",
+        cohorts: [],
+      },
+    },
+    sections: {},
+  });
+  renderAt("/d/d1/customers");
+
+  const projection = await screen.findByRole("region", { name: "Projected 12-Month Customer Value" });
+  expect(within(projection).getByText("Estimate")).toBeInTheDocument();
+  expect(within(projection).getByText("12-month horizon")).toBeInTheDocument();
+  expect(within(projection).getByText("Data up to 2025-03-31 · based on 5 mature cohorts · 500 customers")).toBeInTheDocument();
+  expect(within(projection).getByText("€10.60")).toBeInTheDocument();
+  expect(within(projection).getByText("€0.08")).toBeInTheDocument();
+  expect(within(projection).getByText("€10.68")).toBeInTheDocument();
+  expect(getCustomers).toHaveBeenCalledTimes(1);
 });
 
 test("loaded state shows period as received, currency, grouped rows and local expiry", async () => {
