@@ -385,6 +385,19 @@ class PurchaseFrequencySection(BaseModel):
     )
 
 
+class ConcentrationSection(BaseModel):
+    """Share of identified gross sales from the top customer decile."""
+
+    availability: AvailabilityResponse
+    top_decile_share: float | None = Field(
+        description="Top-decile identified gross sales divided by identified gross sales."
+    )
+    top_decile_customer_count: int
+    customer_count: int
+    top_decile_gross_sales: str
+    identified_gross_sales: str
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
@@ -397,6 +410,7 @@ class CustomerSections(BaseModel):
     rfm: RfmSection | None = None
     rfm_drilldown: RfmDrilldownSection | None = None
     purchase_frequency: PurchaseFrequencySection | None = None
+    concentration: ConcentrationSection | None = None
 
 
 class CustomersResponse(BaseModel):
