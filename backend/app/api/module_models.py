@@ -125,12 +125,41 @@ class RepeatPurchaseSection(BaseModel):
     )
 
 
+class DaysBetweenPurchasesBucket(BaseModel):
+    key: str = Field(description='Bucket key, for example "0", "1-7" or "366+".')
+    min_days: int = Field(description="Smallest interval in the bucket, in days (inclusive).")
+    max_days: int | None = Field(
+        description="Largest interval in the bucket, in days (inclusive); null when open-ended."
+    )
+    interval_count: int = Field(description="Included intervals in this bucket.")
+    share: float | None = Field(
+        description="interval_count divided by the section interval_count, rounded half-up "
+        "to 4 decimals; null when the section has no interval."
+    )
+
+
+class DaysBetweenPurchasesSection(BaseModel):
+    availability: AvailabilityResponse
+    median_days: float | None = Field(
+        description="Median days between consecutive identified orders whose later order is "
+        "in the range; null when there is no included interval."
+    )
+    interval_count: int = Field(description="Included intervals between consecutive orders.")
+    contributing_customers: int = Field(
+        description="Identified customers with at least one included interval."
+    )
+    buckets: list[DaysBetweenPurchasesBucket] = Field(
+        description="All nine fixed day buckets, in order, including empty ones."
+    )
+
+
 class CustomerSections(BaseModel):
     """Customer analytics sections; absent sections are omitted from the JSON."""
 
     identified_customers: IdentifiedCustomersSection | None = None
     new_vs_returning: NewVsReturningSection | None = None
     repeat_purchase: RepeatPurchaseSection | None = None
+    days_between_purchases: DaysBetweenPurchasesSection | None = None
 
 
 class CustomersResponse(BaseModel):
