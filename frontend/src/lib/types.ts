@@ -112,3 +112,21 @@ export interface PublicConfig {
 export interface Health {
   status: string;
 }
+
+export interface CustomerCoverageValue {
+  tier: "missing" | "suppressed" | "warning" | "normal";
+  coverage: number | null;
+  identified_orders: number;
+  unidentified_orders: number;
+  total_orders: number;
+}
+
+export interface CustomerResponse {
+  module: "customers";
+  range: { start: string; end: string };
+  comparison: Comparison;
+  currency: string;
+  availability: Availability & { tier: CustomerCoverageValue["tier"]; warning?: Availability | null };
+  coverage: { dataset: CustomerCoverageValue; range: CustomerCoverageValue };
+  sections: Record<string, unknown>;
+}

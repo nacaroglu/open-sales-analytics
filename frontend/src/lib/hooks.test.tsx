@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useAnalytics, useConfig, useMeta } from "./hooks";
+import { useAnalytics, useConfig, useCustomers, useMeta } from "./hooks";
 import { saveSession } from "./session";
 
 const fetchMock = vi.fn();
@@ -64,6 +64,14 @@ test("analytics key has undefined start and end for the full range", async () =>
   expect(fetchMock.mock.calls[0][0]).toBe("/api/datasets/d1/analytics");
   const [query] = client.getQueryCache().getAll();
   expect(query.queryKey).toEqual(["analytics", "d1", undefined, undefined]);
+});
+
+test("customers hook carries range and comparison in its query key", async () => {
+  saveSession({ id: "d1", token: "tok" });
+  const { result } = renderHook(() => useCustomers("d1", "2026-01-01", "2026-01-31", "previous_year"), { wrapper });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/datasets/d1/customers?start=2026-01-01&end=2026-01-31&comparison=previous_year");
+  expect(new Headers(fetchMock.mock.calls[0][1].headers).get("Authorization")).toBe("Bearer tok");
 });
 
 test("hooks make no request when the session has no token for that dataset", async () => {
