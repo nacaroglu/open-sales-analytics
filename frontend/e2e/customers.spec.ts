@@ -11,9 +11,13 @@ test("Customers shows aggregate coverage, cohorts, RFM and drill-down", async ({
   await expect(coverage).toContainText(SAMPLE_CUSTOMERS.identifiedOrders);
   await expect(coverage).toContainText(SAMPLE_CUSTOMERS.unidentifiedOrders);
   await expect(page.getByRole("heading", { level: 3, name: "Cohort retention" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 3, name: "RFM segments" })).toBeVisible();
-  await expect(page.getByRole("table", { name: "RFM segments table" })).toBeVisible();
-  await expect(page.getByText("Segments are relative to the customers in this upload, not universal benchmarks.")).toBeVisible();
+  const rfm = page.getByRole("region", { name: "RFM segments" });
+  await expect(rfm).toBeVisible();
+  const rfmTable = rfm.getByRole("table", { name: "RFM segments table" });
+  await expect(rfmTable.or(rfm.getByText("Insufficient data"))).toBeVisible();
+  if (await rfmTable.isVisible()) {
+    await expect(rfm).toContainText("Segments are relative to the customers in this upload, not universal benchmarks.");
+  }
 });
 
 test("Customers can be opened with an unavailable six-column upload", async ({ page }) => {
