@@ -268,6 +268,6 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     serialized = json.dumps(schema["components"]["schemas"]["CustomersResponse"])
     assert "customer_id" not in serialized
     assert "customer_ids" not in serialized
-    assert [route.path for route in app.routes if "customer" in route.path] == [
+    assert [path for path in schema["paths"] if "customer" in path] == [
         "/api/datasets/{id}/customers"
     ]

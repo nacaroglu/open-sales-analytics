@@ -72,11 +72,31 @@ class CustomersResponse(BaseModel):
 
 
 class ComparedMoney(BaseModel):
-    value: str
-    comparison_value: str | None
-    absolute_change: str | None
-    percent_change: str | None
-    change_status: str | None
+    value: str = Field(description="Current gross-sales or money value in the active range.")
+    comparison_value: str | None = Field(
+        description="The corresponding value in the selected comparison period."
+    )
+    absolute_change: str | None = Field(description="Current value minus comparison value.")
+    percent_change: str | None = Field(
+        description="API-rounded percentage change, or null for a non-comparable baseline."
+    )
+    change_status: str | None = Field(
+        description="Comparison status such as comparable, no_prior_value, or no_change."
+    )
+
+
+class ComparedCount(BaseModel):
+    value: int = Field(description="Current count in the active range.")
+    comparison_value: int | None = Field(
+        description="The corresponding count in the selected comparison period."
+    )
+    absolute_change: int | None = Field(description="Current count minus comparison count.")
+    percent_change: str | None = Field(
+        description="API-rounded percentage change, or null for a non-comparable baseline."
+    )
+    change_status: str | None = Field(
+        description="Comparison status such as comparable, no_prior_value, or no_change."
+    )
 
 
 class ModuleEnvelope(BaseModel):
@@ -105,8 +125,12 @@ class ShareProduct(BaseModel):
     product_id: str
     product_name: str
     gross_sales: str
-    gross_sales_share: str | None
-    cumulative_share: str | None
+    gross_sales_share: str | None = Field(
+        description="Product gross sales divided by total gross sales, as a six-decimal fraction."
+    )
+    cumulative_share: str | None = Field(
+        description="Running gross-sales share in ranking order, as a six-decimal fraction."
+    )
 
 
 class ProductShareResponse(BaseModel):
@@ -153,7 +177,9 @@ class ProductDormancyResponse(BaseModel):
 
 class PriceHistoryBucket(BaseModel):
     bucket_start: str
-    weighted_unit_price: str | None
+    weighted_unit_price: str | None = Field(
+        description="Quantity-weighted realized unit price for this trend bucket."
+    )
     units_sold: int
 
 
@@ -168,7 +194,9 @@ class PenetrationProduct(BaseModel):
     product_name: str
     orders_containing_product: int
     all_orders: int
-    order_penetration: str | None
+    order_penetration: str | None = Field(
+        description="Distinct orders containing the product divided by all distinct orders, as a fraction."
+    )
 
 
 class ProductPenetrationResponse(BaseModel):
@@ -193,10 +221,16 @@ class BasketPair(BaseModel):
     product_a: BasketProduct
     product_b: BasketProduct
     shared_orders: int
-    support: str
-    confidence_a_to_b: str
-    confidence_b_to_a: str
-    lift: str
+    support: str = Field(description="Shared orders divided by eligible basket orders.")
+    confidence_a_to_b: str = Field(
+        description="Shared orders divided by orders containing product A."
+    )
+    confidence_b_to_a: str = Field(
+        description="Shared orders divided by orders containing product B."
+    )
+    lift: str = Field(
+        description="Directional confidence divided by destination-product order penetration."
+    )
 
 
 class ProductBasketResponse(BaseModel):
