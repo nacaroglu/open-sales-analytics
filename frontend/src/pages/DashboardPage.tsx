@@ -119,6 +119,9 @@ function CustomerMetrics({ data, onRetry }: { data: CustomerResponse; onRetry: (
   const lowCoverage = data.availability.tier === "warning" ? `Low coverage: based on ${truncatedCoverage(data.coverage.dataset.coverage)} of orders.` : undefined;
   const moneyValue = (value: unknown) => typeof value === "string" ? formatMoney(value, data.currency) : "—";
   const percentValue = (value: unknown) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+  const daysBuckets = (sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? [];
+  const maxDaysIntervals = Math.max(1, ...daysBuckets.map((bucket) => Number(bucket.interval_count) || 0));
+  const maxDaysBarHeight = 96;
   const cohortRows = (sections.cohort_retention?.rows as Record<string, unknown>[] | undefined) ?? [];
   const maxCohortOffset = Math.max(-1, ...cohortRows.flatMap((row) => ((row.cells as Record<string, unknown>[] | undefined) ?? []).map((cell) => Number(cell.month_offset))));
   const rfmSegments = (sections.rfm?.segments as Record<string, unknown>[] | undefined) ?? [];
@@ -136,7 +139,7 @@ function CustomerMetrics({ data, onRetry }: { data: CustomerResponse; onRetry: (
       </CustomerMetricSection>
       <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases} lowCoverage={lowCoverage} onRetry={onRetry}>
         <p>Median: {String(sections.days_between_purchases?.median_days ?? "—")} days</p>
-        <div role="img" aria-label="Bar chart of days between purchase interval buckets" className="flex h-40 items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">{(((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? [])).map((bucket) => <div key={String(bucket.key)} className="flex flex-1 flex-col items-center justify-end gap-1"><div className="w-full bg-indigo-700" style={{ height: `${Math.max(4, Number(bucket.interval_count) * 8)}px` }} /><span className="text-xs">{String(bucket.key)}</span></div>)}</div>
+        <div role="img" aria-label="Bar chart of days between purchase interval buckets" className="flex h-40 items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">{daysBuckets.map((bucket) => <div key={String(bucket.key)} className="flex flex-1 flex-col items-center justify-end gap-1"><div className="w-full bg-indigo-700" style={{ height: `${Math.max(4, ((Number(bucket.interval_count) || 0) / maxDaysIntervals) * maxDaysBarHeight)}px` }} /><span className="text-xs">{String(bucket.key)}</span></div>)}</div>
         <AggregateTable ariaLabel="Days between purchases table" headers={["Bucket", "Intervals"]} rows={((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? []).map((bucket) => [String(bucket.key), formatCount(Number(bucket.interval_count))])} />
       </CustomerMetricSection>
       <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention} lowCoverage={lowCoverage} onRetry={onRetry}>
