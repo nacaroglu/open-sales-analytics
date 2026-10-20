@@ -9,7 +9,8 @@ Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configura
 [Explore the results](#explore-the-results) |
 [Product analytics](#product-analytics) | [Customer analytics](#customer-analytics) | [Comparisons](#comparisons) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
-[Demo mode](#demo-mode) | [Limitations](#limitations) | [Architecture](#architecture) | [Development](#development)
+[Demo mode](#demo-mode) | [Limitations](#limitations) | [Roadmap](#roadmap) | [Architecture](#architecture) |
+[Development](#development) | [Contributing](#contributing) | [License](#license)
 
 ## Run it with Docker
 
@@ -100,7 +101,7 @@ Choose `backend/app/sample/sample_sales.csv`, select **USD** and click **Upload*
 
 ### 6. Explore the results
 
-The dashboard opens on the full period of the data, 2024-01-01 to 2025-12-31:
+The dashboard opens on **Overview** with the full period of the data, 2024-01-01 to 2025-12-31:
 
 | Metric              | Expected value |
 | ------------------- | -------------- |
@@ -110,21 +111,30 @@ The dashboard opens on the full period of the data, 2024-01-01 to 2025-12-31:
 | Units sold          | 24,380         |
 | Average order value | $67.58         |
 
-![Dashboard with KPIs and the weekly gross sales trend](_docs/images/demo-dashboard.png)
+![Overview: key figures, the monthly gross sales trend and the top 10 products](_docs/images/phase-3/overview.png)
 
-The last point of the weekly chart drops and is hollow: 29–31 Dec is a partial week
-(see [Trend buckets](#trend-buckets)), not a fall in sales.
+The full period covers 24 months, so the trend is monthly (see [Trend buckets](#trend-buckets)). Change **Start date**
+and **End date** to filter every figure; **Reset** returns to the full period. **Compare with** adds the previous period
+or the same period last year; for the full period it is unavailable, because the data starts on 2024-01-01.
 
-Change **Start date** and **End date** to filter every figure; **Reset** returns to the full period.
-Below the trend, the top 10 products by gross sales:
+**Products** shows the rankings, the share of gross sales with its cumulative Pareto chart, rising and falling
+products, dormant products and products bought together, here for 2025 compared with 2024
+(see [Product analytics](#product-analytics)):
 
-![Top 10 products by gross sales](_docs/images/demo-top-products.png)
+![Products: rankings, Pareto chart, rising and falling products, dormancy and product pairs](_docs/images/phase-3/products.png)
+
+A product name opens its detail: the gross sales trend, the average price paid per unit, order penetration and the
+products bought with it.
+
+![Product detail: gross sales trend, weighted unit price, order penetration and related products](_docs/images/phase-3/product-detail.png)
+
+**Customers** shows coverage, customer key figures, days between purchases, the cohort retention heatmap, Historical
+Customer Value, the Projected 12-Month Customer Value, RFM segments, purchase frequency and concentration
+(see [Customer analytics](#customer-analytics)):
+
+![Customers: coverage, key figures, cohort retention heatmap, value, RFM, frequency and concentration](_docs/images/phase-3/customers.png)
 
 **Analyze another file** deletes this dataset and returns to the upload screen.
-
-The dashboard is organized into Overview, Customers and Products sections. The Customers API exposes aggregate
-coverage and customer analyses; Products contains the portfolio analyses described in
-[Product analytics](#product-analytics).
 
 ## Comparisons
 
@@ -148,7 +158,7 @@ costs are outside this dataset contract. Each product name and ID is displayed a
 | Cumulative share — `cumulative_share` | Running gross sales / total gross sales | Active range; unavailable when total is zero | The first three golden products reach 85.00% |
 | Product growth — `product_growth` | Current gross sales minus comparison gross sales; percentage uses the comparison value | Comparison period; `New`, `No current sales`, `No change`, or unavailable comparison avoid misleading percentages | 10 to 20 is +10 and +100.00% |
 | Rising/falling ranking — `rising_products`, `falling_products` | Rank by absolute gross-sales change | Selected comparison; unavailable when comparison is unavailable | A +10 change ranks above a +900% change of +1 |
-| Dormant products — `dormancy` | Products with no sale in the selected 30, 60 or 90-day window; earlier totals use sales before the window | Anchored to the dataset's latest date, default 60; insufficient history or zero result are distinct. A sale exactly N days before the anchor is inside the window | A product last sold 60 days before the anchor is included for a 60-day window |
+| Dormant products — `dormancy` | Products with no sale in the selected 30, 60 or 90-day window; earlier totals use sales before the window | Anchored to the selected range's end date (the dataset's latest date for the full range), default 60; insufficient history or zero result are distinct. A sale exactly N days before the anchor is inside the window | A product last sold 60 days before the anchor is included for a 60-day window |
 | Weighted unit price — `weighted_unit_price` | SUM(quantity × unit price) / SUM(quantity) | Active range buckets; missing-sales buckets are gaps, not zero prices | 1 unit at 10 plus 3 at 20 gives 17.50 |
 | Order penetration — `order_penetration` | Distinct orders containing the product / all distinct orders | Active range; zero orders is a zero result | 25 of 200 orders is 12.50% |
 | Support — `basket_support` | Shared orders / eligible basket orders | Active range; at least 10 shared orders and 0.1% support are required | 10 shared orders in 10,000 gives 0.10% |
@@ -493,6 +503,9 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
   expiry or deletion removes the dataset's cached responses. The cache is not shared between instances.
 - Access needs a random bearer token. The browser keeps it in `sessionStorage`, so it is gone when the tab closes.
   The server keeps only a SHA-256 hash of it.
+- A missing or expired dataset ID answers 404 and a wrong token for an existing dataset answers 401, so the status shows
+  whether an ID exists. This is an accepted risk: IDs are 128-bit random values that cannot be guessed, and a dataset
+  stays unreadable without its token.
 - The logs are one JSON line per request with the method, path, status, duration and the dataset ID. The dataset ID is
   logged on purpose, so a request can be traced; it is not a secret and cannot be used without the token. The logs
   never contain tokens, file contents, file names, product names or order IDs. Error logs hold exception class names
@@ -529,6 +542,19 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 - 50 MB and 500,000 rows by default.
 - Phone, tablet and desktop widths (360 px and up); wide tables scroll inside their own region (see
   [`_docs/design-system.md`](_docs/design-system.md)).
+
+## Roadmap
+
+Phase 3 is complete. The next candidates, from the [Phase 3 specification](_docs/open_sales_analytics_phase_3_spec.md#20-deferred-roadmap):
+
+- **Phase 4: managed product foundation.** A central application database, accounts, ownership, saved datasets and
+  persistent dashboards.
+- **Phase 4: hosted ingestion.** Protected public uploads with rate limits, isolation, abuse controls and monitoring.
+- **Phase 4: financial contract layer.** Optional `discount_amount`, `refund_amount` and `unit_cost` columns, with net
+  sales, discount, refund and margin analytics.
+- **Later:** Shopify, WooCommerce and marketplace format mappers; multi-file and multi-channel datasets; customer
+  activation and export with an explicit privacy model; larger asynchronous imports; forecasting or anomaly detection
+  only after a validated user need.
 
 ## Architecture
 
@@ -692,3 +718,11 @@ docker rm -f oca
 On failure a trace and a screenshot are saved in `frontend/test-results/` (open a trace with `npx playwright show-trace`).
 With `CI` set (as on GitHub Actions) no trace is recorded, because a trace contains the network responses, and CI uploads
 only the failure screenshots.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

@@ -188,7 +188,8 @@ def test_products_response_contains_three_top_ten_rankings(client):
     assert share["products"][-1]["cumulative_share"] == "1.000000"
 
     growth = response.json()["growth"]
-    assert growth["availability"] == {"state": "available", "reason": None}
+    assert growth["availability"]["state"] == "unavailable"
+    assert growth["availability"]["reason"].startswith("The comparison needs data from")
     assert [row["product_id"] for row in growth["products"]] == ["p-two", "p/one"]
     assert growth["products"][0]["gross_sales"] == {
         "value": "15.0000",

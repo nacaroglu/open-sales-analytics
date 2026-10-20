@@ -27,6 +27,8 @@ from app.ingest import CreatedDataset, ingest_csv, new_upload_path
 from app.logging_config import log_exception
 from app.response_cache import ResponseCache, get_response_cache
 from app.schema import open_dataset_readonly
+from app.validation.result import ValidationResult
+from app.validation.structure import validate_structure
 
 router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
@@ -312,7 +314,9 @@ async def _receive(request: Request, upload: _Upload) -> None:
         raise _invalid("A file part named 'file' is required.")
     if not upload.file_done and not upload.full:
         raise _invalid("The request body ended before the file was complete.")
-    if upload.currency is None:
+    # Reading stops at the size limit, so a currency sent after an oversized file
+    # is never seen; the size is then the error to report, not the currency.
+    if upload.currency is None and not upload.full:
         raise _invalid(_currency_message())
 
 
@@ -353,9 +357,18 @@ async def create_dataset(
     upload = _Upload(settings)
     try:
         await _receive(request, upload)
-        # _receive raised unless both the file part and the currency were present.
-        assert upload.path is not None and upload.currency is not None
-        outcome = await run_in_threadpool(ingest_csv, upload.path, upload.currency, settings, now)
+        # _receive raised unless the file part and the currency were present, or
+        # the file was cut at the size limit before the currency arrived.
+        assert upload.path is not None
+        outcome: CreatedDataset | ValidationResult
+        if upload.currency is None:
+            outcome = await run_in_threadpool(
+                validate_structure, upload.path, settings.max_upload_bytes, settings.max_rows
+            )
+        else:
+            outcome = await run_in_threadpool(
+                ingest_csv, upload.path, upload.currency, settings, now
+            )
         summary = (
             await run_in_threadpool(_full_range_summary, settings, outcome)
             if isinstance(outcome, CreatedDataset)

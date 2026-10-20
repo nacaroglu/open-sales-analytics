@@ -75,3 +75,26 @@ test("product detail shows the price history state instead of an empty chart", (
   expect(within(price).getByText("No units of this product sold in this range")).toBeInTheDocument();
   expect(within(price).queryByRole("img")).toBeNull();
 });
+
+test("growth explains an unavailable comparison and empty rising or falling lists instead of empty tables", () => {
+  const unavailable = { ...products, growth: { ...products.growth, availability: { state: "unavailable" as const, reason: "The comparison needs data from 2024-10-03, but the dataset starts on 2025-01-01." } } };
+  useProducts.mockReturnValue({ data: unavailable, isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() });
+  render(<MemoryRouter><ProductsView datasetId="d1" /></MemoryRouter>);
+  let growth = screen.getByRole("region", { name: "Rising and falling products" });
+  expect(within(growth).getByText("The comparison needs data from 2024-10-03, but the dataset starts on 2025-01-01.")).toBeInTheDocument();
+  expect(within(growth).queryByRole("table")).toBeNull();
+  cleanup();
+
+  useProducts.mockReturnValue({ data: products, isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() });
+  render(<MemoryRouter><ProductsView datasetId="d1" /></MemoryRouter>);
+  growth = screen.getByRole("region", { name: "Rising and falling products" });
+  expect(within(growth).getByText("No product sold more than in the comparison period")).toBeInTheDocument();
+  expect(within(growth).getByText("No product sold less than in the comparison period")).toBeInTheDocument();
+  expect(within(growth).queryByRole("table")).toBeNull();
+});
+
+test("dormancy names the end of the selected range as its anchor", () => {
+  useProducts.mockReturnValue({ data: products, isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() });
+  render(<MemoryRouter><ProductsView datasetId="d1" /></MemoryRouter>);
+  expect(screen.getByText("No sale in the 60 days up to 2025-03-31, the end of the selected range")).toBeInTheDocument();
+});
