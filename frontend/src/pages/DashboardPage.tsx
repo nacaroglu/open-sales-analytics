@@ -12,6 +12,8 @@ import TopProducts from "../components/TopProducts";
 import TrendChart from "../components/TrendChart";
 import ComparisonDates from "../components/ComparisonDates";
 import ProjectionPanel from "../components/ProjectionPanel";
+import CohortHeatmap from "../components/CohortHeatmap";
+import type { CohortRow } from "../components/CohortHeatmap";
 import { ProductDetailView, ProductsView } from "./ProductsPage";
 import { useAnalytics, useCustomers, useMeta, useOverview } from "../lib/hooks";
 import {
@@ -125,7 +127,6 @@ function CustomerMetrics({ data, onRetry, updating }: { data: CustomerResponse; 
   const maxDaysIntervals = Math.max(1, ...daysBuckets.map((bucket) => Number(bucket.interval_count) || 0));
   const maxDaysBarHeight = 96;
   const cohortRows = (sections.cohort_retention?.rows as Record<string, unknown>[] | undefined) ?? [];
-  const maxCohortOffset = Math.max(-1, ...cohortRows.flatMap((row) => ((row.cells as Record<string, unknown>[] | undefined) ?? []).map((cell) => Number(cell.month_offset))));
   const rfmSegments = (sections.rfm?.segments as Record<string, unknown>[] | undefined) ?? [];
   const drilldown = (sections.rfm_drilldown?.segments as Record<string, unknown>[] | undefined)?.find((row) => row.segment === selectedSegment);
   return (
@@ -145,7 +146,7 @@ function CustomerMetrics({ data, onRetry, updating }: { data: CustomerResponse; 
         <AggregateTable ariaLabel="Days between purchases table" headers={["Bucket", "Intervals"]} rows={((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? []).map((bucket) => [String(bucket.key), formatCount(Number(bucket.interval_count))])} />
       </CustomerMetricSection>
       <CustomerMetricSection label="Cohort retention" data={sections.cohort_retention} lowCoverage={lowCoverage} onRetry={onRetry} updating={updating}>
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table aria-label="Cohort retention table" className="w-full text-left"><thead className="bg-slate-100"><tr><th className="sticky left-0 bg-slate-100 px-3 py-2">Cohort</th><th className="px-3 py-2">Cohort size</th><th className="px-3 py-2">Months observed</th>{Array.from({ length: maxCohortOffset + 1 }, (_, offset) => <th key={offset} className="px-3 py-2">Month {offset}</th>)}</tr></thead><tbody className="divide-y divide-slate-200">{cohortRows.map((row) => <tr key={String(row.cohort_month)}><td className="sticky left-0 bg-white px-3 py-2">{String(row.cohort_month)}</td><td className="px-3 py-2">{formatCount(Number(row.cohort_size))}</td><td className="px-3 py-2">{formatCount(Number(row.complete_months))}</td>{((row.cells as Record<string, unknown>[] | undefined) ?? []).map((cell) => cell.state === "not_observed" ? <td key={String(cell.month_offset)} aria-label="Not yet observed" className="border border-dashed border-slate-500 px-3 py-2">Not yet observed</td> : <td key={String(cell.month_offset)} className="px-3 py-2">{(Number(cell.retention) * 100).toFixed(1)}% ({formatCount(Number(cell.retained_count))})</td>)}</tr>)}</tbody></table></div>
+        <CohortHeatmap rows={cohortRows as unknown as CohortRow[]} />
       </CustomerMetricSection>
       <CustomerMetricSection label="Historical Customer Value" data={sections.historical_customer_value} lowCoverage={lowCoverage} onRetry={onRetry} updating={updating}>
         <p>Observed gross sales per identified customer. Not a prediction.</p>
