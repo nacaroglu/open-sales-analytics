@@ -536,7 +536,7 @@ A React (Vite) front end with Recharts talks JSON to a FastAPI back end. Each da
 `product_facts` and, when identified customer data exists, full-history `customer_facts` in the same file. An in-process background task removes expired
 datasets. The Docker image is a single container in which FastAPI serves both the API and the built front end from one
 origin on port 8000. See the [Phase 3 architecture guide](_docs/architecture.md), [metric catalogue](_docs/metrics.md),
-[Phase 3 specification](_docs/open_sales_analytics_phase_3_spec.md), and [backlog](_docs/tasks.md).
+[release checklist and evidence report](_docs/phase-3-release-checklist.md), [Phase 3 specification](_docs/open_sales_analytics_phase_3_spec.md), and [backlog](_docs/tasks.md).
 
 ## Development
 

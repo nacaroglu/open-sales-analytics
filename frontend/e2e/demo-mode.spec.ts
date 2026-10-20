@@ -31,7 +31,7 @@ test("in demo mode the sample dashboard opens and the page offers no upload cont
   await expect(
     page
       .getByRole("region", { name: "Sales trend" })
-      .getByRole("img", { name: /^(Daily|Weekly) gross sales from/ }),
+      .getByRole("img", { name: /^(Daily|Weekly|Monthly) gross sales from/ }),
   ).toBeVisible();
   await expect(page.getByRole("region", { name: "Top products" }).getByRole("table")).toBeVisible();
 });
