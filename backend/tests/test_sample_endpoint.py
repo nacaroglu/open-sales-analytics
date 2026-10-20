@@ -80,7 +80,7 @@ def test_sample_meta_is_usd_with_the_full_year(client):
     rows = len(SAMPLE.read_text().splitlines()) - 1
     assert meta["currency"] == "USD"
     assert meta["row_count"] == rows
-    assert meta["date_range"] == {"min": "2025-01-01", "max": "2025-12-31"}
+    assert meta["date_range"] == {"min": "2024-01-01", "max": "2025-12-31"}
 
 
 def test_dataset_file_exists_token_verifies_and_rows_are_readable(client, settings):

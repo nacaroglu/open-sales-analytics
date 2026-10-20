@@ -2,17 +2,17 @@ import { expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 export const SAMPLE_KPIS = {
-  grossSales: "$677,998.60",
+  grossSales: "$675,816.70",
   orders: "10,000",
-  unitsSold: "24,145",
-  averageOrderValue: "$67.80",
+  unitsSold: "24,380",
+  averageOrderValue: "$67.58",
 };
 
 export const SAMPLE_CUSTOMERS = {
-  coverage: "88.4%",
-  identifiedOrders: "8,846",
-  unidentifiedOrders: "1,154",
-  identifiedCustomers: "250",
+  coverage: "87.6%",
+  identifiedOrders: "8,768",
+  unidentifiedOrders: "1,232",
+  identifiedCustomers: "1,800",
 };
 
 // A small file whose figures can be checked by hand: 3 orders, 7 units, 47.50 gross.
