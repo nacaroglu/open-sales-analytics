@@ -68,9 +68,9 @@ head -n 4 backend/app/sample/sample_sales.csv
 
 ```
 order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
-ORD-000001,2025-01-01,P001,Ceramic Mug,1,12.00,CUST-0001
-ORD-000001,2025-01-01,P002,Travel Tumbler,3,24.00,CUST-0001
-ORD-000002,2025-01-01,P001,Ceramic Mug,1,13.20,CUST-0002
+ORD-000001,2024-01-01,P001,Ceramic Mug,1,12.00,CUST-6ebe7ed43ba4
+ORD-000001,2024-01-01,P002,Travel Tumbler,1,24.00,CUST-6ebe7ed43ba4
+ORD-000002,2024-01-01,P001,Ceramic Mug,1,12.00,CUST-c4da5c3ce3f2
 ```
 
 ### 2. Build the image
@@ -100,15 +100,15 @@ Choose `backend/app/sample/sample_sales.csv`, select **USD** and click **Upload*
 
 ### 6. Explore the results
 
-The dashboard opens on the full period of the data, 2025-01-01 to 2025-12-31:
+The dashboard opens on the full period of the data, 2024-01-01 to 2025-12-31:
 
 | Metric              | Expected value |
 | ------------------- | -------------- |
-| Rows                | 14,270         |
-| Gross sales         | $677,998.60    |
+| Rows                | 14,397         |
+| Gross sales         | $675,816.70    |
 | Orders              | 10,000         |
-| Units sold          | 24,145         |
-| Average order value | $67.80         |
+| Units sold          | 24,380         |
+| Average order value | $67.58         |
 
 ![Dashboard with KPIs and the weekly gross sales trend](_docs/images/demo-dashboard.png)
 
@@ -535,8 +535,8 @@ A React (Vite) front end with Recharts talks JSON to a FastAPI back end. Each da
 `DATASET_DIR`; validation and analytics are SQL over that file. Canonical import builds reusable `order_facts`,
 `product_facts` and, when identified customer data exists, full-history `customer_facts` in the same file. An in-process background task removes expired
 datasets. The Docker image is a single container in which FastAPI serves both the API and the built front end from one
-origin on port 8000. The full specification is in [`_docs/plan.md`](_docs/plan.md) (architecture in section 7), and the
-backlog is in [`_docs/tasks.md`](_docs/tasks.md).
+origin on port 8000. See the [Phase 3 architecture guide](_docs/architecture.md), [metric catalogue](_docs/metrics.md),
+[release checklist and evidence report](_docs/phase-3-release-checklist.md), [Phase 3 specification](_docs/open_sales_analytics_phase_3_spec.md), and [backlog](_docs/tasks.md).
 
 ## Development
 
