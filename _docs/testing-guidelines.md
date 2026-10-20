@@ -38,7 +38,9 @@ Plan section 12 rules and their tests: validation rules `test_validation_structu
 `test_metadata_endpoint.py`; expired inaccessible and cleaned up `test_auth.py`, `test_cleanup.py`;
 demo mode `test_demo_mode.py`; the browser journeys `frontend/e2e/*.spec.ts` (`happy-path`, `upload`, `dashboard`, `products`, `lifecycle`).
 Phase 3B customer rules and the aggregate browser journey are covered by `test_customer_<metric>.py`,
-`test_customer_fixtures.py`, `test_customer_golden.py` and `frontend/e2e/customers.spec.ts`.
+`test_customer_fixtures.py`, `test_customer_golden.py` and `frontend/e2e/customers.spec.ts`. The Phase 3 cross-module
+journey and responsive-width checks are in `frontend/e2e/phase3-journey.spec.ts` and
+`frontend/e2e/responsive.spec.ts`.
 
 ### Phase 3A metrics and their tests
 
