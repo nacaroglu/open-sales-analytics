@@ -288,9 +288,9 @@ def test_sample_dataset_full_range_and_sub_range(client):
     full = analytics(client, created)
     assert full.status_code == 200
     body = full.json()
-    assert body["range"] == {"start": "2025-01-01", "end": "2025-12-31"}
+    assert body["range"] == {"start": "2024-01-01", "end": "2025-12-31"}
     assert body["currency"] == "USD"
-    assert body["granularity"] == "weekly"
+    assert body["granularity"] == "monthly"
     assert sum(Decimal(b["gross_sales"]) for b in body["trend"]) == Decimal(
         body["kpis"]["gross_sales"]
     )

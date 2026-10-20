@@ -5,7 +5,7 @@ test("a date range changes the values and granularity and Reset restores them", 
   await openSample(page);
   const kpis = keyFigures(page);
   const trend = page.getByRole("region", { name: "Sales trend" });
-  await expect(trend.getByRole("heading", { name: "Gross sales — weekly" })).toBeVisible();
+  await expect(trend.getByRole("heading", { name: "Gross sales — monthly" })).toBeVisible();
 
   await page.getByLabel("Start date").fill("2025-03-01");
   await page.getByLabel("End date").fill("2025-03-31");
@@ -17,7 +17,7 @@ test("a date range changes the values and granularity and Reset restores them", 
   await expect(kpis.grossSales).toHaveText(SAMPLE_KPIS.grossSales);
   await expect(kpis.orders).toHaveText(SAMPLE_KPIS.orders);
   await expect(kpis.unitsSold).toHaveText(SAMPLE_KPIS.unitsSold);
-  await expect(trend.getByRole("heading", { name: "Gross sales — weekly" })).toBeVisible();
+  await expect(trend.getByRole("heading", { name: "Gross sales — monthly" })).toBeVisible();
   await expect(page.getByLabel("Start date")).toHaveValue("2024-01-01");
   await expect(page.getByLabel("End date")).toHaveValue("2025-12-31");
 });
