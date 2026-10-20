@@ -60,8 +60,8 @@ test("the Phase 3 browser journey stays coherent across all modules", async ({ p
   await expect(projection).toContainText(/Data up to \d{4}-\d{2}-\d{2}/);
   await expect(projection).toContainText(/based on \d+ mature cohorts? · [\d,]+ customers/);
   await expect(projection.getByRole("table", { name: "Projected 12-Month Customer Value table" })).toBeVisible();
-  await expect(projection.getByRole("columnheader", { name: "Observed" })).toBeVisible();
-  await expect(projection.getByRole("columnheader", { name: "Projected (estimate)" })).toBeVisible();
+  await expect(projection.getByRole("columnheader", { name: "Observed", exact: true })).toBeVisible();
+  await expect(projection.getByRole("columnheader", { name: "Projected (estimate)", exact: true })).toBeVisible();
 
   // A shared range survives navigation between the three modules.
   await page.getByRole("link", { name: "Overview" }).click();
