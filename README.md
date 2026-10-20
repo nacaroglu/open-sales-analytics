@@ -68,9 +68,9 @@ head -n 4 backend/app/sample/sample_sales.csv
 
 ```
 order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
-ORD-000001,2025-01-01,P001,Ceramic Mug,1,12.00,CUST-0001
-ORD-000001,2025-01-01,P002,Travel Tumbler,3,24.00,CUST-0001
-ORD-000002,2025-01-01,P001,Ceramic Mug,1,13.20,CUST-0002
+ORD-000001,2024-01-01,P001,Ceramic Mug,1,12.00,CUST-6ebe7ed43ba4
+ORD-000001,2024-01-01,P002,Travel Tumbler,1,24.00,CUST-6ebe7ed43ba4
+ORD-000002,2024-01-01,P001,Ceramic Mug,1,12.00,CUST-c4da5c3ce3f2
 ```
 
 ### 2. Build the image
@@ -100,15 +100,15 @@ Choose `backend/app/sample/sample_sales.csv`, select **USD** and click **Upload*
 
 ### 6. Explore the results
 
-The dashboard opens on the full period of the data, 2025-01-01 to 2025-12-31:
+The dashboard opens on the full period of the data, 2024-01-01 to 2025-12-31:
 
 | Metric              | Expected value |
 | ------------------- | -------------- |
-| Rows                | 14,270         |
-| Gross sales         | $677,998.60    |
+| Rows                | 14,397         |
+| Gross sales         | $675,816.70    |
 | Orders              | 10,000         |
-| Units sold          | 24,145         |
-| Average order value | $67.80         |
+| Units sold          | 24,380         |
+| Average order value | $67.58         |
 
 ![Dashboard with KPIs and the weekly gross sales trend](_docs/images/demo-dashboard.png)
 
@@ -487,6 +487,9 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
   a compliance guarantee; automated checks cannot find every kind of personal data.
 - A dataset is deleted after `DATASET_TTL_HOURS` (24 by default) by a cleanup at startup and then every
   `CLEANUP_INTERVAL_MINUTES`, or at once when you click **Analyze another file**.
+- Successful module responses may be kept in a bounded, process-local cache for `RESPONSE_CACHE_TTL_SECONDS`
+  (300 seconds by default); authorization runs on every request, entries are keyed by dataset and options, and
+  expiry or deletion removes the dataset's cached responses. The cache is not shared between instances.
 - Access needs a random bearer token. The browser keeps it in `sessionStorage`, so it is gone when the tab closes.
   The server keeps only a SHA-256 hash of it.
 - The logs are one JSON line per request with the method, path, status, duration and the dataset ID. The dataset ID is
@@ -523,7 +526,7 @@ instance. To analyze your own files, [run it yourself](#run-it-with-docker).
 - No customer-level lists, exports or searches are provided; customer figures cover identified orders only.
 - Gross sales only: no refunds, discounts, taxes or shipping.
 - 50 MB and 500,000 rows by default.
-- Desktop and tablet widths (768 px and up). Phones are not supported (see
+- Phone, tablet and desktop widths (360 px and up); wide tables scroll inside their own region (see
   [`_docs/design-system.md`](_docs/design-system.md)).
 
 ## Architecture
@@ -532,8 +535,8 @@ A React (Vite) front end with Recharts talks JSON to a FastAPI back end. Each da
 `DATASET_DIR`; validation and analytics are SQL over that file. Canonical import builds reusable `order_facts`,
 `product_facts` and, when identified customer data exists, full-history `customer_facts` in the same file. An in-process background task removes expired
 datasets. The Docker image is a single container in which FastAPI serves both the API and the built front end from one
-origin on port 8000. The full specification is in [`_docs/plan.md`](_docs/plan.md) (architecture in section 7), and the
-backlog is in [`_docs/tasks.md`](_docs/tasks.md).
+origin on port 8000. See the [Phase 3 architecture guide](_docs/architecture.md), [metric catalogue](_docs/metrics.md),
+[release checklist and evidence report](_docs/phase-3-release-checklist.md), [Phase 3 specification](_docs/open_sales_analytics_phase_3_spec.md), and [backlog](_docs/tasks.md).
 
 ## Development
 
@@ -661,7 +664,8 @@ requests from forks and from Dependabot.
 ### Browser test
 
 A small Playwright suite (Chromium, `frontend/e2e/`) covers the primary journeys: Try sample data, a valid upload,
-an invalid upload, the date range and Reset, Analyze another file, and an expired dataset.
+an invalid upload, the date range and Reset, Analyze another file, the cross-module customer journey, responsive
+layouts at 360/768/1280 px, and an expired dataset.
 Install the browser once (about 150 MB, stored outside the repository), then run it from `frontend/`:
 
 ```sh
