@@ -155,6 +155,10 @@ def read_product_growth(
         availability = Availability(
             AvailabilityState.ZERO_RESULT, "No products have sales in the selected ranges."
         )
+    elif not comparison.available:
+        # Products keep their current values, but without a baseline nothing can
+        # rise or fall, so the rankings say why instead of being silently empty.
+        availability = Availability(AvailabilityState.UNAVAILABLE, comparison.unavailable_reason)
     else:
         availability = Availability(AvailabilityState.AVAILABLE)
     rising = [

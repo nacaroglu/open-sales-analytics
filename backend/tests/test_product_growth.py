@@ -82,7 +82,10 @@ def test_growth_nulls_comparison_when_period_is_unavailable(tmp_path):
         connection.close()
 
     product = result["products"][0]
-    assert result["availability"].state.value == "available"
+    assert result["availability"].state.value == "unavailable"
+    assert result["availability"].reason == (
+        "The comparison needs data from 2025-01-05, but the dataset starts on 2025-01-08."
+    )
     assert product["classification"] is None
     assert product["gross_sales"]["value"] == Decimal("12.0000")
     assert product["gross_sales"]["comparison_value"] is None
