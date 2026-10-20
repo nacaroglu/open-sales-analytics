@@ -7,6 +7,8 @@ import duckdb
 from app.config import Settings
 from app.schema import create_dataset
 
+# A blank customer_id takes the order's one non-blank ID; validation has already
+# rejected orders with two different IDs, so max() picks that single value.
 _INSERT_LINE_ITEMS = """
 INSERT INTO ds.line_items
 SELECT order_id,
@@ -15,7 +17,7 @@ SELECT order_id,
        product_name,
        CAST(quantity AS INTEGER),
        CAST(unit_price AS DECIMAL(18,4)),
-       customer_id
+       coalesce(customer_id, max(customer_id) OVER (PARTITION BY order_id))
 FROM staging
 ORDER BY row_number
 """
@@ -84,7 +86,7 @@ SELECT orders.customer_id,
        max(orders.last_order_date),
        CAST(count(*) AS INTEGER),
        CAST(sum(orders.units) AS BIGINT),
-       CAST(sum(orders.gross_sales) AS DECIMAL(18,4))
+       CAST(sum(orders.gross_sales) AS DECIMAL(38,4))
 FROM identified_orders AS orders
 JOIN customer_firsts AS firsts USING (customer_id)
 GROUP BY orders.customer_id, firsts.first_order_date

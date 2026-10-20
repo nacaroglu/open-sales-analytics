@@ -36,7 +36,7 @@ CUSTOMER_FACTS = [
     ("last_order_date", "DATE"),
     ("lifetime_orders", "INTEGER"),
     ("lifetime_units", "BIGINT"),
-    ("lifetime_gross_sales", "DECIMAL(18,4)"),
+    ("lifetime_gross_sales", "DECIMAL(38,4)"),
 ]
 
 

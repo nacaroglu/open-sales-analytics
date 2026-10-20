@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS customer_facts (
     last_order_date      DATE          NOT NULL,
     lifetime_orders      INTEGER       NOT NULL,
     lifetime_units       BIGINT        NOT NULL,
-    lifetime_gross_sales DECIMAL(18,4) NOT NULL
+    lifetime_gross_sales DECIMAL(38,4) NOT NULL
 )
 """
 
