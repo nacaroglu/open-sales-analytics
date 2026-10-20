@@ -1,9 +1,11 @@
+import asyncio
 import os
 import re
 import stat
 
 import app.ingest as ingest_module
 import duckdb
+import httpx
 import pytest
 from app.config import Settings, get_settings
 from app.errors import ApiError, error_body
@@ -361,6 +363,38 @@ def test_oversized_file_is_refused_and_reading_stops(client, settings, data_dir,
     assert response.status_code == 422
     assert error_of(response)["errors"][0]["code"] == "file_too_large"
     assert sizes == [settings.max_upload_bytes + 1]
+    assert_clean(data_dir)
+
+
+def test_oversized_file_before_the_currency_is_reported_as_too_large(client, settings, data_dir):
+    # TestClient sends the body as one chunk, so the currency part would always
+    # be parsed. A real server receives it in pieces and stops reading at the
+    # limit: stream it in small chunks through httpx's ASGI transport instead.
+    boundary = "b0undary"
+    content = csv_text(*["o1,2025-01-02,p1,Mug,1,1"] * 2000)
+    assert len(content) > settings.max_upload_bytes * 2
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.csv"\r\n\r\n{content}\r\n'
+        f'--{boundary}\r\nContent-Disposition: form-data; name="currency"\r\n\r\nUSD\r\n--{boundary}--\r\n'
+    ).encode()
+
+    async def chunks():
+        for start in range(0, len(body), 1024):
+            yield body[start : start + 1024]
+
+    async def post():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as streaming:
+            return await streaming.post(
+                "/api/datasets",
+                content=chunks(),
+                headers={"content-type": f"multipart/form-data; boundary={boundary}"},
+            )
+
+    response = asyncio.run(post())
+
+    assert response.status_code == 422
+    assert [error["code"] for error in error_of(response)["errors"]] == ["file_too_large"]
     assert_clean(data_dir)
 
 
