@@ -316,6 +316,7 @@ def test_structure_errors_stop_further_checks(client, monkeypatch):
             ),
             "missing_column",
         ),
+        (csv_text("o1,2025-01-02,p1,Mug,20,99999999999999"), "line_total_too_large"),
     ],
 )
 def test_broken_files_return_422_not_500(client, data_dir, content, code):

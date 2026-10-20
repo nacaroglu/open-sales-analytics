@@ -328,6 +328,7 @@ The report lists the first 100 errors and gives the total count (`error_count`).
 | `invalid_quantity` | `quantity` is not a whole number from 1 to 2,147,483,647. |
 | `invalid_price` | `unit_price` is not a plain decimal within 14 digits before and 4 after the point. |
 | `negative_price` | `unit_price` is below zero. |
+| `line_total_too_large` | `quantity × unit_price` is 100,000,000,000,000 or more, beyond the exact decimal range used for gross sales. |
 | `malformed_row` | The row has a different number of values than the header. |
 | `duplicate_line` | The same `order_id` and `product_id` appear on an earlier row. |
 | `conflicting_product_name` | One `product_id` has more than one `product_name`. |

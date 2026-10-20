@@ -8,6 +8,8 @@ from app.validation.structure import OPTIONAL_COLUMNS, REQUIRED_COLUMNS
 MAX_QUANTITY = 2_147_483_647
 MAX_PRICE_INTEGER_DIGITS = 14  # DECIMAL(18,4)
 MAX_PRICE_DECIMALS = 4
+# quantity × unit_price is computed as DECIMAL(18,4) by every analytics query.
+MAX_LINE_TOTAL = 10**14
 _SHOWN = 40  # characters of an offending value quoted in a reason
 
 _DATE_SHAPE = "regexp_full_match(order_date, '[0-9]{4}-[0-9]{2}-[0-9]{2}')"
@@ -17,6 +19,10 @@ _PRICE_DECIMALS = "length(regexp_extract(unit_price, '[.]([0-9]+)$', 1))"
 _PRICE_ROUNDED_OK = (
     f"{_PRICE_SHAPE} AND {_PRICE_INTEGER_DIGITS} <= {MAX_PRICE_INTEGER_DIGITS} "
     f"AND {_PRICE_DECIMALS} <= {MAX_PRICE_DECIMALS}"
+)
+_QUANTITY_OK = (
+    "regexp_full_match(quantity, '[0-9]+') "
+    f"AND TRY_CAST(quantity AS BIGINT) BETWEEN 1 AND {MAX_QUANTITY}"
 )
 _CUSTOMER_PRIVACY_REASON = "Automated checks cannot find every kind of personal data."
 _CUSTOMER_EMAIL_SHAPE = r"'[^@\s]+@[^@\s]+\.[A-Za-z]{2,}'"
@@ -103,6 +109,15 @@ _CHECKS: list[tuple[str, str, str, str]] = [
         "negative_price",
         f"unit_price <> '' AND ({_PRICE_ROUNDED_OK}) AND CAST(unit_price AS DECIMAL(18,4)) < 0",
         f"'The unit price must not be negative, got ' || {_shown('unit_price')} || '.'",
+    ),
+    (
+        "unit_price",
+        "line_total_too_large",
+        f"unit_price <> '' AND ({_PRICE_ROUNDED_OK}) AND {_QUANTITY_OK} "
+        "AND TRY_CAST(unit_price AS DECIMAL(38,4)) * TRY_CAST(quantity AS BIGINT) "
+        f">= {MAX_LINE_TOTAL}",
+        f"'quantity × unit_price must be less than {MAX_LINE_TOTAL:,}, got ' || quantity "
+        "|| ' × ' || unit_price || '.'",
     ),
 ]
 

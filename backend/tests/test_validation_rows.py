@@ -411,6 +411,42 @@ def test_too_precise_negative_price_is_invalid_not_negative(tmp_path):
     assert summary(one_row(tmp_path, unit_price="-1.23456")) == [(2, "unit_price", "invalid_price")]
 
 
+# --- line total -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("quantity", "price"), [("1", "99999999999999.9999"), ("2", "49999999999999.9999")]
+)
+def test_line_total_just_below_the_decimal_limit_is_accepted(tmp_path, quantity, price):
+    assert one_row(tmp_path, quantity=quantity, unit_price=price).errors == []
+
+
+@pytest.mark.parametrize(
+    ("quantity", "price"), [("2", "50000000000000"), ("2147483647", "99999999999999.9999")]
+)
+def test_line_total_at_or_above_the_decimal_limit_is_rejected(tmp_path, quantity, price):
+    assert summary(one_row(tmp_path, quantity=quantity, unit_price=price)) == [
+        (2, "unit_price", "line_total_too_large")
+    ]
+
+
+def test_line_total_reason_names_both_values(tmp_path):
+    result = one_row(tmp_path, quantity="2", unit_price="50000000000000")
+
+    assert result.errors[0].reason == (
+        "quantity × unit_price must be less than 100,000,000,000,000, got 2 × 50000000000000."
+    )
+
+
+def test_line_total_is_not_checked_when_quantity_or_price_is_already_invalid(tmp_path):
+    assert summary(one_row(tmp_path, quantity="0", unit_price="99999999999999")) == [
+        (2, "quantity", "invalid_quantity")
+    ]
+    assert summary(one_row(tmp_path, quantity="2", unit_price="-99999999999999")) == [
+        (2, "unit_price", "negative_price")
+    ]
+
+
 @pytest.mark.parametrize("value", ["0", "0.0", "0.0000"])
 def test_zero_price_is_accepted_with_a_warning(tmp_path, value):
     result = one_row(tmp_path, unit_price=value)

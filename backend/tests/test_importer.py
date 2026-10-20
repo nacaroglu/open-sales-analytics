@@ -158,6 +158,49 @@ def test_customer_id_is_case_sensitive_and_unicode_round_trips(uploads, settings
     connection.close()
 
 
+def test_blank_customer_ids_take_the_orders_one_non_blank_id(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,2,",
+        "o1,2025-01-02,p2,Cup,1,3,C1",
+        "o1,2025-01-02,p3,Plate,1,4,",
+        "o2,2025-01-03,p1,Mug,1,5,",
+        "o2,2025-01-03,p2,Cup,1,6,",
+        header=HEADER + ",customer_id",
+    )
+    connection = open_dataset_readonly(target)
+    try:
+        assert connection.execute(
+            "SELECT order_id, product_id, customer_id FROM line_items ORDER BY order_id, product_id"
+        ).fetchall() == [
+            ("o1", "p1", "C1"),
+            ("o1", "p2", "C1"),
+            ("o1", "p3", "C1"),
+            ("o2", "p1", None),
+            ("o2", "p2", None),
+        ]
+    finally:
+        connection.close()
+
+
+def test_customer_lifetime_sales_may_exceed_the_line_total_limit(uploads, settings):
+    _, target = run_import(
+        uploads,
+        settings,
+        "o1,2025-01-02,p1,Mug,1,90000000000000,C1",
+        "o2,2025-01-03,p1,Mug,1,90000000000000,C1",
+        header=HEADER + ",customer_id",
+    )
+    connection = open_dataset_readonly(target)
+    try:
+        assert connection.execute("SELECT lifetime_gross_sales FROM customer_facts").fetchall() == [
+            (Decimal("180000000000000.0000"),)
+        ]
+    finally:
+        connection.close()
+
+
 def test_dataset_meta_has_one_row_with_the_expected_values(uploads, settings):
     _, target = run_import(
         uploads,

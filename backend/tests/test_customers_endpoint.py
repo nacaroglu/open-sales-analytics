@@ -49,6 +49,25 @@ def get_customers(client, dataset, **params):
     )
 
 
+def test_lines_with_a_blank_customer_id_count_for_their_orders_customer(client):
+    dataset = upload(
+        client,
+        [
+            "o1,2025-01-01,p1,Mug,1,2.00,CUST-1",
+            "o1,2025-01-01,p2,Bag,1,3.00,",
+        ],
+    )
+
+    sections = get_customers(client, dataset).json()["sections"]
+
+    new_vs_returning = sections["new_vs_returning"]
+    assert new_vs_returning["new_customer_gross_sales"]["value"] == "5.0000"
+    assert new_vs_returning["identified_gross_sales"]["value"] == "5.0000"
+    assert sections["historical_customer_value"]["average"] == "5.0000"
+    assert sections["rfm_drilldown"]["gross_sales"] == "5.0000"
+    assert sections["concentration"]["identified_gross_sales"] == "5.0000"
+
+
 def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, capsys):
     dataset = upload(
         client,
