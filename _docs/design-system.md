@@ -12,6 +12,9 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - Something not covered here: add one line to this file in your task; do not invent a private style.
 - Dashboard section navigation uses underlined indigo links with a bold indigo bottom border for the current page; unavailable sections use a white rounded border card with a bold “Unavailable” label and muted reason text.
 - Analysis sections use the existing white rounded cards; visible selects have a label, and Pareto charts use a dashed indigo 80% reference line with a text alternative.
+- The Pareto chart is a solid indigo cumulative-share line over products ranked by gross sales (y axis 0–100%), with a `text-sm text-slate-600` key under it naming the ranking order and the solid and dashed lines.
+- Product-detail line charts (gross sales, weighted unit price) follow the trend chart rules (hollow partial points, gaps for buckets without units) and repeat their values in a table inside `<details>` with a link-style "Show values" summary.
+- The cohort retention heatmap shades each cell on one indigo scale (`bg-white` at 0%, then `bg-indigo-50/100/200/300/400` at under 10%, 10–25%, 25–50%, 50–75%, 75% and over) with `text-slate-900` text, always prints the percentage and count, marks a cut month "partial", keeps "Not yet observed" cells white with a dashed slate-500 border, and has a shading key under the table.
 - Customer coverage uses a labelled white card with dataset and range order counts; low coverage uses the dashed amber warning card.
 - Insufficient-data states show the server reason as text; zero-result states show the returned zero value without an empty-data message.
 - Date range controls place the comparison select after End date and before Reset; comparison series are dashed slate-500 lines, and deltas use muted slate text without good/bad colouring.
