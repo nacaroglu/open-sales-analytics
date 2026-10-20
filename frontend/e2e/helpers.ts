@@ -9,7 +9,7 @@ export const SAMPLE_KPIS = {
 };
 
 export const SAMPLE_CUSTOMERS = {
-  coverage: "87.68%",
+  coverage: "87.6%",
   identifiedOrders: "8,768",
   unidentifiedOrders: "1,232",
   identifiedCustomers: "1,800",
