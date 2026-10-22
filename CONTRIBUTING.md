@@ -1,5 +1,7 @@
 # Contributing
 
+Languages: [English](CONTRIBUTING.md) | [Türkçe](CONTRIBUTING.tr-TR.md) | [Deutsch](CONTRIBUTING.de-DE.md) | [Русский](CONTRIBUTING.ru-RU.md) | [Español](CONTRIBUTING.es-ES.md) | [简体中文](CONTRIBUTING.zh-CN.md) | [日本語](CONTRIBUTING.ja-JP.md)
+
 Thanks for helping with Open Sales Analytics. Bug reports, ideas and pull requests are all welcome.
 
 ## Reporting a bug or asking for a feature

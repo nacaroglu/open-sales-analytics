@@ -1,5 +1,7 @@
 # Metric catalogue
 
+Languages: [English](metrics.md) | [Türkçe](metrics.tr-TR.md) | [Deutsch](metrics.de-DE.md) | [Русский](metrics.ru-RU.md) | [Español](metrics.es-ES.md) | [简体中文](metrics.zh-CN.md) | [日本語](metrics.ja-JP.md)
+
 This catalogue follows `backend/app/analytics/shared/metrics.py`. All ranges are inclusive. “Unavailable” means the
 module cannot answer for the file or comparison; “insufficient data” means the metric's threshold is not met; a
 “zero result” is a valid answer with no matching rows. The measure is always **gross sales**, never revenue.

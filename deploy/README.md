@@ -1,5 +1,7 @@
 # Deploy to AWS (CloudFormation)
 
+Languages: [English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
+
 `cloudformation.yaml` creates an ECR repository, an ECS Fargate service (one task) and a public Application Load
 Balancer. Datasets live on the task's ephemeral disk and are lost when the task restarts; that matches the app's
 best-effort, expiring datasets. Do not raise `DesiredCount` above 1: each dataset is a local DuckDB file.

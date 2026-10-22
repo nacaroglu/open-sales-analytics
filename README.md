@@ -1,5 +1,7 @@
 # open-sales-analytics
 
+Languages: [English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
+
 Open Sales Analytics is a small self-hosted web application. You upload a CSV of completed sales lines and it shows
 gross sales, orders, units, average order value, a sales trend and the top products, with a date range you can change.
 Gross sales is quantity times unit price, summed over the lines in the chosen period. It has no refunds, discounts,
