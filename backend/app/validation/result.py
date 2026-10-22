@@ -1,4 +1,7 @@
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
+from dataclasses import field as dataclass_field
+
+from app.localization import validation_reason_params
 
 MAX_REPORTED_ERRORS = 100
 
@@ -16,13 +19,24 @@ class Issue:
     reason: str
     row_number: int | None = None
     field: str | None = None
+    reason_params: dict[str, str | int | float | bool | None] = dataclass_field(
+        default_factory=dict
+    )
+
+    def __post_init__(self) -> None:
+        if not self.reason_params:
+            object.__setattr__(
+                self,
+                "reason_params",
+                validation_reason_params(self.code, self.reason, self.field),
+            )
 
 
 @dataclass
 class ValidationResult:
-    errors: list[Issue] = field(default_factory=list)
+    errors: list[Issue] = dataclass_field(default_factory=list)
     error_count: int = 0
-    warnings: list[Issue] = field(default_factory=list)
+    warnings: list[Issue] = dataclass_field(default_factory=list)
 
     def add_error(self, issue: Issue) -> None:
         """Count every error but keep only the first MAX_REPORTED_ERRORS."""

@@ -1,4 +1,4 @@
-import { formatCount } from "../lib/format";
+import { formatCount, formatPercent } from "../lib/format";
 
 export type CohortCell = { month_offset: number; state: string; retained_count: number | null; retention: number | string | null };
 export type CohortRow = { cohort_month: string; cohort_size: number; complete_months: number; cells?: CohortCell[] };
@@ -53,7 +53,7 @@ export default function CohortHeatmap({ rows }: { rows: CohortRow[] }) {
                   const retention = Number(cell.retention);
                   return (
                     <td key={cell.month_offset} className={`${TD} ${retentionShade(retention)}`}>
-                      {(retention * 100).toFixed(1)}% ({formatCount(Number(cell.retained_count))})
+                      {formatPercent(retention, 1)} ({formatCount(Number(cell.retained_count))})
                       {cell.state === "partial" && <span className="block text-xs">partial</span>}
                     </td>
                   );

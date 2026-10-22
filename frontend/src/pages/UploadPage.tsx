@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import ErrorBlock from "../components/ErrorBlock";
 import ValidationReport from "../components/ValidationReport";
+import AppHeader from "../components/AppHeader";
 import { describeError } from "../lib/errors";
 import { ApiError, createDatasetFromUpload, createSampleDataset } from "../lib/api";
 import { formatCount } from "../lib/format";
@@ -170,8 +171,7 @@ export default function UploadPage({
 
   return (
     <div className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-bold text-indigo-700">Open Sales Analytics</h1>
+      <AppHeader>
         {isDemo ? (
           <p className="text-base">
             This demo accepts sample data only. Click Try sample data to see gross
@@ -183,7 +183,7 @@ export default function UploadPage({
             top products.
           </p>
         )}
-      </header>
+      </AppHeader>
 
       <section
         aria-label="File format"
@@ -268,7 +268,7 @@ export default function UploadPage({
                 <label htmlFor="csv-file" aria-hidden className={FILE_BUTTON}>
                   Choose file
                 </label>
-                <span aria-hidden className="min-w-0 text-sm text-slate-600 wrap-anywhere">
+                <span data-i18n-ignore aria-hidden className="min-w-0 text-sm text-slate-600 wrap-anywhere">
                   {file?.name ?? "No file chosen"}
                 </span>
               </div>

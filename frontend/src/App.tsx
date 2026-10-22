@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-do
 import DashboardPage from "./pages/DashboardPage";
 import UploadPage from "./pages/UploadPage";
 import type { Created, Issue } from "./lib/types";
+import LocalizedUi from "./components/LocalizedUi";
+import { useTranslation } from "react-i18next";
 
 // Upload warnings live in memory only: not in sessionStorage and not in the
 // router state (both survive a reload), so a reload does not show them again.
@@ -35,6 +37,7 @@ function Dashboard({
 }
 
 export default function App() {
+  const { i18n } = useTranslation();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<Notice | null>(null);
 
@@ -44,9 +47,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div data-locale={i18n.resolvedLanguage} className="min-h-screen bg-slate-50 text-slate-900">
       <main className="mx-auto max-w-5xl px-8 py-8 space-y-8">
-        <Routes>
+        <LocalizedUi><Routes>
           <Route path="/" element={<UploadPage onCreated={onCreated} />} />
           <Route
             path="/d/:datasetId/*"
@@ -63,7 +66,7 @@ export default function App() {
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        </Routes></LocalizedUi>
       </main>
     </div>
   );

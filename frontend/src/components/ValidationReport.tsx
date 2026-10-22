@@ -1,9 +1,11 @@
 import type { Issue } from "../lib/types";
+import { localizedServerText } from "../lib/localizedCopy";
+import { formatCount } from "../lib/format";
 
 const TH = "px-3 py-2 text-sm font-semibold text-slate-700";
 const TD = "px-3 py-2 align-top text-sm wrap-anywhere";
 
-const count = (n: number) => n.toLocaleString("en-US");
+const count = formatCount;
 const plural = (n: number, word: string) => `${count(n)} ${word}${n === 1 ? "" : "s"}`;
 
 // The report for a rejected upload (422 validation_failed). All text from the
@@ -48,9 +50,9 @@ export default function ValidationReport({
               {errors.map((issue, index) => (
                 <tr key={index}>
                   <td className={TD}>{issue.row_number ?? "File"}</td>
-                  <td className={TD}>{issue.field ?? "—"}</td>
+                  <td data-i18n-data className={TD}>{issue.field ?? "—"}</td>
                   <td className={`${TD} font-mono`}>{issue.code}</td>
-                  <td className={TD}>{issue.reason}</td>
+                  <td className={TD}>{localizedServerText(issue.code, issue.reason_params, issue.reason)}</td>
                 </tr>
               ))}
             </tbody>
@@ -70,10 +72,10 @@ export default function ValidationReport({
               <li key={index} className="wrap-anywhere">
                 {issue.field !== null && (
                   <>
-                    <span className="font-mono">{issue.field}</span>:{" "}
+                    <span data-i18n-data className="font-mono">{issue.field}</span>:{" "}
                   </>
                 )}
-                {issue.reason}
+                {localizedServerText(issue.code, issue.reason_params, issue.reason)}
               </li>
             ))}
           </ul>

@@ -1,22 +1,21 @@
-// Number formatting shared by the KPI cards, the trend chart and the top
-// products table. The locale is fixed to en-US so the output does not depend on
-// the browser's settings.
+import i18n, { normalizeLocale } from "../i18n";
 
-const LOCALE = "en-US";
+function locale(): "en-US" | "tr-TR" {
+  return normalizeLocale(i18n.resolvedLanguage) === "tr" ? "tr-TR" : "en-US";
+}
 
 const moneyFormats = new Map<string, Intl.NumberFormat>();
 
 function moneyFormat(currency: string): Intl.NumberFormat {
-  let format = moneyFormats.get(currency);
+  const key = `${locale()}:${currency}`;
+  let format = moneyFormats.get(key);
   if (format === undefined) {
     // The currency's own minor units decide the decimals: two for USD, none for JPY.
-    format = new Intl.NumberFormat(LOCALE, { style: "currency", currency });
-    moneyFormats.set(currency, format);
+    format = new Intl.NumberFormat(locale(), { style: "currency", currency });
+    moneyFormats.set(key, format);
   }
   return format;
 }
-
-const wholeNumbers = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 });
 
 // The server sends money as a string with 4 decimals. The string goes to Intl
 // as is, so it is rounded from its exact decimal value, not from a float.
@@ -31,7 +30,7 @@ export function formatMoney(value: string, currency: string): string {
 }
 
 export function formatCount(value: number): string {
-  return wholeNumbers.format(value);
+  return new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(value);
 }
 
 export function formatShare(value: string): string {
@@ -40,18 +39,25 @@ export function formatShare(value: string): string {
   const scaled = BigInt(whole || "0") * 10000n + BigInt(digits);
   const rounded = (scaled + 50n) / 100n;
   const text = rounded.toString().padStart(3, "0");
-  return `${text.slice(0, -2)}.${text.slice(-2)}%`;
+  const decimal = locale() === "tr-TR" ? "," : ".";
+  return `${text.slice(0, -2)}${decimal}${text.slice(-2)}%`;
+}
+
+export function formatPercent(value: number, fractionDigits: number = 1): string {
+  return new Intl.NumberFormat(locale(), {
+    style: "percent",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
 }
 
 // Application-generated dates are English in every browser. The locale is fixed
 // and never taken from the browser, so a Turkish browser gets the same text. The
 // parts come from en-US and are put together day first here, because en-GB's own
 // month names differ between engines ("Sep" or "Sept").
-const DATE_LOCALE = "en-US";
-
 function parts(date: Date, options: Intl.DateTimeFormatOptions): Record<string, string> {
   const found: Record<string, string> = {};
-  for (const part of new Intl.DateTimeFormat(DATE_LOCALE, options).formatToParts(date)) {
+  for (const part of new Intl.DateTimeFormat(locale(), options).formatToParts(date)) {
     found[part.type] = part.value;
   }
   return found;
@@ -89,19 +95,15 @@ export function formatExpiry(utc: string, timeZone?: string): string {
   return `${p.day} ${p.month} ${p.year}, ${p.hour}:${p.minute} ${p.timeZoneName}`;
 }
 
-function plural(count: number, unit: string): string {
-  return `${count} ${unit}${count === 1 ? "" : "s"}`;
-}
-
-// "Expires in 23 hours": whole units, rounded down, in English. `now` is a
-// parameter so a test can fix it. An unreadable instant is returned as is.
+// Relative copy comes from the locale resource and uses i18next plural forms.
+// `now` is a parameter so a test can fix it. An unreadable instant is returned as is.
 export function formatRelativeExpiry(utc: string, now: Date): string {
   const expires = new Date(utc);
   if (Number.isNaN(expires.getTime())) return utc;
   const minutes = Math.floor((expires.getTime() - now.getTime()) / 60_000);
-  if (minutes < 1) return "Expires in less than a minute";
-  if (minutes < 60) return `Expires in ${plural(minutes, "minute")}`;
+  if (minutes < 1) return i18n.t("common.extra.expiresInLessMinute");
+  if (minutes < 60) return i18n.t("common.extra.expiresMinute", { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Expires in ${plural(hours, "hour")}`;
-  return `Expires in ${plural(Math.floor(hours / 24), "day")}`;
+  if (hours < 24) return i18n.t("common.extra.expiresHour", { count: hours });
+  return i18n.t("common.extra.expiresDay", { count: Math.floor(hours / 24) });
 }

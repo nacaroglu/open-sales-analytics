@@ -80,6 +80,8 @@ def test_overview_has_compared_kpis_and_same_granularity_comparison_trend(client
         "comparison": {"start": "2025-01-01", "end": "2025-01-07"},
         "state": "available",
         "reason": None,
+        "reason_code": None,
+        "reason_params": {},
     }
     assert body["kpis"] == {
         "gross_sales": {
@@ -171,7 +173,12 @@ def test_products_response_contains_three_top_ten_rankings(client):
 
     assert response.status_code == 200
     rankings = response.json()["rankings"]
-    assert rankings["availability"] == {"state": "available", "reason": None}
+    assert rankings["availability"] == {
+        "state": "available",
+        "reason": None,
+        "reason_code": None,
+        "reason_params": {},
+    }
     assert [row["product_id"] for row in rankings["by_gross_sales"]] == ["p/one", "p-two"]
     assert [row["product_id"] for row in rankings["by_units_sold"]] == ["p-two", "p/one"]
     assert [row["product_id"] for row in rankings["by_orders"]] == ["p-two", "p/one"]
@@ -238,6 +245,7 @@ def test_products_rejects_invalid_dormancy_days(client, value):
         "error": {
             "code": "invalid_request",
             "message": "dormancy_days must be 30, 60 or 90.",
+            "message_params": {},
         }
     }
 
@@ -258,13 +266,20 @@ def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
     assert detail.json()["price_history"]["availability"] == {
         "state": "available",
         "reason": None,
+        "reason_code": None,
+        "reason_params": {},
     }
     assert detail.json()["price_history"]["buckets"][0]["weighted_unit_price"] == "20.0000"
     assert detail.json()["penetration"] == {
         "orders_containing_product": 1,
         "all_orders": 3,
         "order_penetration": "0.333333",
-        "availability": {"state": "available", "reason": None},
+        "availability": {
+            "state": "available",
+            "reason": None,
+            "reason_code": None,
+            "reason_params": {},
+        },
     }
     assert detail.json()["related_products"]["availability"]["state"] == "zero_result"
 
@@ -275,6 +290,7 @@ def test_detail_comparison_and_malicious_unknown_id_are_safe(client, capsys):
         "error": {
             "code": "product_not_found",
             "message": "The product was not found in this dataset.",
+            "message_params": {},
         }
     }
     assert malicious not in capsys.readouterr().err
@@ -310,6 +326,7 @@ def test_unknown_comparison_is_not_echoed(client, path):
         "error": {
             "code": "invalid_request",
             "message": "comparison must be previous_period or previous_year.",
+            "message_params": {},
         }
     }
     assert "secret-mode" not in response.text

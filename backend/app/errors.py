@@ -7,12 +7,21 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
-def error_body(code: str, message: str, **details: Any) -> dict:
+def error_body(
+    code: str, message: str, message_params: dict[str, Any] | None = None, **details: Any
+) -> dict:
     """The one error body every endpoint returns: ``{"error": {"code", "message", ...}}``.
 
     ``details`` are extra keys placed inside ``error`` (for example ``errors``).
     """
-    return {"error": {"code": code, "message": message, **details}}
+    return {
+        "error": {
+            "code": code,
+            "message": message,
+            "message_params": message_params or {},
+            **details,
+        }
+    }
 
 
 class ApiError(Exception):
@@ -25,6 +34,7 @@ class ApiError(Exception):
         message: str,
         headers: dict[str, str] | None = None,
         details: dict[str, Any] | None = None,
+        message_params: dict[str, str | int | float | bool | None] | None = None,
     ) -> None:
         super().__init__(message)
         self.status = status
@@ -32,6 +42,7 @@ class ApiError(Exception):
         self.message = message
         self.headers = headers
         self.details = details or {}
+        self.message_params = message_params or {}
 
 
 _STATUS_CODES = {404: "not_found", 405: "method_not_allowed"}
@@ -42,7 +53,11 @@ def _respond(status: int, body: dict, headers: Mapping[str, str] | None = None) 
 
 
 async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
-    return _respond(exc.status, error_body(exc.code, exc.message, **exc.details), exc.headers)
+    return _respond(
+        exc.status,
+        error_body(exc.code, exc.message, exc.message_params, **exc.details),
+        exc.headers,
+    )
 
 
 async def _request_invalid(_: Request, __: RequestValidationError) -> JSONResponse:

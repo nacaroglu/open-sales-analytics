@@ -2,6 +2,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { formatCount, formatMoney } from "../lib/format";
 import { formatMoneyShort } from "./TrendChart";
 import type { Summary } from "../lib/types";
+import { translateOwnedText } from "./LocalizedUi";
 
 // Colours from _docs/design-system.md (Charts): one colour for every bar.
 const BAR = "#432dd7"; // indigo-700
@@ -78,7 +79,7 @@ export default function TopProducts({
     <div className={CARD}>
       <h2 className="text-xl font-semibold text-slate-900">Top products</h2>
       <p className="text-sm text-slate-600">{sentence}</p>
-      <div role="img" aria-label={sentence} className="h-72 w-full">
+      <div data-i18n-data role="img" aria-label={translateOwnedText(sentence)} className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID} horizontal={false} />
@@ -131,7 +132,7 @@ export default function TopProducts({
           <tbody className="divide-y divide-slate-200">
             {topProducts.map((product) => (
               <tr key={product.product_id}>
-                <td className={`${TD} text-slate-900`}>{product.product_name}</td>
+                <td data-i18n-ignore className={`${TD} text-slate-900`}>{product.product_name}</td>
                 <td className={`${TD} text-right tabular-nums`}>{formatMoney(product.gross_sales, currency)}</td>
                 <td className={`${TD} text-right tabular-nums`}>{formatCount(product.units_sold)}</td>
                 <td className={`${TD} text-right tabular-nums`}>{formatCount(product.distinct_orders)}</td>

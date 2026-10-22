@@ -13,6 +13,7 @@ from app.analytics.shared.periods import (
     resolve_reporting_range,
 )
 from app.errors import ApiError
+from app.localization import localized_reason
 from app.response_cache import CacheKey, ResponseCache
 
 
@@ -196,6 +197,29 @@ def cached_json(
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
-    response = JSONResponse(compute(), headers={"Cache-Control": "no-store"})
+    response = JSONResponse(
+        _add_localization_metadata(compute()), headers={"Cache-Control": "no-store"}
+    )
     cache.put(key, bytes(response.body), now, dataset_expires_at)
     return response
+
+
+_AVAILABILITY_STATES = {
+    "available",
+    "unavailable",
+    "insufficient_data",
+    "low_coverage",
+    "zero_result",
+}
+
+
+def _add_localization_metadata(value):
+    """Add the localization contract recursively before the cached bytes are made."""
+    if isinstance(value, list):
+        return [_add_localization_metadata(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    enriched = {key: _add_localization_metadata(item) for key, item in value.items()}
+    if enriched.get("state") in _AVAILABILITY_STATES and "reason" in enriched:
+        enriched.update(localized_reason(enriched["reason"]))
+    return enriched

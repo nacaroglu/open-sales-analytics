@@ -6,6 +6,7 @@ import pytest
 from app.analytics.shared.metrics import METRICS, RFM_NOTE
 from app.auth import get_now
 from app.config import Settings, get_settings
+from app.localization import localized_reason
 from app.main import app
 from app.response_cache import ResponseCache, get_response_cache
 from fastapi.testclient import TestClient
@@ -13,6 +14,11 @@ from fastapi.testclient import TestClient
 REQUIRED = "order_id,order_date,product_id,product_name,quantity,unit_price"
 CUSTOMER_HEADER = REQUIRED + ",customer_id"
 NOW = datetime(2025, 1, 20, tzinfo=UTC)
+AVAILABLE = {"state": "available", "reason": None, "reason_code": None, "reason_params": {}}
+
+
+def availability(state, reason):
+    return {"state": state, "reason": reason, **localized_reason(reason)}
 
 
 @pytest.fixture
@@ -93,9 +99,13 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "tier": "warning",
         "state": "available",
         "reason": None,
+        "reason_code": None,
+        "reason_params": {},
         "warning": {
             "state": "low_coverage",
             "reason": "Only 6 of 8 orders (75%) have a customer_id; customer results describe those orders only.",
+            "reason_code": "customers.low_coverage",
+            "reason_params": {"identified_orders": 6, "total_orders": 8, "coverage_percent": 75},
         },
     }
     assert body["coverage"] == {
@@ -115,7 +125,7 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         },
     }
     assert body["sections"]["identified_customers"] == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "value": {
             "value": 1,
             "comparison_value": None,
@@ -131,16 +141,16 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "change_status": None,
     }
     assert body["sections"]["new_vs_returning"] == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "new_customer_gross_sales": {"value": "3.0000", **unavailable_comparison},
         "returning_customer_gross_sales": {"value": "0.0000", **unavailable_comparison},
         "identified_gross_sales": {"value": "3.0000", **unavailable_comparison},
     }
     assert body["sections"]["repeat_purchase"] == {
-        "availability": {
-            "state": "zero_result",
-            "reason": "No active identified customer had two or more orders by the end of the range.",
-        },
+        "availability": availability(
+            "zero_result",
+            "No active identified customer had two or more orders by the end of the range.",
+        ),
         "active_customers": {"value": 1, **unavailable_comparison},
         "repeat_customers": {"value": 0, **unavailable_comparison},
         "repeat_purchase_rate": {"value": 0, **unavailable_comparison},
@@ -148,7 +158,7 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
     assert body["sections"]["days_between_purchases"]["interval_count"] == 0
     with_interval = get_customers(client, dataset, start="2025-01-02", end="2025-01-04")
     days = with_interval.json()["sections"]["days_between_purchases"]
-    assert days["availability"] == {"state": "available", "reason": None}
+    assert days["availability"] == AVAILABLE
     assert (days["median_days"], days["interval_count"], days["contributing_customers"]) == (
         2,
         1,
@@ -162,7 +172,7 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "share": 1,
     }
     cohorts = body["sections"]["cohort_retention"]
-    assert cohorts["availability"] == {"state": "available", "reason": None}
+    assert cohorts["availability"] == AVAILABLE
     assert cohorts["data_cutoff"] == "2025-01-03"
     assert [(row["cohort_month"], row["cohort_size"]) for row in cohorts["rows"]] == [
         ("2025-01", 2)
@@ -171,7 +181,7 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         {"month_offset": 0, "state": "partial", "retained_count": 2, "retention": 1}
     ]
     value = body["sections"]["historical_customer_value"]
-    assert value["availability"] == {"state": "available", "reason": None}
+    assert value["availability"] == AVAILABLE
     assert (value["customer_count"], value["average"], value["median"]) == (
         2,
         "2.5000",
@@ -183,18 +193,19 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
     assert body["sections"]["rfm"]["availability"]["state"] == "insufficient_data"
     with_rfm = get_customers(client, dataset, start="2025-01-01", end="2025-01-06")
     rfm = with_rfm.json()["sections"]["rfm"]
-    assert rfm["availability"] == {"state": "available", "reason": None}
+    assert rfm["availability"] == AVAILABLE
     assert rfm["customer_count"] == 5
     assert set(rfm) == {"availability", "customer_count", "recency_anchor", "note", "segments"}
     for segment in rfm["segments"]:
-        assert set(segment) == {"segment", "customer_count", "share"}
+        assert set(segment) == {"segment", "segment_code", "customer_count", "share"}
     drilldown = with_rfm.json()["sections"]["rfm_drilldown"]
-    assert drilldown["availability"] == {"state": "available", "reason": None}
+    assert drilldown["availability"] == AVAILABLE
     assert (drilldown["customer_count"], drilldown["gross_sales"]) == (5, "31.0000")
     assert len(drilldown["segments"]) == 6
     for segment in drilldown["segments"]:
         assert set(segment) == {
             "segment",
+            "segment_code",
             "customer_count",
             "gross_sales",
             "gross_sales_share",
@@ -256,7 +267,7 @@ def test_new_vs_returning_comparison_classifies_by_first_order_date(client):
 
     assert body["comparison"]["comparison"] == {"start": "2026-01-22", "end": "2026-02-05"}
     assert body["sections"]["new_vs_returning"] == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "new_customer_gross_sales": {
             "value": "0.0000",
             "comparison_value": "20.0000",
@@ -341,10 +352,9 @@ def test_new_vs_returning_zero_result(client):
     body = get_customers(client, dataset, start="2025-01-11", end="2025-01-31").json()
     section = body["sections"]["new_vs_returning"]
 
-    assert section["availability"] == {
-        "state": "zero_result",
-        "reason": "No identified customer rows were found in the selected range.",
-    }
+    assert section["availability"] == availability(
+        "zero_result", "No identified customer rows were found in the selected range."
+    )
     for key in (
         "new_customer_gross_sales",
         "returning_customer_gross_sales",
@@ -374,7 +384,7 @@ def test_repeat_purchase_previous_period_compares_exact_fractions(client):
     assert body["comparison"]["comparison"] == {"start": "2026-01-24", "end": "2026-02-10"}
     assert body["sections"]["identified_customers"]["value"]["value"] == 2
     assert body["sections"]["repeat_purchase"] == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "active_customers": {
             "value": 2,
             "comparison_value": 3,
@@ -424,7 +434,7 @@ def test_repeat_purchase_unavailable_comparison_is_not_queried(client, monkeypat
     }
     assert body["sections"]["identified_customers"]["value"]["value"] == 4
     assert body["sections"]["repeat_purchase"] == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "active_customers": {"value": 4, **unavailable},
         "repeat_customers": {"value": 2, **unavailable},
         "repeat_purchase_rate": {"value": 0.5, **unavailable},
@@ -493,7 +503,7 @@ def test_repeat_purchase_zero_comparison_population_keeps_count_changes(client):
     section = body["sections"]["repeat_purchase"]
 
     assert body["comparison"]["comparison"] == {"start": "2025-01-02", "end": "2025-01-02"}
-    assert section["availability"] == {"state": "available", "reason": None}
+    assert section["availability"] == AVAILABLE
     assert section["active_customers"] == {
         "value": 1,
         "comparison_value": 0,
@@ -567,7 +577,7 @@ def test_days_between_purchases_has_median_and_all_nine_buckets(client):
         "days_between_purchases"
     ]
 
-    assert days["availability"] == {"state": "available", "reason": None}
+    assert days["availability"] == AVAILABLE
     assert days["median_days"] == 20.5
     assert days["interval_count"] == 4
     assert days["contributing_customers"] == 2
@@ -726,7 +736,7 @@ def test_cohort_retention_golden_rows_have_states_and_null_unobserved_cells(clie
     ]["cohort_retention"]
 
     assert cohorts == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "data_cutoff": "2026-03-15",
         "rows": GOLDEN_COHORTS,
     }
@@ -826,7 +836,7 @@ def value_cell(offset, state, value):
 
 
 GOLDEN_VALUE = {
-    "availability": {"state": "available", "reason": None},
+    "availability": AVAILABLE,
     "data_cutoff": "2026-03-31",
     "customer_count": 3,
     "average": "80.0000",
@@ -957,12 +967,32 @@ RFM_ROWS = [
 ]
 
 GOLDEN_RFM_SEGMENTS = [
-    {"segment": "Champions", "customer_count": 2, "share": 0.4},
-    {"segment": "Loyal", "customer_count": 1, "share": 0.2},
-    {"segment": "Potential Loyalists", "customer_count": 0, "share": 0},
-    {"segment": "Needs Attention", "customer_count": 0, "share": 0},
-    {"segment": "At Risk", "customer_count": 0, "share": 0},
-    {"segment": "Lost", "customer_count": 2, "share": 0.4},
+    {
+        "segment": "Champions",
+        "segment_code": "customers.rfm.champions",
+        "customer_count": 2,
+        "share": 0.4,
+    },
+    {"segment": "Loyal", "segment_code": "customers.rfm.loyal", "customer_count": 1, "share": 0.2},
+    {
+        "segment": "Potential Loyalists",
+        "segment_code": "customers.rfm.potential_loyalists",
+        "customer_count": 0,
+        "share": 0,
+    },
+    {
+        "segment": "Needs Attention",
+        "segment_code": "customers.rfm.needs_attention",
+        "customer_count": 0,
+        "share": 0,
+    },
+    {
+        "segment": "At Risk",
+        "segment_code": "customers.rfm.at_risk",
+        "customer_count": 0,
+        "share": 0,
+    },
+    {"segment": "Lost", "segment_code": "customers.rfm.lost", "customer_count": 2, "share": 0.4},
 ]
 
 
@@ -973,7 +1003,7 @@ def test_rfm_golden_section_uses_all_activity_through_the_range_end(client):
     ]
 
     assert rfm == {
-        "availability": {"state": "available", "reason": None},
+        "availability": AVAILABLE,
         "customer_count": 5,
         "recency_anchor": "2026-03-31",
         "note": RFM_NOTE,
@@ -1036,10 +1066,9 @@ def test_rfm_with_four_customers_is_insufficient_data(client):
         "rfm"
     ]
 
-    assert rfm["availability"] == {
-        "state": "insufficient_data",
-        "reason": "RFM needs at least 5 identified customers.",
-    }
+    assert rfm["availability"] == availability(
+        "insufficient_data", "RFM needs at least 5 identified customers."
+    )
     assert (rfm["customer_count"], rfm["segments"]) == (4, [])
     assert rfm["note"]
 
@@ -1055,7 +1084,7 @@ def test_rfm_drilldown_golden_section_through_the_endpoint(client):
         "purchase_frequency",
         "concentration",
     ]
-    assert drilldown["availability"] == {"state": "available", "reason": None}
+    assert drilldown["availability"] == AVAILABLE
     assert (drilldown["customer_count"], drilldown["recency_anchor"]) == (5, "2026-03-31")
     assert drilldown["customer_count"] == body["sections"]["rfm"]["customer_count"]
     assert drilldown["gross_sales"] == "1170.0000"
@@ -1110,10 +1139,9 @@ def test_rfm_drilldown_with_four_customers_is_insufficient_data(client):
     ]["rfm_drilldown"]
 
     assert drilldown == {
-        "availability": {
-            "state": "insufficient_data",
-            "reason": "RFM needs at least 5 identified customers.",
-        },
+        "availability": availability(
+            "insufficient_data", "RFM needs at least 5 identified customers."
+        ),
         "customer_count": 4,
         "recency_anchor": "2026-03-31",
         "gross_sales": "1150.0000",
@@ -1181,6 +1209,8 @@ def test_customers_default_and_comparison_are_shared_with_other_modules(client):
         "comparison": {"start": "2023-01-01", "end": "2024-01-01"},
         "state": "unavailable",
         "reason": "The comparison needs data from 2023-01-01, but the dataset starts on 2024-01-01.",
+        "reason_code": "comparison.outside_dataset",
+        "reason_params": {"comparison_start": "2023-01-01", "dataset_start": "2024-01-01"},
     }
 
 
@@ -1235,7 +1265,7 @@ def test_customer_availability_tiers_are_200_states(client, header, rows, tier, 
             2 if tier == "warning" else 3
         )
         section = body["sections"]["new_vs_returning"]
-        assert section["availability"] == {"state": "available", "reason": None}
+        assert section["availability"] == AVAILABLE
         identified_sales = "4.0000" if tier == "warning" else "6.0000"
         assert section["new_customer_gross_sales"]["value"] == identified_sales
         assert section["returning_customer_gross_sales"]["value"] == "0.0000"
@@ -1386,7 +1416,12 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
         "note",
         "segments",
     }
-    assert set(components["RfmSegment"]["properties"]) == {"segment", "customer_count", "share"}
+    assert set(components["RfmSegment"]["properties"]) == {
+        "segment",
+        "segment_code",
+        "customer_count",
+        "share",
+    }
     for name in ("RfmSection", "RfmSegment"):
         assert all(
             prop.get("description")
@@ -1417,6 +1452,7 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
     }
     assert set(components["RfmDrilldownSegment"]["properties"]) == {
         "segment",
+        "segment_code",
         "customer_count",
         "gross_sales",
         "gross_sales_share",

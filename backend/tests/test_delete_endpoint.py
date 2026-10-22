@@ -87,7 +87,11 @@ def test_second_delete_is_404_not_500(client, dataset):
     response = remove(client, dataset_id, token)
     assert response.status_code == 404
     assert response.json() == {
-        "error": {"code": "not_found", "message": "The dataset was not found."}
+        "error": {
+            "code": "not_found",
+            "message": "The dataset was not found.",
+            "message_params": {},
+        }
     }
 
 

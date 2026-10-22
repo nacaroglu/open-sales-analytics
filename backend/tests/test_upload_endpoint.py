@@ -139,7 +139,7 @@ def test_warnings_from_structure_and_rows_are_both_returned(client):
         ("extra_column", "memo"),
         ("zero_price", "unit_price"),
     ]
-    assert set(body["warnings"][0]) == {"code", "reason", "row_number", "field"}
+    assert set(body["warnings"][0]) == {"code", "reason", "row_number", "field", "reason_params"}
 
 
 def test_dataset_file_and_folders_are_private(client, data_dir):
@@ -169,7 +169,7 @@ def test_row_errors_return_the_422_envelope(client, data_dir):
 
     assert response.status_code == 422
     error = error_of(response)
-    assert set(error) == {"code", "message", "errors", "error_count", "warnings"}
+    assert set(error) == {"code", "message", "message_params", "errors", "error_count", "warnings"}
     assert error["code"] == "validation_failed"
     assert error["error_count"] == 2
     assert [(e["code"], e["row_number"], e["field"]) for e in error["errors"]] == [
@@ -506,6 +506,7 @@ def test_unexpected_failure_is_500_and_leaves_nothing(client, data_dir, monkeypa
     assert error_of(response) == {
         "code": "internal_error",
         "message": "Something went wrong on the server.",
+        "message_params": {},
     }
     assert "secret" not in response.text and str(data_dir) not in response.text
     assert "Traceback" not in response.text
@@ -523,6 +524,7 @@ def test_fact_build_failure_is_500_and_leaves_no_dataset(client, data_dir, monke
     assert error_of(response) == {
         "code": "internal_error",
         "message": "Something went wrong on the server.",
+        "message_params": {},
     }
     assert_clean(data_dir)
 

@@ -1,10 +1,11 @@
-import { formatCount, formatMoney, formatMonthYear } from "../lib/format";
+import { formatCount, formatMoney, formatMonthYear, formatPercent } from "../lib/format";
 import type {
   Projected12MonthCustomerValue,
   ProjectedCustomerValueCohort,
   ProjectionEligibilityCondition,
 } from "../lib/types";
 import ErrorBlock from "./ErrorBlock";
+import { localizedProjectionCondition } from "../lib/localizedCopy";
 
 const PRIMARY =
   "inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:cursor-not-allowed disabled:border disabled:border-dashed disabled:border-slate-400 disabled:bg-slate-200 disabled:text-slate-600 bg-indigo-700 text-white enabled:hover:bg-indigo-800";
@@ -22,7 +23,7 @@ function ConditionActual({ condition }: { condition: ProjectionEligibilityCondit
   if (condition.actual === null) return <>not available</>;
   if (condition.code === "customer_coverage") {
     const coverage = Number(condition.actual);
-    return Number.isFinite(coverage) ? `${(coverage * 100).toFixed(2)}%` : String(condition.actual);
+    return Number.isFinite(coverage) ? formatPercent(coverage, 2) : String(condition.actual);
   }
   return <>{typeof condition.actual === "number" ? formatCount(condition.actual) : condition.actual}</>;
 }
@@ -33,7 +34,7 @@ function Conditions({ conditions }: { conditions: ProjectionEligibilityCondition
     <ul className="space-y-2">
       {ordered.map((condition) => (
         <li key={condition.code} className="flex flex-wrap items-start justify-between gap-3 text-sm">
-          <span className="font-medium">{condition.label}</span>
+          <span className="font-medium">{localizedProjectionCondition(condition.code, condition.label)}</span>
           <span className={condition.passed ? "text-emerald-900" : "text-red-900"}>
             <span aria-hidden>{condition.passed ? "✓" : "✕"}</span>{" "}
             <strong>{condition.passed ? "Met" : "Not met"}</strong> · this dataset: <ConditionActual condition={condition} />

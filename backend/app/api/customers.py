@@ -376,6 +376,7 @@ def _rfm_body(connection, periods) -> dict:
         segments = [
             {
                 "segment": segment.name,
+                "segment_code": f"customers.rfm.{segment.name.lower().replace(' ', '_')}",
                 "customer_count": result["segment_counts"][segment.name],
                 "share": ratio(Decimal(result["segment_counts"][segment.name]) / Decimal(count)),
             }
@@ -410,6 +411,7 @@ def _rfm_drilldown_body(connection, periods) -> dict:
         segments = [
             {
                 "segment": segment["segment"],
+                "segment_code": f"customers.rfm.{segment['segment'].lower().replace(' ', '_')}",
                 "customer_count": segment["customer_count"],
                 "gross_sales": _rounded_money(segment["gross_sales"]),
                 "gross_sales_share": ratio(segment["gross_sales"] / total) if total else None,

@@ -1,5 +1,5 @@
 import { tokenFor } from "./session";
-import type { Created, CustomerResponse, Health, Issue, Meta, Overview, ProductDetail, ProductsResponse, PublicConfig, Summary } from "./types";
+import type { Created, CustomerResponse, Health, Issue, LocalizationParams, Meta, Overview, ProductDetail, ProductsResponse, PublicConfig, Summary } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -7,17 +7,19 @@ export class ApiError extends Error {
   errors?: Issue[];
   errorCount?: number;
   warnings?: Issue[];
+  messageParams: LocalizationParams;
 
   constructor(
     status: number,
     code: string,
     message: string,
-    extra: { errors?: Issue[]; errorCount?: number; warnings?: Issue[] } = {},
+    extra: { errors?: Issue[]; errorCount?: number; warnings?: Issue[]; messageParams?: LocalizationParams } = {},
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.messageParams = extra.messageParams ?? {};
     Object.assign(this, extra);
   }
 }
@@ -43,7 +45,7 @@ function errorFrom(status: number, body: unknown): ApiError {
       ? (body as { error?: unknown }).error
       : undefined;
   if (typeof error !== "object" || error === null) return unknownError(status);
-  const { code, message } = error as { code?: unknown; message?: unknown };
+  const { code, message, message_params } = error as { code?: unknown; message?: unknown; message_params?: unknown };
   if (typeof code !== "string" || typeof message !== "string") {
     return unknownError(status);
   }
@@ -57,9 +59,12 @@ function errorFrom(status: number, body: unknown): ApiError {
       errors: detail.errors,
       errorCount: detail.error_count,
       warnings: detail.warnings,
+      messageParams: typeof message_params === "object" && message_params !== null ? message_params as LocalizationParams : {},
     });
   }
-  return new ApiError(status, code, message);
+  return new ApiError(status, code, message, {
+    messageParams: typeof message_params === "object" && message_params !== null ? message_params as LocalizationParams : {},
+  });
 }
 
 async function send(

@@ -218,7 +218,11 @@ def test_swallowed_failure_is_logged_with_class_and_frames_only(client, log, mon
     response = upload(client, good_csv())
     assert response.status_code == 500
     assert response.json() == {
-        "error": {"code": "internal_error", "message": "Something went wrong on the server."}
+        "error": {
+            "code": "internal_error",
+            "message": "Something went wrong on the server.",
+            "message_params": {},
+        }
     }
     lines = log.lines
     assert "MARKER_ROW_VALUE" not in log.text
@@ -254,7 +258,11 @@ def test_unhandled_exception_writes_request_line_and_one_error_line(client, log)
         app.router.routes.pop()
     assert response.status_code == 500
     assert response.json() == {
-        "error": {"code": "internal_error", "message": "Something went wrong on the server."}
+        "error": {
+            "code": "internal_error",
+            "message": "Something went wrong on the server.",
+            "message_params": {},
+        }
     }
     text = log.read()
     assert "MARKER" not in text and "Traceback" not in text

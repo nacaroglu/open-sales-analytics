@@ -159,7 +159,8 @@ def assert_unavailable(response, data_dir, hidden):
     assert response.status_code == 500
     body = response.json()
     assert list(body) == ["error"]
-    assert set(body["error"]) == {"code", "message"}
+    assert set(body["error"]) == {"code", "message", "message_params"}
+    assert body["error"]["message_params"] == {}
     assert body["error"]["code"] == "sample_unavailable"
     for text in [str(data_dir), str(SAMPLE), "Traceback", *hidden]:
         assert text not in response.text

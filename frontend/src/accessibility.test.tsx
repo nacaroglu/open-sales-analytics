@@ -138,7 +138,7 @@ test("upload screen: keyboard order is sample link, file, currency, then Upload 
   await screen.findByLabelText("CSV file");
 
   // Upload is disabled, so Tab skips it
-  expect(tabStops()).toEqual(["Download sample CSV", "CSV file", "Currency", "Try sample data"]);
+  expect(tabStops()).toEqual(["LanguageEnglishTürkçe", "Download sample CSV", "CSV file", "Currency", "Try sample data"]);
   focusEach();
 
   fireEvent.change(screen.getByLabelText("CSV file"), {
@@ -146,7 +146,7 @@ test("upload screen: keyboard order is sample link, file, currency, then Upload 
   });
   fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "USD" } });
 
-  expect(tabStops()).toEqual(["Download sample CSV", "CSV file", "Currency", "Upload", "Try sample data"]);
+  expect(tabStops()).toEqual(["LanguageEnglishTürkçe", "Download sample CSV", "CSV file", "Currency", "Upload", "Try sample data"]);
   focusEach();
 });
 
@@ -162,7 +162,7 @@ test("demo upload screen: no form controls, one h1, link and Try sample data are
   for (const section of ["File format", "Start an analysis"]) {
     expect(screen.getByRole("region", { name: section })).toBeInTheDocument();
   }
-  expect(tabStops()).toEqual(["Download sample CSV", "Try sample data", "Run it yourself with Docker"]);
+  expect(tabStops()).toEqual(["LanguageEnglishTürkçe", "Download sample CSV", "Try sample data", "Run it yourself with Docker"]);
   expect(document.querySelector("[tabindex]:not([tabindex='-1'])")).toBeNull();
   focusEach();
 });
@@ -211,8 +211,8 @@ test("dashboard: keyboard order is Analyze another file, the dates, then Reset o
 
   // Success notice first (its Dismiss), then the page controls; Reset is disabled at the full range
   const stops = tabStops();
-  expect(stops.slice(0, 2)).toEqual(["Dismiss", "Analyze another file"]);
-  expect(stops.slice(2, 4)).toEqual(["Start date", "End date"]);
+  expect(stops.slice(0, 3)).toEqual(["LanguageEnglishTürkçe", "Dismiss", "Analyze another file"]);
+  expect(stops.slice(3, 5)).toEqual(["Start date", "End date"]);
   expect(stops).not.toContain("Reset");
 
   const start = screen.getByLabelText("Start date");
@@ -221,7 +221,7 @@ test("dashboard: keyboard order is Analyze another file, the dates, then Reset o
   fireEvent.change(start, { target: { value: "2025-01-15" } });
 
   expect(await screen.findByText("$250.00")).toBeInTheDocument();
-  expect(tabStops().slice(2, 5)).toEqual(["Start date", "End date", "Reset"]);
+  expect(tabStops().slice(3, 6)).toEqual(["Start date", "End date", "Reset"]);
   focusEach();
 
   const reset = screen.getByRole("button", { name: "Reset" });
@@ -285,5 +285,5 @@ test("full-page states keep the h1 and give one focusable way out", async () => 
   const way = screen.getByRole("link");
   way.focus();
   expect(way).toHaveFocus();
-  expect(tabStops()).toHaveLength(1);
+  expect(tabStops()).toHaveLength(2);
 });

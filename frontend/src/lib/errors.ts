@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import { localizedServerText } from "./localizedCopy";
 
 // The one place that turns a thrown value into what the user is told. Pages
 // and components never look at a status code or a server `code` themselves.
@@ -46,12 +47,16 @@ export function errorKind(error: unknown): ErrorKind {
 }
 
 function serverText(error: unknown, fallback: string): string {
-  return error instanceof ApiError && error.message.trim() !== "" ? error.message : fallback;
+  return error instanceof ApiError && error.message.trim() !== ""
+    ? localizedServerText(`errors.${error.code}`, error.messageParams, error.message)
+    : fallback;
 }
 
 export function describeError(error: unknown, context: ErrorContext = "load"): Described {
   const kind = errorKind(error);
-  if (kind === "capacity_reached") return { kind, message: CAPACITY_REACHED };
+  if (kind === "capacity_reached") {
+    return { kind, message: localizedServerText("errors.capacity_reached", {}, CAPACITY_REACHED) };
+  }
   if (context === "sample") return { kind, message: SAMPLE_FAILED };
   if (kind === "expired") return { kind, message: EXPIRED_TITLE };
   if (kind === "unauthorized") return { kind, message: UNAUTHORIZED_TITLE };
