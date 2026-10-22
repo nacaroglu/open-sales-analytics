@@ -30,9 +30,13 @@ def test_validation_issues_and_error_envelopes_keep_english_and_add_params():
     issue = asdict(Issue(code="empty_file", reason="The file is empty."))
     assert issue["reason_params"] == {}
     assert issue["reason"] == "The file is empty."
-    missing = asdict(Issue(code="missing_value", reason="A value is required for order_id.", field="order_id"))
+    missing = asdict(
+        Issue(code="missing_value", reason="A value is required for order_id.", field="order_id")
+    )
     assert missing["reason_params"] == {"field": "order_id"}
-    oversized = asdict(Issue(code="file_too_large", reason="The file is larger than the 50 MB limit."))
+    oversized = asdict(
+        Issue(code="file_too_large", reason="The file is larger than the 50 MB limit.")
+    )
     assert oversized["reason_params"] == {"limit": "50 MB"}
     assert error_body("invalid_request", "The request is not valid.") == {
         "error": {

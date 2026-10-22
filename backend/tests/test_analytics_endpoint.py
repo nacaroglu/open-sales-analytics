@@ -257,7 +257,11 @@ def test_summary_failure_after_upload_is_500_and_removes_the_dataset(client, dat
 
     assert response.status_code == 500
     assert response.json() == {
-        "error": {"code": "internal_error", "message": "Something went wrong on the server.", "message_params": {}}
+        "error": {
+            "code": "internal_error",
+            "message": "Something went wrong on the server.",
+            "message_params": {},
+        }
     }
     assert "secret" not in response.text
     assert not list(data_dir.glob("*.duckdb*"))

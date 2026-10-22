@@ -7,7 +7,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
-def error_body(code: str, message: str, message_params: dict[str, Any] | None = None, **details: Any) -> dict:
+def error_body(
+    code: str, message: str, message_params: dict[str, Any] | None = None, **details: Any
+) -> dict:
     """The one error body every endpoint returns: ``{"error": {"code", "message", ...}}``.
 
     ``details`` are extra keys placed inside ``error`` (for example ``errors``).

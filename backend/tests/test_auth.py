@@ -15,7 +15,9 @@ HEADER = "order_id,order_date,product_id,product_name,quantity,unit_price"
 CREATED = datetime(2025, 6, 1, 12, 30, tzinfo=UTC)
 TTL = timedelta(hours=24)
 EXPIRES = CREATED + TTL
-NOT_FOUND = {"error": {"code": "not_found", "message": "The dataset was not found.", "message_params": {}}}
+NOT_FOUND = {
+    "error": {"code": "not_found", "message": "The dataset was not found.", "message_params": {}}
+}
 
 
 @pytest.fixture
@@ -62,7 +64,11 @@ def get(client, dataset_id, authorization=None, **kwargs):
 def assert_unauthorized(response):
     assert response.status_code == 401
     assert response.json() == {
-        "error": {"code": "unauthorized", "message": "A valid bearer token is required.", "message_params": {}}
+        "error": {
+            "code": "unauthorized",
+            "message": "A valid bearer token is required.",
+            "message_params": {},
+        }
     }
     assert response.headers["WWW-Authenticate"] == "Bearer"
 

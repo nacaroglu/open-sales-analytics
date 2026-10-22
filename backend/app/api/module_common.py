@@ -197,13 +197,19 @@ def cached_json(
             media_type="application/json",
             headers={"Cache-Control": "no-store"},
         )
-    response = JSONResponse(_add_localization_metadata(compute()), headers={"Cache-Control": "no-store"})
+    response = JSONResponse(
+        _add_localization_metadata(compute()), headers={"Cache-Control": "no-store"}
+    )
     cache.put(key, bytes(response.body), now, dataset_expires_at)
     return response
 
 
 _AVAILABILITY_STATES = {
-    "available", "unavailable", "insufficient_data", "low_coverage", "zero_result"
+    "available",
+    "unavailable",
+    "insufficient_data",
+    "low_coverage",
+    "zero_result",
 }
 
 

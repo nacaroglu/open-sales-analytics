@@ -147,7 +147,10 @@ def test_customers_returns_typed_aggregate_envelope_and_range_coverage(client, c
         "identified_gross_sales": {"value": "3.0000", **unavailable_comparison},
     }
     assert body["sections"]["repeat_purchase"] == {
-        "availability": availability("zero_result", "No active identified customer had two or more orders by the end of the range."),
+        "availability": availability(
+            "zero_result",
+            "No active identified customer had two or more orders by the end of the range.",
+        ),
         "active_customers": {"value": 1, **unavailable_comparison},
         "repeat_customers": {"value": 0, **unavailable_comparison},
         "repeat_purchase_rate": {"value": 0, **unavailable_comparison},
@@ -349,7 +352,9 @@ def test_new_vs_returning_zero_result(client):
     body = get_customers(client, dataset, start="2025-01-11", end="2025-01-31").json()
     section = body["sections"]["new_vs_returning"]
 
-    assert section["availability"] == availability("zero_result", "No identified customer rows were found in the selected range.")
+    assert section["availability"] == availability(
+        "zero_result", "No identified customer rows were found in the selected range."
+    )
     for key in (
         "new_customer_gross_sales",
         "returning_customer_gross_sales",
@@ -831,7 +836,7 @@ def value_cell(offset, state, value):
 
 
 GOLDEN_VALUE = {
-        "availability": AVAILABLE,
+    "availability": AVAILABLE,
     "data_cutoff": "2026-03-31",
     "customer_count": 3,
     "average": "80.0000",
@@ -962,11 +967,31 @@ RFM_ROWS = [
 ]
 
 GOLDEN_RFM_SEGMENTS = [
-    {"segment": "Champions", "segment_code": "customers.rfm.champions", "customer_count": 2, "share": 0.4},
+    {
+        "segment": "Champions",
+        "segment_code": "customers.rfm.champions",
+        "customer_count": 2,
+        "share": 0.4,
+    },
     {"segment": "Loyal", "segment_code": "customers.rfm.loyal", "customer_count": 1, "share": 0.2},
-    {"segment": "Potential Loyalists", "segment_code": "customers.rfm.potential_loyalists", "customer_count": 0, "share": 0},
-    {"segment": "Needs Attention", "segment_code": "customers.rfm.needs_attention", "customer_count": 0, "share": 0},
-    {"segment": "At Risk", "segment_code": "customers.rfm.at_risk", "customer_count": 0, "share": 0},
+    {
+        "segment": "Potential Loyalists",
+        "segment_code": "customers.rfm.potential_loyalists",
+        "customer_count": 0,
+        "share": 0,
+    },
+    {
+        "segment": "Needs Attention",
+        "segment_code": "customers.rfm.needs_attention",
+        "customer_count": 0,
+        "share": 0,
+    },
+    {
+        "segment": "At Risk",
+        "segment_code": "customers.rfm.at_risk",
+        "customer_count": 0,
+        "share": 0,
+    },
     {"segment": "Lost", "segment_code": "customers.rfm.lost", "customer_count": 2, "share": 0.4},
 ]
 
@@ -1041,7 +1066,9 @@ def test_rfm_with_four_customers_is_insufficient_data(client):
         "rfm"
     ]
 
-    assert rfm["availability"] == availability("insufficient_data", "RFM needs at least 5 identified customers.")
+    assert rfm["availability"] == availability(
+        "insufficient_data", "RFM needs at least 5 identified customers."
+    )
     assert (rfm["customer_count"], rfm["segments"]) == (4, [])
     assert rfm["note"]
 
@@ -1112,7 +1139,9 @@ def test_rfm_drilldown_with_four_customers_is_insufficient_data(client):
     ]["rfm_drilldown"]
 
     assert drilldown == {
-        "availability": availability("insufficient_data", "RFM needs at least 5 identified customers."),
+        "availability": availability(
+            "insufficient_data", "RFM needs at least 5 identified customers."
+        ),
         "customer_count": 4,
         "recency_anchor": "2026-03-31",
         "gross_sales": "1150.0000",
@@ -1387,7 +1416,12 @@ def test_customers_openapi_is_aggregate_only_and_route_is_unique(client):
         "note",
         "segments",
     }
-    assert set(components["RfmSegment"]["properties"]) == {"segment", "segment_code", "customer_count", "share"}
+    assert set(components["RfmSegment"]["properties"]) == {
+        "segment",
+        "segment_code",
+        "customer_count",
+        "share",
+    }
     for name in ("RfmSection", "RfmSegment"):
         assert all(
             prop.get("description")

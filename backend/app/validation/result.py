@@ -19,7 +19,9 @@ class Issue:
     reason: str
     row_number: int | None = None
     field: str | None = None
-    reason_params: dict[str, str | int | float | bool | None] = dataclass_field(default_factory=dict)
+    reason_params: dict[str, str | int | float | bool | None] = dataclass_field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         if not self.reason_params:
