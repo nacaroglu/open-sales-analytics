@@ -21,6 +21,8 @@ SOURCES = (
 LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
 FENCED_BLOCK_PATTERN = re.compile(r"^```[^\n]*\n.*?^```[ \t]*$", re.MULTILINE | re.DOTALL)
 INLINE_CODE_PATTERN = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
+IMAGE_PATTERN = re.compile(r"!\[[^]]*\]\(([^)]+)\)")
+LIST_ITEM_PATTERN = re.compile(r"^(\s*)(?:([-+*])|\d+\.)\s+")
 
 
 def localized_path(source: Path, locale: str) -> Path:
@@ -56,6 +58,14 @@ def markdown_anchors(markdown: str) -> set[str]:
         duplicates[base] += 1
         anchors.add(base if occurrence == 0 else f"{base}-{occurrence}")
     return anchors
+
+
+def list_structure(markdown: str) -> list[tuple[int, str]]:
+    structure: list[tuple[int, str]] = []
+    for line in FENCED_BLOCK_PATTERN.sub("", markdown).splitlines():
+        if match := LIST_ITEM_PATTERN.match(line):
+            structure.append((len(match.group(1)), "unordered" if match.group(2) else "ordered"))
+    return structure
 
 
 def test_metric_catalogue_covers_the_authoritative_registry() -> None:
@@ -125,6 +135,12 @@ def test_localized_documents_preserve_structure_and_technical_literals() -> None
         source_blocks = FENCED_BLOCK_PATTERN.findall(source_markdown)
         without_blocks = FENCED_BLOCK_PATTERN.sub("", source_markdown)
         source_literals = Counter(INLINE_CODE_PATTERN.findall(without_blocks))
+        source_images = Counter(IMAGE_PATTERN.findall(source_markdown))
+        source_external_links = Counter(
+            target
+            for target in LINK_PATTERN.findall(source_markdown)
+            if target.startswith(("http://", "https://", "mailto:"))
+        )
 
         for locale in LOCALES:
             document = localized_path(source, locale)
@@ -139,8 +155,22 @@ def test_localized_documents_preserve_structure_and_technical_literals() -> None
             ]
             assert translated_headings == source_headings, f"{document}: heading structure"
             assert translated_tables == source_tables, f"{document}: table structure"
+            assert list_structure(translated) == list_structure(source_markdown), (
+                f"{document}: list structure"
+            )
             assert FENCED_BLOCK_PATTERN.findall(translated) == source_blocks, (
                 f"{document}: fenced code differs from English"
+            )
+            assert Counter(IMAGE_PATTERN.findall(translated)) == source_images, (
+                f"{document}: image targets differ from English"
+            )
+            translated_external_links = Counter(
+                target
+                for target in LINK_PATTERN.findall(translated)
+                if target.startswith(("http://", "https://", "mailto:"))
+            )
+            assert translated_external_links == source_external_links, (
+                f"{document}: external link targets differ from English"
             )
 
             translated_without_blocks = FENCED_BLOCK_PATTERN.sub("", translated)

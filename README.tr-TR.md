@@ -56,7 +56,7 @@ docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
 ## Demo adımları
 
 Yeni bir checkout'tan panele kadar, oluşturulmuş örnek verilerle adım adım çalıştırma.
-1. adım [uv](https://docs.astral.sh/uv/) gerektirir; geri kalanlar yalnızca Docker gerektirir.
+İlk adım [uv](https://docs.astral.sh/uv/) gerektirir; geri kalanlar yalnızca Docker gerektirir.
 
 ### 1. Örnek verileri oluşturun
 
