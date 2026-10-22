@@ -1,5 +1,7 @@
 # Architecture
 
+Languages: [English](architecture.md) | [Türkçe](architecture.tr-TR.md) | [Deutsch](architecture.de-DE.md) | [Русский](architecture.ru-RU.md) | [Español](architecture.es-ES.md) | [简体中文](architecture.zh-CN.md) | [日本語](architecture.ja-JP.md)
+
 Open Sales Analytics is a single-origin React/Vite application served by FastAPI. The frontend keeps the dataset
 identifier and bearer token in one browser tab's `sessionStorage`; it sends date-range and comparison choices to the
 backend and renders aggregate responses. The backend is stateless between requests except for one DuckDB file per
