@@ -26,7 +26,7 @@ docker build -t open-sales-analytics .
 docker run -p 8000:8000 open-sales-analytics
 ```
 
-Öffne <http://localhost:8000>. Du siehst den Uploadbildschirm; **Try sample data** öffnet ein Dashboard mit der
+Öffne <http://localhost:8000>. Du siehst den Uploadbildschirm; **Beispieldaten ausprobieren** öffnet ein Dashboard mit der
 Beispieldatei. `curl http://localhost:8000/api/health` gibt `{"status":"ok"}` zurück.
 
 Der Container läuft als Nicht-root-Benutzer (UID 10001) und speichert Datensätze in `/data` (`DATASET_DIR=/data`).
@@ -101,14 +101,14 @@ Der Server ist bereit, wenn das Protokoll `Uvicorn running on http://0.0.0.0:800
 
 ### 5. Beispieldaten hochladen
 
-Wähle `backend/app/sample/sample_sales.csv`, dann **USD**, und klicke **Upload**.
-(**Try sample data** importiert dieselbe Datei ohne Auswahl.)
+Wähle `backend/app/sample/sample_sales.csv`, dann **USD**, und klicke **Hochladen**.
+(**Beispieldaten ausprobieren** importiert dieselbe Datei ohne Auswahl.)
 
 ![Uploadformular mit ausgewählter Beispieldatei und USD](_docs/images/demo-upload.png)
 
 ### 6. Ergebnisse untersuchen
 
-Das Dashboard öffnet **Overview** mit dem gesamten Datenzeitraum vom 2024-01-01 bis 2025-12-31:
+Das Dashboard öffnet **Übersicht** mit dem gesamten Datenzeitraum vom 2024-01-01 bis 2025-12-31:
 
 | Metrik | Erwarteter Wert |
 | --- | --- |
@@ -121,11 +121,11 @@ Das Dashboard öffnet **Overview** mit dem gesamten Datenzeitraum vom 2024-01-01
 ![Übersicht: Kennzahlen, monatlicher Bruttoumsatztrend und die 10 besten Produkte](_docs/images/phase-3/overview.png)
 
 Der gesamte Zeitraum umfasst 24 Monate, daher ist der Trend monatlich (siehe [Trend-Buckets](#trend-buckets)). Ändere
-**Start date** und **End date**, um alle Zahlen zu filtern; **Reset** stellt den gesamten Zeitraum wieder her.
-**Compare with** ergänzt den vorherigen Zeitraum oder denselben Zeitraum des Vorjahres; für den gesamten Zeitraum ist
+**Startdatum** und **Enddatum**, um alle Zahlen zu filtern; **Zurücksetzen** stellt den gesamten Zeitraum wieder her.
+**Vergleichen mit** ergänzt den vorherigen Zeitraum oder denselben Zeitraum des Vorjahres; für den gesamten Zeitraum ist
 dies nicht verfügbar, da die Daten am 2024-01-01 beginnen.
 
-**Products** zeigt Ranglisten, den Bruttoumsatzanteil mit kumuliertem Pareto-Diagramm, steigende und fallende Produkte,
+**Produkte** zeigt Ranglisten, den Bruttoumsatzanteil mit kumuliertem Pareto-Diagramm, steigende und fallende Produkte,
 inaktive Produkte und gemeinsam gekaufte Produkte, hier für 2025 gegenüber 2024
 (siehe [Produktanalysen](#produktanalysen)):
 
@@ -136,13 +136,13 @@ Bestelldurchdringung und gemeinsam gekaufte Produkte.
 
 ![Produktdetails: Bruttoumsatztrend, gewichteter Stückpreis, Bestelldurchdringung und verwandte Produkte](_docs/images/phase-3/product-detail.png)
 
-**Customers** zeigt Abdeckung, Kundenkennzahlen, Tage zwischen Käufen, die Kohortenbindungs-Heatmap, den Historischen
+**Kunden** zeigt Abdeckung, Kundenkennzahlen, Tage zwischen Käufen, die Kohortenbindungs-Heatmap, den Historischen
 Kundenwert, den Prognostizierten 12-Monats-Kundenwert, RFM-Segmente, Kaufhäufigkeit und Konzentration
 (siehe [Kundenanalysen](#kundenanalysen)):
 
 ![Kunden: Abdeckung, Kennzahlen, Kohortenbindungs-Heatmap, Wert, RFM, Häufigkeit und Konzentration](_docs/images/phase-3/customers.png)
 
-**Analyze another file** löscht diesen Datensatz und kehrt zum Uploadbildschirm zurück.
+**Weitere Datei analysieren** löscht diesen Datensatz und kehrt zum Uploadbildschirm zurück.
 
 ## Vergleiche
 
@@ -150,7 +150,7 @@ Die Datumsbereichskarte kann den aktiven Bereich mit dem vorherigen Zeitraum ode
 vergleichen. Das Dashboard zeigt die exakten, von der API zurückgegebenen Daten. Ein Vergleich des gesamten Bereichs
 ist nicht verfügbar, wenn er vor dem ersten Datum des Datensatzes beginnen würde. Schaltjahresvergleiche verwenden den
 letzten gültigen Februartag des Vergleichsjahres. Ein Vergleich ohne vorherigen Wert heißt „No prior value“, zwei
-Nullwerte „No change“, ein neues Produkt „New“; andernfalls wird der Prozentsatz als „Comparable“ angezeigt.
+Nullwerte „Keine Änderung“, ein neues Produkt „Neu“; andernfalls wird der Prozentsatz als „Vergleichbar“ angezeigt.
 
 ## Produktanalysen
 
@@ -165,7 +165,7 @@ jede ID werden als vom Server gelieferter Text angezeigt.
 | Anteil der besten 20 % — `top_20_percent_share` | Bruttoumsatz der besten 20 % der Produktanzahl / Gesamtbruttoumsatz | Aktiver Bereich; unzureichend, wenn Gesamtsumme null ist | Fünf Produkte mit 50/20/15/10/5: das erste sind 50.00 % |
 | Produkte bis 80 % — `products_to_80_percent` | Kleinste geordnete Produktanzahl, deren kumulierter Anteil 80 % erreicht | Aktiver Bereich; unzureichend, wenn Gesamtsumme null ist | 50+20+15 erreicht 80 % bei 3 Produkten |
 | Kumulierter Anteil — `cumulative_share` | Laufender Bruttoumsatz / Gesamtbruttoumsatz | Aktiver Bereich; nicht verfügbar, wenn Gesamtsumme null ist | Die ersten drei golden Produkte erreichen 85.00 % |
-| Produktwachstum — `product_growth` | Aktueller minus Vergleichsbruttoumsatz; Prozentsatz verwendet Vergleichswert | Vergleichszeitraum; `New`, `No current sales`, `No change` oder nicht verfügbarer Vergleich vermeiden irreführende Prozente | 10 auf 20 sind +10 und +100.00 % |
+| Produktwachstum — `product_growth` | Aktueller minus Vergleichsbruttoumsatz; Prozentsatz verwendet Vergleichswert | Vergleichszeitraum; `Neu`, `Kein aktueller Umsatz`, `Keine Änderung` oder nicht verfügbarer Vergleich vermeiden irreführende Prozente | 10 auf 20 sind +10 und +100.00 % |
 | Rang steigender/fallender Produkte — `rising_products`, `falling_products` | Rang nach absoluter Bruttoumsatzänderung | Gewählter Vergleich; nicht verfügbar, wenn Vergleich nicht verfügbar | Änderung +10 liegt über einer Änderung +1 mit +900 % |
 | Inaktive Produkte — `dormancy` | Produkte ohne Verkauf im ausgewählten 30-, 60- oder 90-Tage-Fenster; frühere Summen nutzen Verkäufe vor dem Fenster | Am Ende des gewählten Bereichs verankert (beim Gesamtbereich letztes Datensatzdatum), Standard 60; unzureichende Historie und Nullergebnis sind verschieden. Ein Verkauf genau N Tage vor dem Anker liegt im Fenster | Ein zuletzt 60 Tage vor dem Anker verkauftes Produkt ist im 60-Tage-Fenster enthalten |
 | Gewichteter Stückpreis — `weighted_unit_price` | SUM(quantity × unit_price) / SUM(quantity) | Buckets des aktiven Bereichs; Buckets ohne Verkäufe sind Lücken, keine Nullpreise | 1 Einheit zu 10 plus 3 zu 20 ergibt 17.50 |
@@ -206,7 +206,7 @@ Rechenwerte verwenden das eingecheckte Fixture `backend/tests/fixtures/customers
 | Bruttoumsatz neuer gegenüber wiederkehrenden Kunden — `new_vs_returning` | `SUM(quantity × unit_price)` danach aufgeteilt, ob jede Position am ersten Bestelldatum des Kunden in der Gesamthistorie oder danach liegt; Historie bis Bereichsende | Keine identifizierten Zeilen ergeben Nullgeldwerte mit `zero_result` | Der Kauf von CUST-01 am 2024-12-15 macht seine Verkäufe 2025 wiederkehrend |
 | Wiederkaufsrate — `repeat_purchase` | Aktive Kunden mit mindestens zwei eindeutigen Bestellungen bis zum gewählten Ende / aktive identifizierte Kunden; Bestellungen vor Bereichsbeginn zählen | Keine aktiven Kunden ist `insufficient_data`; aktive Kunden ohne Wiederkauf sind exakt 0 (`zero_result`) | Bestellungen am selben Tag sind eindeutige Bestellungen, nicht eindeutige Daten |
 | Tage zwischen Käufen — `days_between_purchases` | Median der Kalendertage zwischen aufeinanderfolgenden eindeutigen Bestellungen; ein Intervall zählt, wenn seine spätere Bestellung im Bereich liegt; gleiche Tage ergeben 0 | Kein Intervall hat null Median und `insufficient_data`; feste Buckets sind 0, 1-7, 8-14, 15-30, 31-60, 61-90, 91-180, 181-365 und 366+ | Ein Paar am selben Tag zählt zu Bucket 0 |
-| Kohortenbindung — `cohort_retention` | Gebundene Kunden / Kohortengröße der Akquisition aus Gesamthistorie, je Kalendermonatsversatz; Kohorten nutzen gesamte Historie bis zum gewählten Ende | Fehlende Kohorten sind `insufficient_data`; rechte Randzelle ist `Not yet observed`, niemals 0 % | Monat 0 ist für jede nicht leere Kohorte 100.0 % |
+| Kohortenbindung — `cohort_retention` | Gebundene Kunden / Kohortengröße der Akquisition aus Gesamthistorie, je Kalendermonatsversatz; Kohorten nutzen gesamte Historie bis zum gewählten Ende | Fehlende Kohorten sind `insufficient_data`; rechte Randzelle ist `Noch nicht beobachtet`, niemals 0 % | Monat 0 ist für jede nicht leere Kohorte 100.0 % |
 | Historischer Kundenwert — `historical_customer_value` | Beobachteter identifizierter Bruttoumsatz bis Enddatum / identifizierte Kundenanzahl; Median ist mittlerer Wert je Kunde; Kohortenkurven nutzen kumulierte Verkäufe | Keine Kohorte ist `insufficient_data`; null beobachteter Umsatz ist Nullergebnis; dies sind Beobachtungen, keine Prognose | Das golden Fixture hat 380.0000 über 10 identifizierte Kunden |
 | RFM-Segmente — `rfm` | Aktualität sind Tage vor gewähltem Enddatum; Häufigkeit sind eindeutige Bestellungen; Geldwert ist identifizierter Bruttoumsatz. Jede Dimension nutzt relative Quintilswerte und FM = F + M | Weniger als 5 Kunden ist `insufficient_data`; Gleichstände nutzen denselben Wert und die vollständige Wert-zu-Segment-Tabelle der Registry | Werte sind relativ zu diesem Upload, keine universellen Benchmarks |
 | RFM-Segmentdetails — `rfm_drilldown` | Aggregierter Segmentbruttoumsatz plus feste Buckets für Aktualität (0-30 bis 366+) und Häufigkeit (1, 2, 3, 4, 5, 6-10, 11-20, 21+); keine Zeilen je Kunde | Weniger als 5 Kunden ist `insufficient_data`; null Bruttoumsatz hat null Anteil | Das golden Fixture enthält Gleichstände ohne ID-Tiebreak |
@@ -220,7 +220,7 @@ ist nicht verfügbar statt 0 %.
 
 Kundenidentität und Kohorten nutzen die Gesamthistorie bis zum gewählten Enddatum. Ein späterer Bereichsbeginn stuft
 einen Kunden nicht als neu ein und ändert keine Kohortenzugehörigkeit. RFM-Aktualität und Kohortenreife sind am
-gewählten Enddatum verankert, nie an heute. Eine teilweise oder zukünftige Kohortenzelle ist **Not yet observed**,
+gewählten Enddatum verankert, nie an heute. Eine teilweise oder zukünftige Kohortenzelle ist **Noch nicht beobachtet**,
 kein Nullergebnis.
 
 Die Konsistenzregeln beim Upload sind exakt: Leere Werte innerhalb einer Bestellung werden aus ihrer einzigen nicht
@@ -233,7 +233,7 @@ Kundendaten sind pseudonym, nicht anonym. Verwende UUID oder internen Schlüssel
 außerhalb der Datei. Antworten enthalten nur aggregierte Zählungen und Summen: Es gibt keine Kundenliste, Suche,
 Downloads oder Exporte; Kunden-IDs, Kohortenzugehörigkeit und RFM-Datensätze werden nicht protokolliert. Kundendaten
 liegen nur in der DuckDB-Datei des Datensatzes, werden mit ihr nach `DATASET_TTL_HOURS` (standardmäßig 24) oder sofort
-mit **Analyze another file** entfernt, und die rohe CSV wird nach dem Import gelöscht. Der Prognostizierte
+mit **Weitere Datei analysieren** entfernt, und die rohe CSV wird nach dem Import gelöscht. Der Prognostizierte
 12-Monats-Kundenwert ist eine separate zukünftige Metrik und nicht dieser beobachtete Wert.
 
 ## Konfiguration
@@ -250,7 +250,7 @@ Der Server liest beim Start diese Umgebungsvariablen. Jede Variable ist optional
 | `CUSTOMER_ID_MAX_LENGTH` | integer > 0 | `128` | Maximale Unicode-Zeichenanzahl einer nicht leeren `customer_id`; längere Werte werden mit `customer_id_too_long` abgelehnt. |
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | Intervall, in dem der Server abgelaufene Datensätze entfernt (auch einmal beim Start). |
 | `PUBLIC_DEMO_MODE` | boolean | `false` | `true` deaktiviert Uploads; siehe [Demo-Modus](#demo-modus). |
-| `MAX_DATASETS` | integer > 0 | `200` | Höchste Anzahl nicht abgelaufener Datensätze auf dem Server. Ein weiterer (Upload oder **Try sample data**) gibt 503 `capacity_reached` zurück, bis einer abläuft oder gelöscht wird. |
+| `MAX_DATASETS` | integer > 0 | `200` | Höchste Anzahl nicht abgelaufener Datensätze auf dem Server. Ein weiterer (Upload oder **Beispieldaten ausprobieren**) gibt 503 `capacity_reached` zurück, bis einer abläuft oder gelöscht wird. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Höchste Anzahl gecachter Overview/Product-Antworten in diesem Prozess. `0` deaktiviert den Antwortcache. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Maximale Lebensdauer einer gecachten Overview/Product-Antwort; der Datensatzablauf hat immer Vorrang. |
 
@@ -487,7 +487,7 @@ Warnungen lehnen die Datei nicht ab. Sie erscheinen in der `warnings`-Liste der 
 ### Beispieldaten
 
 Lade eine gültige Beispieldatei unter <http://localhost:8000/api/sample.csv> herunter (der Uploadbildschirm verlinkt
-sie als **Download sample CSV**). **Try sample data** auf dem Uploadbildschirm importiert dieselbe Datei ohne Upload in USD.
+sie als **Beispiel-CSV herunterladen**). **Beispieldaten ausprobieren** auf dem Uploadbildschirm importiert dieselbe Datei ohne Upload in USD.
 
 ## Trend-Buckets
 
@@ -502,8 +502,8 @@ beider Enddaten ab: bis 90 Tage täglich, über 90 bis 730 Tage wöchentlich, l�
   Ein eintägiger Tages-Bucket ist immer vollständig (Daten enthalten nur Daten); ein eintägiger Ausschnitt aus Woche
   oder Monat ist teilweise. Ein Bereich innerhalb einer Woche oder eines Monats zeigt den Bucket als teilweise.
 - Darstellung eines Teilzeitraums: Die Achsenbeschriftung einer teilweisen Woche/eines Monats zeigt die abgedeckten
-  Daten (`29–31 Dec`, `10–31 Mar 2025`) statt `Week of 29 Dec` oder Monatsname, der Punkt ist hohl, ein Hinweis unter
-  dem Diagramm erklärt dies, und der Tooltip ergänzt Jahr und `Partial period: <covered dates>`. Ein vollständiger
+  Daten (`29–31. Dez.`, `10–31. März 2025`) statt `Woche ab 29. Dez.` oder Monatsname, der Punkt ist hohl, ein Hinweis unter
+  dem Diagramm erklärt dies, und der Tooltip ergänzt Jahr und `Teilzeitraum: <abgedeckte Daten>`. Ein vollständiger
   Bucket hat nichts davon.
 - Nur Zeilen im Bereich werden summiert; ein teilweiser Bucket enthält also Verkäufe der abgedeckten Daten.
 
@@ -523,7 +523,7 @@ Beschriftung der Beträge. Es gibt weder Umrechnung noch Wechselkurs. Andere Cod
 - Prüfungen von Kunden-ID-Länge, E-Mail und Telefon sind nur Best-Effort-Leitplanken. Sie sind keine Anonymisierung oder
   Compliance-Garantie; automatische Prüfungen finden nicht jede Art personenbezogener Daten.
 - Ein Datensatz wird nach `DATASET_TTL_HOURS` (standardmäßig 24) durch eine Bereinigung beim Start und danach alle
-  `CLEANUP_INTERVAL_MINUTES` oder sofort beim Klick auf **Analyze another file** gelöscht.
+  `CLEANUP_INTERVAL_MINUTES` oder sofort beim Klick auf **Weitere Datei analysieren** gelöscht.
 - Erfolgreiche Modulantworten können für `RESPONSE_CACHE_TTL_SECONDS` (standardmäßig 300 Sekunden) in einem begrenzten,
   prozesslokalen Cache bleiben; Autorisierung läuft bei jeder Anfrage, Einträge werden nach Datensatz und Optionen
   geschlüsselt, Ablauf oder Löschung entfernt gecachte Antworten. Der Cache wird nicht zwischen Instanzen geteilt.
@@ -551,11 +551,11 @@ und sie läuft als einzelne Instanz. Um eigene Dateien zu analysieren, [führe s
 `PUBLIC_DEMO_MODE=true` ist für einen öffentlichen Server, der keine Dateien anderer Personen annehmen soll:
 
 - `POST /api/datasets` antwortet ohne Lesen des Inhalts mit 403 `upload_disabled`.
-- **Try sample data** und der Beispieldownload funktionieren weiter.
-- Der Uploadbildschirm zeigt nur Dateiformat und **Try sample data**, kein Datei- oder Währungsfeld. Er erklärt, dass
+- **Beispieldaten ausprobieren** und der Beispieldownload funktionieren weiter.
+- Der Uploadbildschirm zeigt nur Dateiformat und **Beispieldaten ausprobieren**, kein Datei- oder Währungsfeld. Er erklärt, dass
   nur Beispieldaten akzeptiert werden, und verlinkt für Uploads [Mit Docker ausführen](#mit-docker-ausführen).
 - `GET /api/config` gibt `{"public_demo_mode":true,...}` zurück; daran erkennt es der Bildschirm.
-- `MAX_DATASETS` schützt den Datenträger eines öffentlichen Servers: Jeder Klick auf **Try sample data** erstellt einen
+- `MAX_DATASETS` schützt den Datenträger eines öffentlichen Servers: Jeder Klick auf **Beispieldaten ausprobieren** erstellt einen
   Datensatz, und an der Grenze antwortet er mit 503 `capacity_reached`.
 
 ## Einschränkungen

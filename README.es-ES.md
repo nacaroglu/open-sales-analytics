@@ -26,7 +26,7 @@ docker build -t open-sales-analytics .
 docker run -p 8000:8000 open-sales-analytics
 ```
 
-Abra <http://localhost:8000>. Verá la pantalla de carga; **Try sample data** abre un panel con el archivo de ejemplo.
+Abra <http://localhost:8000>. Verá la pantalla de carga; **Probar datos de ejemplo** abre un panel con el archivo de ejemplo.
 `curl http://localhost:8000/api/health` devuelve `{"status":"ok"}`.
 
 El contenedor se ejecuta con un usuario sin privilegios (UID 10001) y guarda los conjuntos de datos en `/data`
@@ -101,14 +101,14 @@ Abra <http://localhost:8000>. La pantalla de carga muestra el formato de archivo
 
 ### 5. Cargar los datos de ejemplo
 
-Elija `backend/app/sample/sample_sales.csv`, seleccione **USD** y pulse **Upload**.
-(**Try sample data** importa el mismo archivo sin seleccionarlo).
+Elija `backend/app/sample/sample_sales.csv`, seleccione **USD** y pulse **Subir**.
+(**Probar datos de ejemplo** importa el mismo archivo sin seleccionarlo).
 
 ![Formulario de carga con el archivo de ejemplo y USD seleccionados](_docs/images/demo-upload.png)
 
 ### 6. Explorar los resultados
 
-El panel se abre en **Overview** con todo el periodo de los datos, de 2024-01-01 a 2025-12-31:
+El panel se abre en **Resumen** con todo el periodo de los datos, de 2024-01-01 a 2025-12-31:
 
 | Métrica | Valor esperado |
 | --- | --- |
@@ -121,11 +121,11 @@ El panel se abre en **Overview** con todo el periodo de los datos, de 2024-01-01
 ![Resumen: cifras clave, tendencia mensual de ventas brutas y los 10 productos principales](_docs/images/phase-3/overview.png)
 
 El periodo completo abarca 24 meses, así que la tendencia es mensual (consulte
-[Intervalos de tendencia](#intervalos-de-tendencia)). Cambie **Start date** y **End date** para filtrar todas las cifras;
-**Reset** restaura el periodo completo. **Compare with** añade el periodo anterior o el mismo periodo del año anterior;
+[Intervalos de tendencia](#intervalos-de-tendencia)). Cambie **Fecha de inicio** y **Fecha de fin** para filtrar todas las cifras;
+**Restablecer** restaura el periodo completo. **Comparar con** añade el periodo anterior o el mismo periodo del año anterior;
 no está disponible para todo el periodo porque los datos comienzan el 2024-01-01.
 
-**Products** muestra las clasificaciones, la cuota de ventas brutas con su gráfico de Pareto acumulado, productos al
+**Productos** muestra las clasificaciones, la cuota de ventas brutas con su gráfico de Pareto acumulado, productos al
 alza y a la baja, productos inactivos y productos comprados juntos, aquí para 2025 frente a 2024
 (consulte [Análisis de productos](#análisis-de-productos)):
 
@@ -136,21 +136,21 @@ pedidos y productos comprados con él.
 
 ![Detalle del producto: tendencia de ventas brutas, precio unitario ponderado, penetración y productos relacionados](_docs/images/phase-3/product-detail.png)
 
-**Customers** muestra la cobertura, cifras clave de clientes, días entre compras, mapa de calor de retención de cohortes,
+**Clientes** muestra la cobertura, cifras clave de clientes, días entre compras, mapa de calor de retención de cohortes,
 valor histórico del cliente, valor proyectado del cliente a 12 meses, segmentos RFM, frecuencia de compra y concentración
 (consulte [Análisis de clientes](#análisis-de-clientes)):
 
 ![Clientes: cobertura, cifras clave, retención de cohortes, valor, RFM, frecuencia y concentración](_docs/images/phase-3/customers.png)
 
-**Analyze another file** elimina este conjunto de datos y vuelve a la pantalla de carga.
+**Analizar otro archivo** elimina este conjunto de datos y vuelve a la pantalla de carga.
 
 ## Comparaciones
 
 La tarjeta del intervalo puede comparar el intervalo activo con el periodo anterior o el mismo periodo del año pasado.
 El panel muestra las fechas exactas devueltas por la API. Una comparación de todo el intervalo no está disponible cuando
 empezaría antes de la primera fecha del conjunto. Las comparaciones de un día bisiesto usan el último día válido de
-febrero del año comparado. Si no hay valor anterior se muestra “No prior value”; dos ceros son “No change”; un producto
-nuevo es “New”; en los demás casos el porcentaje se muestra como “Comparable”.
+febrero del año comparado. Si no hay valor anterior se muestra “Sin valor anterior”; dos ceros son “Sin cambios”; un producto
+nuevo es “Nuevo”; en los demás casos el porcentaje se muestra como “Comparable”.
 
 ## Análisis de productos
 
@@ -165,7 +165,7 @@ muestra como texto proporcionado por el servidor.
 | Cuota del 20% superior — `top_20_percent_share` | Ventas brutas del 20% superior por número de productos / total | Intervalo activo; insuficiente si el total es cero | Cinco productos 50/20/15/10/5: el primero es 50.00% |
 | Productos para alcanzar el 80% — `products_to_80_percent` | Menor número ordenado cuya cuota acumulada alcanza el 80% | Intervalo activo; insuficiente si el total es cero | 50+20+15 alcanza el 80% con 3 productos |
 | Cuota acumulada — `cumulative_share` | Ventas brutas acumuladas / ventas brutas totales | Intervalo activo; no disponible si el total es cero | Los tres primeros productos del ejemplo alcanzan 85.00% |
-| Crecimiento del producto — `product_growth` | Ventas actuales menos ventas de comparación; el porcentaje usa el valor comparado | Periodo comparado; `New`, `No current sales`, `No change` o comparación no disponible evitan porcentajes engañosos | De 10 a 20 es +10 y +100.00% |
+| Crecimiento del producto — `product_growth` | Ventas actuales menos ventas de comparación; el porcentaje usa el valor comparado | Periodo comparado; `Nuevo`, `Sin ventas actuales`, `Sin cambios` o comparación no disponible evitan porcentajes engañosos | De 10 a 20 es +10 y +100.00% |
 | Clasificación al alza/a la baja — `rising_products`, `falling_products` | Orden por variación absoluta de ventas brutas | Comparación seleccionada; no disponible si la comparación no lo está | Un cambio de +10 supera a un +900% cuyo cambio es +1 |
 | Productos inactivos — `dormancy` | Sin venta en la ventana elegida de 30, 60 o 90 días; los totales anteriores usan ventas previas a la ventana | Anclado al final del intervalo (última fecha para el intervalo completo), 60 por defecto; historial insuficiente y resultado cero son distintos. Una venta exactamente N días antes queda dentro | Un producto vendido por última vez 60 días antes se incluye en una ventana de 60 días |
 | Precio unitario ponderado — `weighted_unit_price` | SUM(quantity × unit price) / SUM(quantity) | Intervalos activos; los intervalos sin ventas son huecos, no precios cero | 1 unidad a 10 y 3 a 20 da 17.50 |
@@ -204,7 +204,7 @@ brutas identificadas entre 2025-01-01 y 2025-09-30.
 | Ventas de nuevos frente a recurrentes — `new_vs_returning` | Divide `SUM(quantity × unit_price)` según sea la fecha del primer pedido del historial o posterior; historial hasta el final | Sin filas identificadas devuelve importes cero con `zero_result` | La compra de CUST-01 del 2024-12-15 hace recurrentes sus ventas de 2025 |
 | Tasa de compra repetida — `repeat_purchase` | Clientes activos con al menos dos pedidos distintos hasta el final / clientes identificados activos; cuentan pedidos previos al inicio | Sin clientes activos es `insufficient_data`; sin repetición es exactamente 0 (`zero_result`) | Pedidos del mismo día son pedidos distintos |
 | Días entre compras — `days_between_purchases` | Mediana de días naturales entre pedidos distintos consecutivos; cuenta si el posterior está en el intervalo, el mismo día da 0 | Sin intervalo: mediana null y `insufficient_data`; tramos 0, 1-7, 8-14, 15-30, 31-60, 61-90, 91-180, 181-365 y 366+ | Una pareja del mismo día va al tramo 0 |
-| Retención de cohortes — `cohort_retention` | Clientes retenidos / tamaño de cohorte de todo el historial, por desfase mensual; usa historial hasta el final | Cohortes ausentes: `insufficient_data`; una celda del borde es `Not yet observed`, nunca 0% | Mes 0 es 100.0% |
+| Retención de cohortes — `cohort_retention` | Clientes retenidos / tamaño de cohorte de todo el historial, por desfase mensual; usa historial hasta el final | Cohortes ausentes: `insufficient_data`; una celda del borde es `Aún no observado`, nunca 0% | Mes 0 es 100.0% |
 | Valor histórico del cliente — `historical_customer_value` | Ventas identificadas observadas hasta el final / clientes identificados; mediana del valor por cliente; curvas acumuladas | Sin cohorte: `insufficient_data`; ventas cero es resultado cero; observado, no predicción | 380.0000 entre 10 clientes |
 | Segmentos RFM — `rfm` | Recencia en días antes del final; frecuencia en pedidos distintos; importe en ventas brutas. Quintiles relativos y FM = F + M | Menos de 5 clientes: `insufficient_data`; empates reciben la misma puntuación y la tabla completa está en el registro | Relativo a esta carga, no referencia universal |
 | Desgloses RFM — `rfm_drilldown` | Ventas agregadas y tramos de recencia (0-30 a 366+) y frecuencia (1, 2, 3, 4, 5, 6-10, 11-20, 21+); sin filas por cliente | Menos de 5: `insufficient_data`; ventas cero tienen cuota null | El fixture incluye empates sin desempate por ID |
@@ -217,7 +217,7 @@ no por línea. Un archivo sin la columna no está disponible en vez de ser 0%.
 
 La identidad y las cohortes usan todo el historial hasta el final. Retrasar el inicio no reclasifica a un cliente ni
 cambia su cohorte. La recencia RFM y la madurez se anclan al final, nunca a hoy. Una celda parcial o futura es
-**Not yet observed**, no un cero.
+**Aún no observado**, no un cero.
 
 Las reglas de coherencia son exactas: los blancos de un pedido se rellenan desde su único ID no vacío; dos ID distintos
 rechazan toda la carga; un pedido enteramente vacío sigue sin identificar. El límite predeterminado de `customer_id` es
@@ -227,7 +227,7 @@ no detectan nombres, direcciones, documentos nacionales, codificaciones reversib
 Los datos de clientes son seudónimos, no anónimos. Use UUID, clave interna o hash con sal secreta fuera del archivo.
 Las respuestas solo contienen recuentos y sumas agregados: no hay lista, búsqueda, descarga ni exportación y no se
 registran ID, cohortes ni registros RFM. Los datos solo residen en el DuckDB del conjunto y se eliminan tras
-`DATASET_TTL_HOURS` (24 por defecto) o inmediatamente con **Analyze another file**; el CSV original se elimina tras la
+`DATASET_TTL_HOURS` (24 por defecto) o inmediatamente con **Analizar otro archivo**; el CSV original se elimina tras la
 importación. El valor proyectado a 12 meses es otra métrica futura, no esta medida observada.
 
 ## Configuración
@@ -459,8 +459,8 @@ No rechazan el archivo; aparecen en `warnings` de la respuesta `201` y en la pan
 
 ### Datos de ejemplo
 
-Descargue un archivo válido en <http://localhost:8000/api/sample.csv> (en la pantalla, **Download sample CSV**).
-**Try sample data** importa el mismo archivo en USD sin carga.
+Descargue un archivo válido en <http://localhost:8000/api/sample.csv> (en la pantalla, **Descargar CSV de ejemplo**).
+**Probar datos de ejemplo** importa el mismo archivo en USD sin carga.
 
 ## Intervalos de tendencia
 
@@ -472,8 +472,8 @@ días es diaria, más de 90 hasta 730 semanal y más larga mensual. La API devue
 - Un intervalo cortado (primera semana/mes comienza antes del inicio o el último termina después del final) es parcial.
   El gráfico lo calcula por calendario, de modo que un día sin ventas también está cubierto. Un día diario siempre es
   completo; un corte de un día de semana o mes es parcial. Un rango dentro de una sola semana o mes lo muestra parcial.
-- La etiqueta parcial muestra las fechas cubiertas (`29–31 Dec`, `10–31 Mar 2025`) en lugar de `Week of 29 Dec` o
-  el mes; el punto es hueco, hay una nota y el tooltip añade el año y `Partial period: <covered dates>`. Un intervalo
+- La etiqueta parcial muestra las fechas cubiertas (`29–31 dic`, `10–31 mar 2025`) en lugar de `Semana del 29 dic` o
+  el mes; el punto es hueco, hay una nota y el tooltip añade el año y `Período parcial: <fechas cubiertas>`. Un intervalo
   completo no muestra nada de esto.
 - Solo se suman filas dentro del rango, por lo que el intervalo parcial contiene ventas de las fechas cubiertas.
 
@@ -492,7 +492,7 @@ ni tipo de cambio. Cualquier otro código se rechaza con `400 invalid_request`.
 - Las comprobaciones de longitud, correo y teléfono son defensas de mejor esfuerzo, no anonimización ni garantía de
   cumplimiento; no pueden detectar todas las clases de datos personales.
 - El conjunto se elimina tras `DATASET_TTL_HOURS` (24 por defecto) al arrancar y cada `CLEANUP_INTERVAL_MINUTES`,
-  o inmediatamente al pulsar **Analyze another file**.
+  o inmediatamente al pulsar **Analizar otro archivo**.
 - Las respuestas correctas pueden conservarse en una caché local al proceso durante `RESPONSE_CACHE_TTL_SECONDS`
   (300 segundos); cada solicitud se autoriza, las entradas se indexan por conjunto y opciones y se eliminan al caducar
   o borrar. La caché no se comparte entre instancias.
@@ -517,8 +517,8 @@ archivos, [ejecútela usted mismo](#ejecutar-con-docker).
 `PUBLIC_DEMO_MODE=true` es para un servidor público que no debe aceptar archivos ajenos:
 
 - `POST /api/datasets` responde 403 `upload_disabled` sin leer el cuerpo.
-- **Try sample data** y la descarga siguen funcionando.
-- La pantalla muestra el formato y **Try sample data**, sin campos de archivo o moneda. Indica que solo acepta el
+- **Probar datos de ejemplo** y la descarga siguen funcionando.
+- La pantalla muestra el formato y **Probar datos de ejemplo**, sin campos de archivo o moneda. Indica que solo acepta el
   ejemplo y enlaza [Ejecutar con Docker](#ejecutar-con-docker) para cargas.
 - `GET /api/config` devuelve `{"public_demo_mode":true,...}`, que informa a la pantalla.
 - `MAX_DATASETS` protege el disco: cada clic crea un conjunto y, al llegar al máximo, responde 503 `capacity_reached`.
@@ -540,9 +540,9 @@ archivos, [ejecútela usted mismo](#ejecutar-con-docker).
 Phase 3 está completa. Los siguientes candidatos, según la
 [especificación de Phase 3](_docs/open_sales_analytics_phase_3_spec.md#20-deferred-roadmap):
 
-- **Phase 4: base de producto gestionado.** Base central, cuentas, propiedad, conjuntos guardados y paneles persistentes.
-- **Phase 4: ingesta alojada.** Cargas públicas protegidas con límites, aislamiento, controles de abuso y supervisión.
-- **Phase 4: capa de contrato financiero.** Columnas opcionales `discount_amount`, `refund_amount` y `unit_cost`, con
+- **Fase 4: base de producto gestionado.** Base central, cuentas, propiedad, conjuntos guardados y paneles persistentes.
+- **Fase 4: ingesta alojada.** Cargas públicas protegidas con límites, aislamiento, controles de abuso y supervisión.
+- **Fase 4: capa de contrato financiero.** Columnas opcionales `discount_amount`, `refund_amount` y `unit_cost`, con
   ventas netas, descuentos, devoluciones y márgenes.
 - **Más adelante:** adaptadores Shopify, WooCommerce y marketplaces; conjuntos multiarchivo y multicanal; activación y
   exportación de clientes con modelo explícito de privacidad; importaciones asíncronas mayores; pronóstico o detección

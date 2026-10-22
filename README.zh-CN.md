@@ -17,7 +17,7 @@ docker build -t open-sales-analytics .
 docker run -p 8000:8000 open-sales-analytics
 ```
 
-打开 <http://localhost:8000>。您会看到上传页面；**Try sample data** 会用样例文件打开仪表板。`curl http://localhost:8000/api/health` 返回 `{"status":"ok"}`。
+打开 <http://localhost:8000>。您会看到上传页面；**试用示例数据**会用样例文件打开仪表板。`curl http://localhost:8000/api/health` 返回 `{"status":"ok"}`。
 
 容器以非 root 用户（UID 10001）运行，并将数据集保存在 `/data`（`DATASET_DIR=/data`）。未挂载卷时，删除容器也会丢失数据。要保留数据，请将命名卷挂载到 `/data`：
 
@@ -80,7 +80,7 @@ docker run -p 8000:8000 open-sales-analytics
 
 ### 5. 上传样例数据
 
-选择 `backend/app/sample/sample_sales.csv`，选择 **USD** 并单击 **Upload**。（**Try sample data** 无需选择文件即可导入同一文件。）
+选择 `backend/app/sample/sample_sales.csv`，选择 **USD** 并单击**上传**。（**试用示例数据**无需选择文件即可导入同一文件。）
 
 ![已选择样例文件和 USD 的上传表单](_docs/images/demo-upload.png)
 
@@ -100,7 +100,7 @@ docker run -p 8000:8000 open-sales-analytics
 
 完整周期为 24 个月，因此趋势按月显示（参见[趋势分桶](#趋势分桶)）。更改**开始日期**和**结束日期**会筛选所有数值；**重置**恢复完整周期。**比较对象**可加入上一周期或去年同期；由于数据从 2024-01-01 开始，完整周期无法比较。
 
-**产品**页面显示排名、总销售额份额及累计 Pareto 图、上升和下降产品、休眠产品和搭配购买产品；此处比较 2025 与 2024（参见[产品分析](#产品分析)）：
+**商品**页面显示排名、总销售额份额及累计 Pareto 图、上升和下降产品、休眠产品和搭配购买产品；此处比较 2025 与 2024（参见[产品分析](#产品分析)）：
 
 ![产品：排名、Pareto 图、上升和下降产品、休眠和产品组合](_docs/images/phase-3/products.png)
 
@@ -112,7 +112,7 @@ docker run -p 8000:8000 open-sales-analytics
 
 ![客户：覆盖率、关键指标、同期群留存热图、价值、RFM、频率和集中度](_docs/images/phase-3/customers.png)
 
-**分析其他文件**会删除当前数据集并返回上传页面。
+**分析另一个文件**会删除当前数据集并返回上传页面。
 
 ## 比较
 
@@ -168,7 +168,7 @@ API 文档位于 [`/docs`](http://localhost:8000/docs)。`GET /api/datasets/{id}
 
 上传一致性规则是精确的：一个订单内的空值会由其唯一非空 ID 填充；两个不同 ID 会拒绝整个上传；全空订单仍未识别。`customer_id` 默认限制为 128 个字符。尽力而为的检查会拒绝明显的电子邮件、电话号码和超过限制的值；无法识别姓名、邮政地址、身份证号码、可逆编码或非常规电话格式。
 
-客户数据是假名化而非匿名数据。请使用 UUID、内部键或带文件外保管的秘密盐值的哈希。响应只含聚合计数和总和：无客户列表、搜索、下载或导出，也不记录客户 ID、同期群归属和 RFM 记录。客户数据仅存在于数据集 DuckDB 文件中，会在 `DATASET_TTL_HOURS`（默认 24）后随文件删除，或通过**分析其他文件**立即删除；原始 CSV 在导入后删除。预计 12 个月客户价值是独立的未来指标，并非此观察指标。
+客户数据是假名化而非匿名数据。请使用 UUID、内部键或带文件外保管的秘密盐值的哈希。响应只含聚合计数和总和：无客户列表、搜索、下载或导出，也不记录客户 ID、同期群归属和 RFM 记录。客户数据仅存在于数据集 DuckDB 文件中，会在 `DATASET_TTL_HOURS`（默认 24）后随文件删除，或通过**分析另一个文件**立即删除；原始 CSV 在导入后删除。预计 12 个月客户价值是独立的未来指标，并非此观察指标。
 
 ## 配置
 
@@ -184,7 +184,7 @@ API 文档位于 [`/docs`](http://localhost:8000/docs)。`GET /api/datasets/{id}
 | `CUSTOMER_ID_MAX_LENGTH` | 大于 0 的整数 | `128` | 非空 `customer_id` 的最大 Unicode 字符数；更长时以 `customer_id_too_long` 拒绝。 |
 | `CLEANUP_INTERVAL_MINUTES` | 大于 0 的整数 | `15` | 服务器删除过期数据集的频率（启动时也执行一次）。 |
 | `PUBLIC_DEMO_MODE` | 布尔值 | `false` | `true` 会关闭上传，参见[演示模式](#演示模式)。 |
-| `MAX_DATASETS` | 大于 0 的整数 | `200` | 服务器最多保存的未过期数据集。再创建一个（上传或 **Try sample data**）会返回 503 `capacity_reached`，直到有数据集过期或删除。 |
+| `MAX_DATASETS` | 大于 0 的整数 | `200` | 服务器最多保存的未过期数据集。再创建一个（上传或**试用示例数据**）会返回 503 `capacity_reached`，直到有数据集过期或删除。 |
 | `RESPONSE_CACHE_MAX_ENTRIES` | 大于等于 0 的整数 | `256` | 此进程中缓存的概览/产品响应上限。`0` 禁用响应缓存。 |
 | `RESPONSE_CACHE_TTL_SECONDS` | 大于 0 的整数 | `300` | 缓存概览/产品响应的最长生命周期；数据集过期始终优先。 |
 
@@ -332,7 +332,7 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 
 ### 样例数据
 
-从 <http://localhost:8000/api/sample.csv> 下载有效样例文件（上传页面以 **Download sample CSV** 链接）。上传页面的 **Try sample data** 无需上传即可用 USD 导入同一文件。
+从 <http://localhost:8000/api/sample.csv> 下载有效样例文件（上传页面以**下载示例 CSV**链接）。上传页面的**试用示例数据**无需上传即可用 USD 导入同一文件。
 
 ## 趋势分桶
 
@@ -341,7 +341,7 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 - 范围包含边界：开始日和结束日均在其中。
 - 周从星期一至星期日；周桶的 `bucket_start` 为星期一。月为日历月。
 - 被范围截断的桶（首周/月始于开始日前，末周/月结束于结束日后）是部分周期。图表根据范围和日历计算，即使某日无销售也算覆盖。单日的日桶始终完整（数据只存日期）；周或月的一日切片为部分周期。位于同一周或月内的范围会把该桶显示为部分周期。
-- 部分周期的显示：部分周/月的轴标签显示其覆盖日期（`12月29–31日`、`2025年3月10–31日`），而非 `12月29日所在周` 或月份名；数据点为空心；图下有说明；工具提示加年份和 `部分周期：<覆盖日期>`。完整桶没有这些标记。
+- 部分周期的显示：部分周/月的轴标签显示其覆盖日期（`29–12月31日`、`10–2025年3月31日`），而非 `12月29日所在周` 或月份名；数据点为空心；图下有说明；工具提示加年份和 `部分期间: <覆盖日期>`。完整桶没有这些标记。
 - 只汇总范围内的行，因此部分桶只含其覆盖日期的销售额。
 
 ## 货币
@@ -354,7 +354,7 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 - 必需列和可选 `customer_id` 存储在 `DATASET_DIR` 下每数据集一个 DuckDB 文件中，并使用私有权限（文件 `0600`，目录 `0700`）。
 - 客户 ID 是假名化而非匿名数据，在数据集 24 小时生命周期内保留。使用哈希标识符、UUID 或非个人内部键；切勿上传邮箱、电话号码或姓名等直接标识符。
 - 客户 ID 长度、邮箱和电话检查仅为尽力而为的防护，不是匿名化或合规保证；自动检查无法发现所有个人数据。
-- 数据集在 `DATASET_TTL_HOURS`（默认 24）后由启动时及之后每 `CLEANUP_INTERVAL_MINUTES` 一次的清理删除，或在单击**分析其他文件**时立即删除。
+- 数据集在 `DATASET_TTL_HOURS`（默认 24）后由启动时及之后每 `CLEANUP_INTERVAL_MINUTES` 一次的清理删除，或在单击**分析另一个文件**时立即删除。
 - 成功的模块响应可在有界的进程本地缓存中保留 `RESPONSE_CACHE_TTL_SECONDS`（默认 300 秒）；每个请求都授权，条目按数据集和选项区分，过期或删除会移除缓存响应。实例间不共享缓存。
 - 访问需要随机 bearer 令牌。浏览器保存在 `sessionStorage`，标签页关闭即消失。服务器只保存其 SHA-256 哈希。
 - 缺失或过期的数据集 ID 返回 404，现有数据集使用错误令牌返回 401，因此状态会透露 ID 是否存在。这是已接受风险：ID 为不可猜测的 128 位随机值，没有令牌仍无法读取数据集。
@@ -369,10 +369,10 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 `PUBLIC_DEMO_MODE=true` 用于不应接收他人文件的公共服务器：
 
 - `POST /api/datasets` 不读取正文并返回 403 `upload_disabled`。
-- **Try sample data** 和样例下载仍可使用。
-- 上传页面只显示文件格式和 **Try sample data**，没有文件或货币字段。页面说明只接受样例数据，并链接到[使用 Docker 运行](#使用-docker-运行)以便上传。
+- **试用示例数据**和样例下载仍可使用。
+- 上传页面只显示文件格式和**试用示例数据**，没有文件或货币字段。页面说明只接受样例数据，并链接到[使用 Docker 运行](#使用-docker-运行)以便上传。
 - `GET /api/config` 返回 `{"public_demo_mode":true,...}`，页面据此判断。
-- `MAX_DATASETS` 保护公共服务器磁盘：每次单击 **Try sample data** 都创建数据集，达到上限时返回 503 `capacity_reached`。
+- `MAX_DATASETS` 保护公共服务器磁盘：每次单击**试用示例数据**都创建数据集，达到上限时返回 503 `capacity_reached`。
 
 ## 限制
 
@@ -484,7 +484,7 @@ Dependabot（`.github/dependabot.yml`）每周一为过时的 Python（`uv.lock`
 
 ### 浏览器测试
 
-小型 Playwright 套件（Chromium，`frontend/e2e/`）涵盖主要流程：Try sample data、有效上传、无效上传、日期范围与重置、分析其他文件、跨模块客户流程、360/768/1280 px 响应式布局以及过期数据集。
+小型 Playwright 套件（Chromium，`frontend/e2e/`）涵盖主要流程：试用示例数据、有效上传、无效上传、日期范围与重置、分析另一个文件、跨模块客户流程、360/768/1280 px 响应式布局以及过期数据集。
 浏览器只需安装一次（约 150 MB，存储库外），然后从 `frontend/` 运行：
 
 ```sh

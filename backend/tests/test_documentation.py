@@ -23,6 +23,22 @@ FENCED_BLOCK_PATTERN = re.compile(r"^```[^\n]*\n.*?^```[ \t]*$", re.MULTILINE | 
 INLINE_CODE_PATTERN = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
 IMAGE_PATTERN = re.compile(r"!\[[^]]*\]\(([^)]+)\)")
 LIST_ITEM_PATTERN = re.compile(r"^(\s*)(?:([-+*])|\d+\.)\s+")
+TRANSLATABLE_INLINE_UI = {
+    "New",
+    "No current sales",
+    "No change",
+    "Not yet observed",
+    "29–31 Dec",
+    "10–31 Mar 2025",
+    "Week of 29 Dec",
+    "Partial period: <covered dates>",
+}
+ENGLISH_ONLY_UI_STATUSES = {
+    "New",
+    "No current sales",
+    "No change",
+    "Not yet observed",
+}
 
 
 def localized_path(source: Path, locale: str) -> Path:
@@ -134,7 +150,11 @@ def test_localized_documents_preserve_structure_and_technical_literals() -> None
         ]
         source_blocks = FENCED_BLOCK_PATTERN.findall(source_markdown)
         without_blocks = FENCED_BLOCK_PATTERN.sub("", source_markdown)
-        source_literals = Counter(INLINE_CODE_PATTERN.findall(without_blocks))
+        source_literals = Counter(
+            literal
+            for literal in INLINE_CODE_PATTERN.findall(without_blocks)
+            if literal not in TRANSLATABLE_INLINE_UI
+        )
         source_images = Counter(IMAGE_PATTERN.findall(source_markdown))
         source_external_links = Counter(
             target
@@ -175,6 +195,10 @@ def test_localized_documents_preserve_structure_and_technical_literals() -> None
 
             translated_without_blocks = FENCED_BLOCK_PATTERN.sub("", translated)
             translated_literals = Counter(INLINE_CODE_PATTERN.findall(translated_without_blocks))
+            untranslated_statuses = ENGLISH_ONLY_UI_STATUSES & translated_literals.keys()
+            assert not untranslated_statuses, (
+                f"{document}: untranslated UI statuses {untranslated_statuses}"
+            )
             missing_literals = source_literals - translated_literals
             assert not missing_literals, (
                 f"{document}: altered technical literals {missing_literals}"

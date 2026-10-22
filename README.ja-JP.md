@@ -17,7 +17,7 @@ docker build -t open-sales-analytics .
 docker run -p 8000:8000 open-sales-analytics
 ```
 
-<http://localhost:8000> を開きます。アップロード画面が表示され、**Try sample data** でサンプルファイルのダッシュボードが開きます。`curl http://localhost:8000/api/health` は `{"status":"ok"}` を返します。
+<http://localhost:8000> を開きます。アップロード画面が表示され、**サンプルデータを試す**でサンプルファイルのダッシュボードが開きます。`curl http://localhost:8000/api/health` は `{"status":"ok"}` を返します。
 
 コンテナは非 root ユーザー（UID 10001）で動き、データセットを `/data`（`DATASET_DIR=/data`）に保存します。ボリュームがなければ、コンテナ削除時に失われます。保持するには名前付きボリュームを `/data` にマウントします。
 
@@ -80,7 +80,7 @@ docker run -p 8000:8000 open-sales-analytics
 
 ### 5. サンプルデータをアップロード
 
-`backend/app/sample/sample_sales.csv` を選び、**USD** を選択して **Upload** をクリックします。（**Try sample data** はファイル選択なしで同じファイルをインポートします。）
+`backend/app/sample/sample_sales.csv` を選び、**USD** を選択して**アップロード**をクリックします。（**サンプルデータを試す**はファイル選択なしで同じファイルをインポートします。）
 
 ![サンプルファイルと USD を選択したアップロードフォーム](_docs/images/demo-upload.png)
 
@@ -184,7 +184,7 @@ API 文書は [`/docs`](http://localhost:8000/docs) にあります。`GET /api/
 | `CUSTOMER_ID_MAX_LENGTH` | 0 より大きい整数 | `128` | 非空 `customer_id` の最大 Unicode 文字数。超過は `customer_id_too_long`。 |
 | `CLEANUP_INTERVAL_MINUTES` | 0 より大きい整数 | `15` | 期限切れデータセット削除間隔（起動時にも一度実行）。 |
 | `PUBLIC_DEMO_MODE` | 真偽値 | `false` | `true` でアップロード無効。[デモモード](#デモモード)参照。 |
-| `MAX_DATASETS` | 0 より大きい整数 | `200` | 未失効データセット上限。さらに作成（アップロードまたは **Try sample data**）すると失効/削除まで 503 `capacity_reached`。 |
+| `MAX_DATASETS` | 0 より大きい整数 | `200` | 未失効データセット上限。さらに作成（アップロードまたは**サンプルデータを試す**）すると失効/削除まで 503 `capacity_reached`。 |
 | `RESPONSE_CACHE_MAX_ENTRIES` | 0 以上の整数 | `256` | このプロセスの概要/商品レスポンスキャッシュ上限。`0` で無効。 |
 | `RESPONSE_CACHE_TTL_SECONDS` | 0 より大きい整数 | `300` | 概要/商品キャッシュの最長寿命。データセット失効が常に優先。 |
 
@@ -332,7 +332,7 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 
 ### サンプルデータ
 
-有効なサンプルは <http://localhost:8000/api/sample.csv> からダウンロードできます（画面では **Download sample CSV**）。**Try sample data** はアップロードせず同じファイルを USD でインポートします。
+有効なサンプルは <http://localhost:8000/api/sample.csv> からダウンロードできます（画面では**サンプル CSV をダウンロード**）。**サンプルデータを試す**はアップロードせず同じファイルを USD でインポートします。
 
 ## トレンドバケット
 
@@ -341,7 +341,7 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 - 範囲は両端を含み、開始日と終了日の両方が入ります。
 - 週は月曜～日曜で、週バケットの `bucket_start` は月曜。月は暦月です。
 - 範囲で切られたバケット（最初の週/月が開始日前に始まる、最後が終了日後に終わる）は部分期間です。チャートは範囲と暦から計算し、売上なしの日もカバー済みと数えます。一日の日次バケットは常に完全（データは日付のみ）、週/月の一日切片は部分。範囲が一週/月内ならそのバケットは部分です。
-- 部分表示：部分週/月の軸ラベルは `12月29日の週` や月名でなく対象日（`12月29～31日`、`2025年3月10～31日`）。点は白抜き、下に注記、ツールチップに年と `部分期間：<対象日>`。完全バケットにはありません。
+- 部分表示：部分週/月の軸ラベルは `12月29日の週` や月名でなく対象日（`29–12月31日`、`10–2025年3月31日`）。点は白抜き、下に注記、ツールチップに年と `部分期間: <対象日>`。完全バケットにはありません。
 - 範囲内行だけを合計するため、部分バケットは対象日の売上だけを含みます。
 
 ## 通貨
@@ -369,10 +369,10 @@ curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
 `PUBLIC_DEMO_MODE=true` は他人のファイルを受け付けるべきでない公開サーバー向けです。
 
 - `POST /api/datasets` は本文を読まず 403 `upload_disabled`。
-- **Try sample data** とサンプルダウンロードは動作。
-- アップロード画面は形式と **Try sample data** だけで、ファイル/通貨欄なし。サンプルのみ受付と示し、アップロード用に[Docker で実行](#docker-で実行)へリンク。
+- **サンプルデータを試す**とサンプルダウンロードは動作。
+- アップロード画面は形式と**サンプルデータを試す**だけで、ファイル/通貨欄なし。サンプルのみ受付と示し、アップロード用に[Docker で実行](#docker-で実行)へリンク。
 - `GET /api/config` は `{"public_demo_mode":true,...}` を返し、画面はこれで判断。
-- `MAX_DATASETS` が公開サーバーのディスクを保護。**Try sample data** ごとにデータセットを作り、上限で 503 `capacity_reached`。
+- `MAX_DATASETS` が公開サーバーのディスクを保護。**サンプルデータを試す**ごとにデータセットを作り、上限で 503 `capacity_reached`。
 
 ## 制限
 
@@ -484,7 +484,7 @@ Dependabot（`.github/dependabot.yml`）は毎週月曜、既存 Python（`pypro
 
 ### ブラウザテスト
 
-小規模 Playwright（Chromium、`frontend/e2e/`）が主要ジャーニーをカバーします。Try sample data、有効/無効アップロード、日付範囲/Reset、Analyze another file、横断顧客ジャーニー、360/768/1280 px 応答レイアウト、期限切れデータセットです。
+小規模 Playwright（Chromium、`frontend/e2e/`）が主要ジャーニーをカバーします。サンプルデータを試す、有効/無効アップロード、日付範囲/リセット、別のファイルを分析、横断顧客ジャーニー、360/768/1280 px 応答レイアウト、期限切れデータセットです。
 ブラウザを一度インストール（約 150 MB、リポジトリ外）して `frontend/` から実行します。
 
 ```sh

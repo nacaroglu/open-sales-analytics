@@ -25,7 +25,7 @@ docker build -t open-sales-analytics .
 docker run -p 8000:8000 open-sales-analytics
 ```
 
-<http://localhost:8000> adresini açın. Yükleme ekranını görürsünüz; **Try sample data** örnek dosyayla bir panel açar.
+<http://localhost:8000> adresini açın. Yükleme ekranını görürsünüz; **Örnek veriyi dene** örnek dosyayla bir panel açar.
 `curl http://localhost:8000/api/health`, `{"status":"ok"}` döndürür.
 
 Kapsayıcı root olmayan bir kullanıcıyla (UID 10001) çalışır ve veri kümelerini `/data` içinde tutar
@@ -101,14 +101,14 @@ Günlük `Uvicorn running on http://0.0.0.0:8000` gösterdiğinde sunucu hazırd
 
 ### 5. Örnek verileri yükleyin
 
-`backend/app/sample/sample_sales.csv` dosyasını seçin, **USD**'yi seçin ve **Upload** düğmesine tıklayın.
-(**Try sample data**, aynı dosyayı seçmenizi gerektirmeden içe aktarır.)
+`backend/app/sample/sample_sales.csv` dosyasını seçin, **USD**'yi seçin ve **Yükle** düğmesine tıklayın.
+(**Örnek veriyi dene**, aynı dosyayı seçmenizi gerektirmeden içe aktarır.)
 
 ![Örnek dosyanın ve USD'nin seçili olduğu yükleme formu](_docs/images/demo-upload.png)
 
 ### 6. Sonuçları inceleyin
 
-Panel, verinin 2024-01-01 ile 2025-12-31 arasındaki tam dönemiyle **Overview** ekranında açılır:
+Panel, verinin 2024-01-01 ile 2025-12-31 arasındaki tam dönemiyle **Genel bakış** ekranında açılır:
 
 | Metrik | Beklenen değer |
 | --- | --- |
@@ -121,10 +121,10 @@ Panel, verinin 2024-01-01 ile 2025-12-31 arasındaki tam dönemiyle **Overview**
 ![Genel bakış: temel rakamlar, aylık brüt satış eğilimi ve ilk 10 ürün](_docs/images/phase-3/overview.png)
 
 Tam dönem 24 ayı kapsadığından eğilim aylıktır (bkz. [Eğilim kovaları](#eğilim-kovaları)). Her rakamı filtrelemek
-için **Start date** ve **End date** değerlerini değiştirin; **Reset** tam döneme döner. **Compare with**, önceki dönemi
+için **Başlangıç tarihi** ve **Bitiş tarihi** değerlerini değiştirin; **Sıfırla** tam döneme döner. **Şununla karşılaştır**, önceki dönemi
 veya geçen yılın aynı dönemini ekler; veri 2024-01-01 tarihinde başladığı için tam dönemde kullanılamaz.
 
-**Products**; sıralamaları, kümülatif Pareto grafiğiyle brüt satış payını, yükselen ve düşen ürünleri, hareketsiz
+**Ürünler**; sıralamaları, kümülatif Pareto grafiğiyle brüt satış payını, yükselen ve düşen ürünleri, hareketsiz
 ürünleri ve birlikte alınan ürünleri gösterir. Burada 2025, 2024 ile karşılaştırılmıştır
 (bkz. [Ürün analitiği](#ürün-analitiği)):
 
@@ -135,21 +135,21 @@ alınan ürünler.
 
 ![Ürün ayrıntısı: brüt satış eğilimi, ağırlıklı birim fiyat, sipariş penetrasyonu ve ilişkili ürünler](_docs/images/phase-3/product-detail.png)
 
-**Customers**; kapsamı, temel müşteri rakamlarını, satın almalar arasındaki günleri, kohort elde tutma ısı haritasını,
+**Müşteriler**; kapsamı, temel müşteri rakamlarını, satın almalar arasındaki günleri, kohort elde tutma ısı haritasını,
 Geçmiş Müşteri Değerini, Öngörülen 12 Aylık Müşteri Değerini, RFM segmentlerini, satın alma sıklığını ve yoğunlaşmayı
 gösterir (bkz. [Müşteri analitiği](#müşteri-analitiği)):
 
 ![Müşteriler: kapsam, temel rakamlar, kohort elde tutma ısı haritası, değer, RFM, sıklık ve yoğunlaşma](_docs/images/phase-3/customers.png)
 
-**Analyze another file** bu veri kümesini siler ve yükleme ekranına döner.
+**Başka bir dosya analiz et** bu veri kümesini siler ve yükleme ekranına döner.
 
 ## Karşılaştırmalar
 
 Tarih aralığı kartı etkin aralığı önceki dönemle veya geçen yılın aynı dönemiyle karşılaştırabilir. Panel API'ın
 döndürdüğü kesin tarihleri gösterir. Karşılaştırma veri kümesinin ilk tarihinden önce başlayacaksa tam aralık
 karşılaştırması kullanılamaz. Artık gün karşılaştırmaları karşılaştırma yılındaki Şubat ayının son geçerli gününü
-kullanır. Önceki değeri olmayan bir karşılaştırma “No prior value”; iki sıfır değer “No change”; yeni ürün “New”;
-diğer durumlarda yüzde “Comparable” olarak gösterilir.
+kullanır. Önceki değeri olmayan bir karşılaştırma “Önceki değer yok”; iki sıfır değer “Değişim yok”; yeni ürün “Yeni”;
+diğer durumlarda yüzde “Karşılaştırılabilir” olarak gösterilir.
 
 ## Ürün analitiği
 
@@ -164,7 +164,7 @@ olarak gösterilir.
 | İlk %20 payı — `top_20_percent_share` | En üst %20 ürün sayısının brüt satışı / toplam brüt satış | Etkin aralık; toplam sıfırsa yetersiz | 50/20/15/10/5 değerli beş üründe ilk ürün %50.00'dır |
 | %80'e ulaşan ürünler — `products_to_80_percent` | Kümülatif payı %80'e ulaştıran en küçük sıralı ürün sayısı | Etkin aralık; toplam sıfırsa yetersiz | 50+20+15, 3 üründe %80'e ulaşır |
 | Kümülatif pay — `cumulative_share` | İşleyen brüt satış / toplam brüt satış | Etkin aralık; toplam sıfırsa kullanılamaz | İlk üç golden ürün %85.00'a ulaşır |
-| Ürün büyümesi — `product_growth` | Güncel brüt satış eksi karşılaştırma brüt satışı; yüzde karşılaştırma değerini kullanır | Karşılaştırma dönemi; `New`, `No current sales`, `No change` veya kullanılamayan karşılaştırma yanıltıcı yüzdeleri önler | 10'dan 20'ye +10 ve +%100.00'dır |
+| Ürün büyümesi — `product_growth` | Güncel brüt satış eksi karşılaştırma brüt satışı; yüzde karşılaştırma değerini kullanır | Karşılaştırma dönemi; `Yeni`, `Güncel satış yok`, `Değişim yok` veya kullanılamayan karşılaştırma yanıltıcı yüzdeleri önler | 10'dan 20'ye +10 ve +%100.00'dır |
 | Yükselen/düşen sıralaması — `rising_products`, `falling_products` | Mutlak brüt satış değişimine göre sırala | Seçili karşılaştırma; karşılaştırma kullanılamıyorsa kullanılamaz | +10 değişim, +1'lik +%900 değişimin üstünde yer alır |
 | Hareketsiz ürünler — `dormancy` | Seçilen 30, 60 veya 90 günlük pencerede satışı olmayan ürünler; önceki toplamlar pencere öncesi satışları kullanır | Seçili aralığın son tarihine dayanır (tam aralıkta veri kümesinin son tarihi), varsayılan 60; yetersiz geçmiş ve sıfır sonuç ayrıdır. Dayanaktan tam N gün önceki satış pencerenin içindedir | Dayanaktan 60 gün önce son satılan ürün 60 günlük pencereye dahildir |
 | Ağırlıklı birim fiyat — `weighted_unit_price` | SUM(quantity × unit_price) / SUM(quantity) | Etkin aralık kovaları; satışsız kovalar boşluktur, sıfır fiyat değildir | 10'dan 1 ve 20'den 3 birim 17.50 verir |
@@ -202,7 +202,7 @@ aralığı başlangıç ve bitiş tarihlerini içerir. Aşağıdaki çalışılm
 | Yeni ve geri dönen müşteri brüt satışı — `new_vs_returning` | Her satırın müşterinin ilk tam geçmiş sipariş tarihinde veya sonrasında olmasına göre `SUM(quantity × unit_price)` bölünür; geçmiş aralık sonuna kadardır | Tanımlanmış satır yoksa `zero_result` ile sıfır para değerleri döner | CUST-01'in 2024-12-15 satın alımı, 2025 satışlarını geri dönen yapar |
 | Tekrar satın alma oranı — `repeat_purchase` | Seçili sona kadar en az iki benzersiz siparişi olan etkin müşteriler / etkin tanımlanmış müşteriler; aralık başlangıcından önceki siparişler sayılır | Etkin müşteri yoksa `insufficient_data`; tekrar etmeyen etkin müşteriler tam 0'dır (`zero_result`) | Aynı gün siparişleri benzersiz tarihler değil, benzersiz siparişlerdir |
 | Satın almalar arasındaki günler — `days_between_purchases` | Ardışık benzersiz siparişler arasındaki takvim günü aralığının medyanı; sonraki sipariş aralıktaysa aralık dahildir ve aynı gün siparişleri 0 verir | Aralık yoksa medyan null ve `insufficient_data`; sabit kovalar 0, 1-7, 8-14, 15-30, 31-60, 61-90, 91-180, 181-365 ve 366+ | Aynı gün çifti 0 kovasına katkı yapar |
-| Kohort elde tutma — `cohort_retention` | Takvim ayı uzaklığına göre elde tutulan müşteriler / tam geçmiş edinme kohortu boyutu; kohortlar seçili sona kadarki tüm geçmişi kullanır | Eksik kohortlar `insufficient_data`; sağ kenar hücresi 0% değil `Not yet observed` olur | Ay 0, boş olmayan her kohort için %100.0'dır |
+| Kohort elde tutma — `cohort_retention` | Takvim ayı uzaklığına göre elde tutulan müşteriler / tam geçmiş edinme kohortu boyutu; kohortlar seçili sona kadarki tüm geçmişi kullanır | Eksik kohortlar `insufficient_data`; sağ kenar hücresi 0% değil `Henüz gözlemlenmedi` olur | Ay 0, boş olmayan her kohort için %100.0'dır |
 | Geçmiş Müşteri Değeri — `historical_customer_value` | Son tarihe kadarki gözlenen tanımlanmış brüt satış / tanımlanmış müşteri sayısı; medyan ortadaki müşteri başına değerdir; kohort eğrileri kümülatif satış kullanır | Kohort yoksa `insufficient_data`; sıfır gözlenen satış sıfır sonuçtur; bu tahmin değil gözlenen veridir | Golden fixture 10 tanımlanmış müşteride 380.0000 değerine sahiptir |
 | RFM segmentleri — `rfm` | Güncellik, seçili son tarihten önceki günlerdir; sıklık benzersiz siparişler; parasal değer tanımlanmış brüt satıştır. Her boyut göreli beşte birlik puanlarını ve FM = F + M kullanır | 5'ten az müşteri `insufficient_data`; eşitlikler aynı puanı ve kayıt defterindeki tam puan-segment tablosunu kullanır | Puanlar evrensel kıyaslara değil, bu yüklemeye görelidir |
 | RFM segment ayrıntıları — `rfm_drilldown` | Toplu segment brüt satışı ile sabit güncellik (0-30'dan 366+'ya) ve sıklık (1, 2, 3, 4, 5, 6-10, 11-20, 21+) kovaları; müşteri başına satır yoktur | 5'ten az müşteri `insufficient_data`; sıfır brüt satışın payı null'dır | Golden fixture, kimlik eşitlik bozucusu olmadan eşit değerler içerir |
@@ -215,7 +215,7 @@ satır değil sipariş düzeyindedir. Sütunsuz dosya %0 değil, kullanılamazd�
 
 Müşteri kimliği ve kohortlar seçili sona kadarki tam geçmişi kullanır. Aralık başlangıcını ileri almak müşteriyi yeni
 olarak yeniden sınıflandırmaz veya kohort üyeliğini değiştirmez. RFM güncelliği ve kohort olgunluğu bugüne değil,
-seçili son tarihe dayanır. Kısmi veya gelecekteki kohort hücresi sıfır sonuç değil, **Not yet observed**'dır.
+seçili son tarihe dayanır. Kısmi veya gelecekteki kohort hücresi sıfır sonuç değil, **Henüz gözlemlenmedi**'dir.
 
 Yükleme tutarlılık kuralları kesindir: sipariş içindeki boşluklar tek boş olmayan kimlikle doldurulur; iki farklı kimlik
 tüm yüklemeyi reddettirir; tümü boş sipariş tanımlanmamış kalır. Varsayılan `customer_id` sınırı 128 karakterdir.
@@ -225,7 +225,7 @@ posta adreslerini, ulusal kimlik numaralarını, tersine çevrilebilir kodlamala
 Müşteri verileri anonim değil, takma adlıdır. UUID, dahili anahtar veya dosya dışında tutulan gizli salt içeren karma
 kullanın. Yanıtlar yalnızca toplu sayılar ve toplamlar içerir: müşteri listesi, arama, indirme veya dışa aktarma yoktur;
 müşteri kimlikleri, kohort üyeliği ve RFM kayıtları günlüğe yazılmaz. Müşteri verileri yalnızca veri kümesinin DuckDB
-dosyasında yaşar, `DATASET_TTL_HOURS` (varsayılan 24) sonrasında bu dosyayla birlikte veya **Analyze another file** ile
+dosyasında yaşar, `DATASET_TTL_HOURS` (varsayılan 24) sonrasında bu dosyayla birlikte veya **Başka bir dosya analiz et** ile
 hemen kaldırılır; ham CSV içe aktarmadan sonra silinir. Öngörülen 12 Aylık Müşteri Değeri bu gözlenen ölçü değil, ayrı
 bir gelecek metriğidir.
 
@@ -243,7 +243,7 @@ Sunucu başladığında bu ortam değişkenlerini okur. Her değişken isteğe b
 | `CUSTOMER_ID_MAX_LENGTH` | integer > 0 | `128` | Boş olmayan `customer_id` için azami Unicode karakteri; uzun değerler `customer_id_too_long` ile reddedilir. |
 | `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | Sunucunun süresi dolan veri kümelerini kaldırma sıklığı (başlangıçta da bir kez yapar). |
 | `PUBLIC_DEMO_MODE` | boolean | `false` | `true` yüklemeleri kapatır; bkz. [Demo modu](#demo-modu). |
-| `MAX_DATASETS` | integer > 0 | `200` | Sunucunun tuttuğu süresi dolmamış en fazla veri kümesi. Bir tane daha oluşturmak (yükleme veya **Try sample data**), biri sona erene ya da silinene kadar 503 `capacity_reached` yanıtı verir. |
+| `MAX_DATASETS` | integer > 0 | `200` | Sunucunun tuttuğu süresi dolmamış en fazla veri kümesi. Bir tane daha oluşturmak (yükleme veya **Örnek veriyi dene**), biri sona erene ya da silinene kadar 503 `capacity_reached` yanıtı verir. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Bu süreçte önbelleğe alınan azami Overview/Product yanıtı. `0`, yanıt önbelleğini devre dışı bırakır. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Önbelleğe alınmış Overview/Product yanıtının azami ömrü; veri kümesinin süre sonu her zaman önceliklidir. |
 
@@ -469,7 +469,7 @@ Uyarılar dosyayı reddettirmez. `201` yanıtının `warnings` listesinde ve yü
 ### Örnek veri
 
 Geçerli bir örnek dosyayı <http://localhost:8000/api/sample.csv> adresinden indirin (yükleme ekranı bunu
-**Download sample CSV** olarak bağlar). Yükleme ekranındaki **Try sample data**, aynı dosyayı yükleme olmadan USD
+**Örnek CSV'yi indir** olarak bağlar). Yükleme ekranındaki **Örnek veriyi dene**, aynı dosyayı yükleme olmadan USD
 olarak içe aktarır.
 
 ## Eğilim kovaları
@@ -484,9 +484,9 @@ Eğilim, brüt satışları takvim kovasına göre gruplar. Ayrıntı düzeyi ya
   Grafik bunu aralık ve takvimden hesaplar; dolayısıyla satışsız bir gün de kapsamda sayılır. Tek günlük günlük kova her
   zaman tamdır (veriler yalnızca tarih tutar); hafta veya ayın tek günlük dilimi kısmidir. Tek hafta ya da ay içindeki
   aralık o kovayı kısmi gösterir.
-- Kısmi sunum: kısmi hafta veya ay eksen etiketi, `Week of 29 Dec` veya ay adı yerine kapsadığı tarihleri (`29–31 Dec`,
+- Kısmi sunum: kısmi hafta veya ay eksen etiketi, `29 Ara haftası` veya ay adı yerine kapsadığı tarihleri (`29–31 Ara`,
   `10–31 Mar 2025`) gösterir; nokta içi boştur; grafik altındaki not bunu belirtir; araç ipucu yılı ve
-  `Partial period: <covered dates>` metnini ekler. Tam kovada bunların hiçbiri yoktur.
+  `Kısmi dönem: <kapsanan tarihler>` metnini ekler. Tam kovada bunların hiçbiri yoktur.
 - Yalnızca aralık içindeki satırlar toplanır; bu yüzden kısmi kova kapsadığı tarihlerin satışını tutar.
 
 ## Para birimleri
@@ -504,7 +504,7 @@ etikettir. Dönüşüm ve döviz kuru yoktur. Başka kodlar `400 invalid_request
 - Müşteri kimliği uzunluk, e-posta ve telefon kontrolleri yalnızca en iyi çaba korumalarıdır. Anonimleştirme veya
   uyumluluk garantisi değildir; otomatik kontroller her tür kişisel veriyi bulamaz.
 - Veri kümesi `DATASET_TTL_HOURS` (varsayılan 24) sonrasında, başlangıçta ve her `CLEANUP_INTERVAL_MINUTES` çalışan
-  temizlikle veya **Analyze another file** tıklanınca hemen silinir.
+  temizlikle veya **Başka bir dosya analiz et** tıklanınca hemen silinir.
 - Başarılı modül yanıtları sınırlı, sürece yerel önbellekte `RESPONSE_CACHE_TTL_SECONDS` (varsayılan 300 saniye)
   tutulabilir; yetkilendirme her istekte çalışır, girdiler veri kümesi ve seçeneklerle anahtarlanır, süre sonu veya
   silme önbellek yanıtlarını kaldırır. Önbellek örnekler arasında paylaşılmaz.
@@ -531,11 +531,11 @@ olarak çalışır. Kendi dosyalarınızı analiz etmek için [kendiniz çalış
 `PUBLIC_DEMO_MODE=true`, başka kişilerin dosyalarını almaması gereken herkese açık sunucu içindir:
 
 - `POST /api/datasets`, gövdeyi okumadan 403 `upload_disabled` yanıtı verir.
-- **Try sample data** ve örnek indirme çalışmaya devam eder.
-- Yükleme ekranı yalnızca dosya biçimini ve **Try sample data** seçeneğini gösterir; dosya veya para birimi alanı yoktur.
+- **Örnek veriyi dene** ve örnek indirme çalışmaya devam eder.
+- Yükleme ekranı yalnızca dosya biçimini ve **Örnek veriyi dene** seçeneğini gösterir; dosya veya para birimi alanı yoktur.
   Yalnız örnek veri kabul ettiğini söyler ve yüklemeler için [Docker ile çalıştırma](#docker-ile-çalıştırma) bölümüne bağlanır.
 - `GET /api/config`, ekranın bunu anlamasını sağlayan `{"public_demo_mode":true,...}` değerini döndürür.
-- `MAX_DATASETS` herkese açık sunucunun diskini korur: her **Try sample data** tıklaması veri kümesi oluşturur; sınırda
+- `MAX_DATASETS` herkese açık sunucunun diskini korur: her **Örnek veriyi dene** tıklaması veri kümesi oluşturur; sınırda
   503 `capacity_reached` yanıtı verir.
 
 ## Sınırlamalar
