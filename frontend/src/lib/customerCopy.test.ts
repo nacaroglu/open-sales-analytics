@@ -15,7 +15,7 @@ describe("customer coverage copy", () => {
   });
 
   test("keeps unavailable guidance privacy-safe", () => {
-    expect(unavailableExplanation).toContain("Overview and Products work without it.");
-    expect(unavailableExplanation).not.toMatch(/revenue|anonymous|anonymised/i);
+    expect(unavailableExplanation()).toContain("Overview and Products work without it.");
+    expect(unavailableExplanation()).not.toMatch(/revenue|anonymous|anonymised/i);
   });
 });

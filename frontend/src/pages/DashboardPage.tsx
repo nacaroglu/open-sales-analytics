@@ -25,11 +25,13 @@ import {
   describeError,
   errorKind,
 } from "../lib/errors";
-import { formatCount, formatExpiry, formatMoney, formatRelativeExpiry } from "../lib/format";
+import { formatCount, formatExpiry, formatMoney, formatPercent, formatRelativeExpiry } from "../lib/format";
 import type { CustomerResponse } from "../lib/types";
 import { lowCoverageExplanation, suppressedExplanation, truncatedCoverage, unavailableExplanation } from "../lib/customerCopy";
 import { clearSession, readSession, tokenFor } from "../lib/session";
 import type { Issue, Meta, Overview, Summary } from "../lib/types";
+import AppHeader from "../components/AppHeader";
+import { localizedServerText, localizedRfmSegment } from "../lib/localizedCopy";
 
 const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700";
@@ -40,9 +42,8 @@ const LINK = `text-indigo-700 underline underline-offset-2 hover:text-indigo-900
 const LABEL = "text-sm font-medium text-slate-600";
 const VALUE = "mt-1 text-base font-semibold tabular-nums wrap-anywhere";
 
-function Header() {
-  return <h1 className="text-3xl font-bold text-indigo-700">Open Sales Analytics</h1>;
-}
+function Header() { return <AppHeader />; }
+
 
 function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers> }) {
   if (query.isPlaceholderData || (query.isLoading && query.data === undefined)) {
@@ -62,7 +63,7 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
   if (data == null) return null;
   const tier = data.coverage.dataset.tier;
   if (tier === "missing") {
-    return <div className="space-y-8"><section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section><ProjectionPanel projection={data.projected_12_month_customer_value} currency={data.currency} onRetry={() => void query.refetch()} /></div>;
+    return <div className="space-y-8"><section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation()}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section><ProjectionPanel projection={data.projected_12_month_customer_value} currency={data.currency} onRetry={() => void query.refetch()} /></div>;
   }
   const dataset = data.coverage.dataset;
   const range = data.coverage.range;
@@ -90,13 +91,13 @@ function CustomerCoverageView({ query }: { query: ReturnType<typeof useCustomers
   );
 }
 
-export function AnalysisState({ availability, metric }: { availability: { state: string; reason: string | null }; metric: string }) {
-  if (availability.state === "insufficient_data") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">Insufficient data</h3><p className="text-sm text-slate-600">{availability.reason}</p></section>;
+export function AnalysisState({ availability, metric }: { availability: { state: string; reason: string | null; reason_code?: string | null; reason_params?: import("../lib/types").LocalizationParams }; metric: string }) {
+  if (availability.state === "insufficient_data") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">Insufficient data</h3><p className="text-sm text-slate-600">{localizedServerText(availability.reason_code, availability.reason_params, availability.reason)}</p></section>;
   if (availability.state === "zero_result") return <section aria-label={`${metric} state`} className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="font-semibold">{metric}</h3><p>0</p></section>;
   return null;
 }
 
-type CustomerSection = { availability?: { state: string; reason: string | null }; [key: string]: unknown };
+type CustomerSection = { availability?: { state: string; reason: string | null; reason_code?: string | null; reason_params?: import("../lib/types").LocalizationParams }; [key: string]: unknown };
 
 function SectionState({ section, title, onRetry }: { section: CustomerSection; title: string; onRetry: () => void }) {
   if (section.availability?.state === "insufficient_data") return <AnalysisState availability={section.availability} metric={title} />;
@@ -122,7 +123,7 @@ function CustomerMetrics({ data, onRetry, updating }: { data: CustomerResponse; 
   const lowCoverage = data.availability.tier === "warning" ? `Low coverage: based on ${truncatedCoverage(data.coverage.dataset.coverage)} of orders.` : undefined;
   const selectedRange = data.range;
   const moneyValue = (value: unknown) => typeof value === "string" ? formatMoney(value, data.currency) : "—";
-  const percentValue = (value: unknown) => typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+  const percentValue = (value: unknown) => typeof value === "number" ? formatPercent(value, 1) : "—";
   const daysBuckets = (sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? [];
   const maxDaysIntervals = Math.max(1, ...daysBuckets.map((bucket) => Number(bucket.interval_count) || 0));
   const maxDaysBarHeight = 96;
@@ -158,8 +159,8 @@ function CustomerMetrics({ data, onRetry, updating }: { data: CustomerResponse; 
       <CustomerMetricSection label="RFM segments" data={sections.rfm} lowCoverage={lowCoverage} onRetry={onRetry} updating={updating}>
         <p>Segments are relative to the customers in this upload, not universal benchmarks.</p>
         <details><summary className="cursor-pointer font-semibold">RFM score rules</summary><p className="mt-2 text-sm text-slate-600">Recency, frequency and monetary scores are relative quintiles; ties receive the same score, and the first matching segment rule applies.</p></details>
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table aria-label="RFM segments table" className="w-full text-left"><thead className="bg-slate-100"><tr><th className="px-3 py-2">Segment</th><th className="px-3 py-2">Customers</th><th className="px-3 py-2">Share</th></tr></thead><tbody className="divide-y divide-slate-200">{rfmSegments.map((row) => <tr key={String(row.segment)}><td className="px-3 py-2"><button type="button" className={LINK} onClick={() => setSelectedSegment(String(row.segment))}>{String(row.segment)}</button></td><td className="px-3 py-2">{formatCount(Number(row.customer_count))}</td><td className="px-3 py-2">{percentValue(row.share)}</td></tr>)}</tbody></table></div>
-        {drilldown && <div role="region" aria-label="RFM segment drill-down" className="rounded-lg border border-slate-200 bg-white p-4"><h4 className="font-semibold">{String(drilldown.segment)} drill-down</h4><p>{formatCount(Number(drilldown.customer_count))} customers · {moneyValue(drilldown.gross_sales)}</p><AggregateTable ariaLabel="RFM recency distribution" headers={["Recency", "Customers"]} rows={((drilldown.recency_distribution as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count))])} /><AggregateTable ariaLabel="RFM frequency distribution" headers={["Frequency", "Customers"]} rows={((drilldown.frequency_distribution as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count))])} /></div>}
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white"><table aria-label="RFM segments table" className="w-full text-left"><thead className="bg-slate-100"><tr><th className="px-3 py-2">Segment</th><th className="px-3 py-2">Customers</th><th className="px-3 py-2">Share</th></tr></thead><tbody className="divide-y divide-slate-200">{rfmSegments.map((row) => <tr key={String(row.segment)}><td className="px-3 py-2"><button type="button" className={LINK} onClick={() => setSelectedSegment(String(row.segment))}>{localizedRfmSegment(row.segment_code, row.segment)}</button></td><td className="px-3 py-2">{formatCount(Number(row.customer_count))}</td><td className="px-3 py-2">{percentValue(row.share)}</td></tr>)}</tbody></table></div>
+        {drilldown && <div role="region" aria-label="RFM segment drill-down" className="rounded-lg border border-slate-200 bg-white p-4"><h4 className="font-semibold">{localizedRfmSegment(drilldown.segment_code, drilldown.segment)} drill-down</h4><p>{formatCount(Number(drilldown.customer_count))} customers · {moneyValue(drilldown.gross_sales)}</p><AggregateTable ariaLabel="RFM recency distribution" headers={["Recency", "Customers"]} rows={((drilldown.recency_distribution as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count))])} /><AggregateTable ariaLabel="RFM frequency distribution" headers={["Frequency", "Customers"]} rows={((drilldown.frequency_distribution as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count))])} /></div>}
       </CustomerMetricSection>
       <CustomerMetricSection label="Purchase frequency" data={sections.purchase_frequency} lowCoverage={lowCoverage} onRetry={onRetry} updating={updating}>
         <AggregateTable ariaLabel="Purchase frequency table" headers={["Orders", "Customers", "Share"]} rows={((sections.purchase_frequency?.buckets as Record<string, unknown>[] | undefined) ?? []).map((row) => [String(row.key), formatCount(Number(row.customer_count)), percentValue(row.share)])} />
@@ -562,7 +563,6 @@ export default function DashboardPage({
   return (
     <div className="space-y-8">
       <Header />
-
       {justCreated && <SuccessNotice onDismiss={onDismissSuccess} />}
       {warnings.length > 0 && <WarningNotice warnings={warnings} onDismiss={onDismissWarnings} />}
 
@@ -666,7 +666,7 @@ export default function DashboardPage({
             <CapabilityState data={data} failed={meta.isError} onRetry={() => void meta.refetch()}>
               {unavailable ? <UnavailableCard reason={capability?.reason ?? "This section is not available."} /> : <section aria-label="Customer analyses" />}
             </CapabilityState>
-          ) : modern && !unavailable ? <CustomerCoverageView query={customers} /> : modern && !legacyTestFixtures ? <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section> : <UnavailableCard reason={capability?.reason ?? "The file has no customer_id column."} />}
+          ) : modern && !unavailable ? <CustomerCoverageView query={customers} /> : modern && !legacyTestFixtures ? <section aria-label="Customer availability" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2"><h3 className="text-lg font-semibold">Customer analytics is unavailable</h3><p className="text-sm text-slate-600">{unavailableExplanation()}</p><a className={LINK} href="/#dataset-contract">Read the Dataset contract</a><a className={LINK} href="/">Analyze another file</a></section> : <UnavailableCard reason={capability?.reason ?? "The file has no customer_id column."} />}
         </section>
       )}
 

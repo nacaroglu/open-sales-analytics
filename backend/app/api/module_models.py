@@ -1,13 +1,23 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.analytics.shared.availability import AvailabilityState
+from app.localization import localized_reason
 
 
 class AvailabilityResponse(BaseModel):
     state: AvailabilityState
     reason: str | None
+    reason_code: str | None = None
+    reason_params: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_localization(cls, value):
+        if isinstance(value, dict):
+            value = {**value, **localized_reason(value.get("reason"))}
+        return value
 
 
 class ComparisonDates(BaseModel):
@@ -21,6 +31,15 @@ class ComparisonResponse(BaseModel):
     comparison: ComparisonDates
     state: AvailabilityState
     reason: str | None
+    reason_code: str | None = None
+    reason_params: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_localization(cls, value):
+        if isinstance(value, dict):
+            value = {**value, **localized_reason(value.get("reason"), "comparison")}
+        return value
 
 
 class ModuleRange(BaseModel):
@@ -32,7 +51,16 @@ class CustomerAvailabilityResponse(BaseModel):
     tier: Literal["missing", "suppressed", "warning", "normal"]
     state: AvailabilityState
     reason: str | None
+    reason_code: str | None = None
+    reason_params: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     warning: AvailabilityResponse | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_localization(cls, value):
+        if isinstance(value, dict):
+            value = {**value, **localized_reason(value.get("reason"), "customers")}
+        return value
 
 
 class CustomerCoverageResponse(BaseModel):
@@ -309,6 +337,9 @@ class RfmSegment(BaseModel):
         description="Segment name, one of Champions, Loyal, Potential Loyalists, "
         "Needs Attention, At Risk, Lost (in that order)."
     )
+    segment_code: str = Field(
+        description="Stable machine-readable code used to localize the segment name."
+    )
     customer_count: int = Field(description="Identified customers assigned to this segment.")
     share: float = Field(
         description="customer_count divided by the section customer_count, rounded half-up "
@@ -370,6 +401,9 @@ class RfmDrilldownSegment(BaseModel):
     segment: str = Field(
         description="Segment name, one of Champions, Loyal, Potential Loyalists, "
         "Needs Attention, At Risk, Lost (in that order)."
+    )
+    segment_code: str = Field(
+        description="Stable machine-readable code used to localize the segment name."
     )
     customer_count: int = Field(description="Identified customers assigned to this segment.")
     gross_sales: str = Field(

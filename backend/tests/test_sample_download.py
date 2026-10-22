@@ -102,7 +102,7 @@ def test_missing_file_is_500_sample_unavailable(client, tmp_path, monkeypatch, l
     response = client.get(PATH)
     assert response.status_code == 500
     assert response.json() == {
-        "error": {"code": "sample_unavailable", "message": UNAVAILABLE_MESSAGE}
+        "error": {"code": "sample_unavailable", "message": UNAVAILABLE_MESSAGE, "message_params": {}}
     }
     assert "Traceback" not in response.text
     assert str(tmp_path) not in response.text

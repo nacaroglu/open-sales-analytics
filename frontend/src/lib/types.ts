@@ -19,9 +19,13 @@ export type AvailabilityState =
   | "low_coverage"
   | "zero_result";
 
+export type LocalizationParams = Record<string, string | number | boolean | null>;
+
 export interface CapabilityAvailability {
   state: AvailabilityState;
   reason: string | null;
+  reason_code?: string | null;
+  reason_params?: LocalizationParams;
 }
 
 export interface Capabilities {
@@ -43,6 +47,7 @@ export interface Issue {
   reason: string;
   row_number: number | null;
   field: string | null;
+  reason_params?: LocalizationParams;
 }
 
 export type Granularity = "daily" | "weekly" | "monthly";
@@ -73,9 +78,9 @@ export interface Overview extends Omit<Summary, "kpis" | "trend"> {
   comparison_trend: { bucket_start: string; gross_sales: string }[] | null;
 }
 
-export interface Availability { state: AvailabilityState; reason: string | null }
+export interface Availability { state: AvailabilityState; reason: string | null; reason_code?: string | null; reason_params?: LocalizationParams }
 export interface ComparisonDates { start: string; end: string }
-export interface Comparison { mode: "previous_period" | "previous_year"; current: ComparisonDates; comparison: ComparisonDates; state: AvailabilityState; reason: string | null }
+export interface Comparison { mode: "previous_period" | "previous_year"; current: ComparisonDates; comparison: ComparisonDates; state: AvailabilityState; reason: string | null; reason_code?: string | null; reason_params?: LocalizationParams }
 export interface ComparedMoney { value: string; comparison_value: string | null; absolute_change: string | null; percent_change: string | null; change_status: string | null }
 export interface ComparedCount { value: number; comparison_value: number | null; absolute_change: number | null; percent_change: string | null; change_status: string | null }
 export interface ProductRow { product_id: string; product_name: string; gross_sales: string; units_sold: number; distinct_orders: number }

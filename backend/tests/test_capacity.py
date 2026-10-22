@@ -23,6 +23,7 @@ BODY = {
     "error": {
         "code": "capacity_reached",
         "message": "The server is holding the maximum number of datasets right now. Try again later.",
+        "message_params": {},
     }
 }
 

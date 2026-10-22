@@ -7,7 +7,9 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - One light theme, no dark mode. System font stack only (Tailwind's default), no web fonts, no external requests: the page works offline.
 - Product name: the visible `<h1>` of the upload screen is exactly "Open Sales Analytics" (`App.test.tsx` looks for it).
 - The measure is "gross sales", never "revenue": the word appears nowhere (labels, tooltips, alt text, errors).
-- Fixed labels: "Gross sales", "Orders", "Units sold", "Average order value", "Try sample data", "Download sample CSV", "Upload", "Reset", "Retry", "Analyze another file".
+- English source labels: "Gross sales", "Orders", "Units sold", "Average order value", "Try sample data", "Download sample CSV", "Upload", "Reset", "Retry", "Analyze another file". Turkish renders the matching bundled resource values.
+- Supported locales are English (`en`, formatted as `en-US`) and Turkish (`tr`, formatted as `tr-TR`), with English fallback. The shared page header places a visibly labelled language selector opposite the product name and lets it wrap below at narrow widths.
+- Product names, CSV/user values and field names, ISO currency codes and API enum values are data, not interface copy: never translate them and always render them as text.
 - Text from the server or the user (reasons, field names, product names) is rendered as text, never as raw HTML.
 - Something not covered here: add one line to this file in your task; do not invent a private style.
 - Dashboard section navigation uses underlined indigo links with a bold indigo bottom border for the current page; unavailable sections use a white rounded border card with a bold “Unavailable” label and muted reason text.
@@ -98,7 +100,7 @@ Warnings from an accepted upload are a dismissible notice: warning look plus a l
 
 ## Dates and times
 
-Every date the application writes is English and fixed to one locale (day first, month names from `en-US`: "5 Mar 2025", "30 Sep 2026, 08:19 EDT"), never the browser's (`lib/format.ts`, `TrendChart.tsx`); a Turkish and an English browser show the same words. Calendar dates (period, range) are shown as received, `YYYY-MM-DD`, and never converted. Only an instant (expiry) is shown in the browser's time zone. Relative text is English with whole units rounded down ("Expires in 23 hours", "Expires in 2 days").
+Application-formatted numbers, money, percentages, instant month names and relative-expiry copy follow the selected locale (`en-US` or `tr-TR`). Calendar dates (period, range and all API `YYYY-MM-DD` values) are shown exactly as received and never converted or shifted. Only an instant (expiry) is shown in the browser's time zone. Relative text uses whole units rounded down in the selected language (for example "Expires in 23 hours" / "23 saat içinde sona erer").
 
 ## Helper text
 

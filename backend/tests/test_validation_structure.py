@@ -39,7 +39,7 @@ def test_result_serialises_to_plain_dicts(tmp_path):
     data = check(tmp_path, f"{HEADER},extra\n{ROW},x\n").to_dict()
 
     assert set(data) == {"errors", "error_count", "warnings"}
-    assert set(data["warnings"][0]) == {"code", "reason", "row_number", "field"}
+    assert set(data["warnings"][0]) == {"code", "reason", "reason_params", "row_number", "field"}
 
 
 def test_errors_are_capped_but_total_is_true():

@@ -3,6 +3,7 @@ import { formatMoney, formatShare } from "../lib/format";
 import type { Granularity } from "../lib/types";
 import { axisLabel, bucketCoverage, bucketLabelWithYear, coverageLabel, formatMoneyShort } from "./TrendChart";
 import type { Coverage } from "./TrendChart";
+import { translateOwnedText } from "./LocalizedUi";
 
 // Colours from _docs/design-system.md (Charts), as in TrendChart.
 const LINE = "#432dd7"; // indigo-700
@@ -37,7 +38,7 @@ export function ParetoChart({ products, range }: { products: ShareRow[]; range: 
   const label = `Cumulative share of gross sales over ${data.length} products ranked by gross sales, from ${range.start} to ${range.end}`;
   return (
     <>
-      <div role="img" aria-label={label} className="h-72 w-full">
+      <div data-i18n-data role="img" aria-label={translateOwnedText(label)} className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 24, bottom: 0, left: 0 }}>
             <CartesianGrid stroke={GRID} vertical={false} />

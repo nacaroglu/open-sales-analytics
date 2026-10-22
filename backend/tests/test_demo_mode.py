@@ -47,7 +47,9 @@ def post_file(client, content=GOOD, currency="USD", **kwargs):
 
 def assert_403(response):
     assert response.status_code == 403
-    assert response.json() == {"error": {"code": "upload_disabled", "message": MESSAGE}}
+    assert response.json() == {
+        "error": {"code": "upload_disabled", "message": MESSAGE, "message_params": {}}
+    }
     assert "www-authenticate" not in response.headers
 
 

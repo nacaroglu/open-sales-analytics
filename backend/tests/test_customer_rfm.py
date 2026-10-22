@@ -139,12 +139,42 @@ def test_golden_section_has_all_six_segments_with_shares():
         "recency_anchor": "2026-03-31",
         "note": RFM_NOTE,
         "segments": [
-            {"segment": "Champions", "customer_count": 2, "share": 0.4},
-            {"segment": "Loyal", "customer_count": 1, "share": 0.2},
-            {"segment": "Potential Loyalists", "customer_count": 0, "share": 0},
-            {"segment": "Needs Attention", "customer_count": 0, "share": 0},
-            {"segment": "At Risk", "customer_count": 0, "share": 0},
-            {"segment": "Lost", "customer_count": 2, "share": 0.4},
+            {
+                "segment": "Champions",
+                "segment_code": "customers.rfm.champions",
+                "customer_count": 2,
+                "share": 0.4,
+            },
+            {
+                "segment": "Loyal",
+                "segment_code": "customers.rfm.loyal",
+                "customer_count": 1,
+                "share": 0.2,
+            },
+            {
+                "segment": "Potential Loyalists",
+                "segment_code": "customers.rfm.potential_loyalists",
+                "customer_count": 0,
+                "share": 0,
+            },
+            {
+                "segment": "Needs Attention",
+                "segment_code": "customers.rfm.needs_attention",
+                "customer_count": 0,
+                "share": 0,
+            },
+            {
+                "segment": "At Risk",
+                "segment_code": "customers.rfm.at_risk",
+                "customer_count": 0,
+                "share": 0,
+            },
+            {
+                "segment": "Lost",
+                "segment_code": "customers.rfm.lost",
+                "customer_count": 2,
+                "share": 0.4,
+            },
         ],
     }
 

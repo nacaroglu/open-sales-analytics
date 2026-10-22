@@ -632,7 +632,8 @@ test("demo mode shows only Try sample data and the self-hosted sentence, with no
   expect(screen.queryByLabelText("CSV file")).not.toBeInTheDocument();
   expect(document.querySelector('input[type="file"]')).toBeNull();
   expect(screen.queryByLabelText("Currency")).not.toBeInTheDocument();
-  expect(document.querySelector("select")).toBeNull();
+  expect(document.querySelectorAll("select")).toHaveLength(1);
+  expect(screen.getByLabelText("Language")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
   expect(limitsBullet()).not.toBeInTheDocument();
   expect(loadingBlock()).not.toBeInTheDocument();

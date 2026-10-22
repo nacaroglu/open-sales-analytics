@@ -8,7 +8,7 @@ from typing import BinaryIO
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
 
@@ -24,6 +24,7 @@ from app.currencies import CURRENCIES, is_valid_currency
 from app.errors import ApiError
 from app.importer import dataset_path
 from app.ingest import CreatedDataset, ingest_csv, new_upload_path
+from app.localization import localized_reason
 from app.logging_config import log_exception
 from app.response_cache import ResponseCache, get_response_cache
 from app.schema import open_dataset_readonly
@@ -43,7 +44,19 @@ TOP_PRODUCTS_COUNT = 10
 class AvailabilityModel(BaseModel):
     state: AvailabilityState
     reason: str | None
-    warning: dict[str, str | None] | None = None
+    reason_code: str | None = None
+    reason_params: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    warning: dict | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_localization(cls, value):
+        if isinstance(value, dict):
+            value = {**value, **localized_reason(value.get("reason"))}
+            warning = value.get("warning")
+            if isinstance(warning, dict):
+                value["warning"] = {**warning, **localized_reason(warning.get("reason"))}
+        return value
 
 
 class CapabilityCountsModel(BaseModel):
@@ -66,7 +79,16 @@ class ProjectionEligibilityModel(BaseModel):
 class ProjectionAvailabilityModel(BaseModel):
     state: AvailabilityState
     reason: str | None
+    reason_code: str | None = None
+    reason_params: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     eligibility: ProjectionEligibilityModel
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_localization(cls, value):
+        if isinstance(value, dict):
+            value = {**value, **localized_reason(value.get("reason"), "customers.projection")}
+        return value
 
 
 class CustomerModuleModel(AvailabilityModel):
