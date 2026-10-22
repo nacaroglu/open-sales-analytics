@@ -138,7 +138,7 @@ test("upload screen: keyboard order is sample link, file, currency, then Upload 
   await screen.findByLabelText("CSV file");
 
   // Upload is disabled, so Tab skips it
-  expect(tabStops()).toEqual(["LanguageEnglishTürkçe", "Download sample CSV", "CSV file", "Currency", "Try sample data"]);
+  expect(tabStops()).toEqual(["LanguageEnglishTürkçeDeutschРусскийEspañol简体中文日本語", "Download sample CSV", "CSV file", "Currency", "Try sample data"]);
   focusEach();
 
   fireEvent.change(screen.getByLabelText("CSV file"), {
@@ -146,7 +146,7 @@ test("upload screen: keyboard order is sample link, file, currency, then Upload 
   });
   fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "USD" } });
 
-  expect(tabStops()).toEqual(["LanguageEnglishTürkçe", "Download sample CSV", "CSV file", "Currency", "Upload", "Try sample data"]);
+  expect(tabStops()).toEqual(["LanguageEnglishTürkçeDeutschРусскийEspañol简体中文日本語", "Download sample CSV", "CSV file", "Currency", "Upload", "Try sample data"]);
   focusEach();
 });
 
@@ -162,7 +162,7 @@ test("demo upload screen: no form controls, one h1, link and Try sample data are
   for (const section of ["File format", "Start an analysis"]) {
     expect(screen.getByRole("region", { name: section })).toBeInTheDocument();
   }
-  expect(tabStops()).toEqual(["LanguageEnglishTürkçe", "Download sample CSV", "Try sample data", "Run it yourself with Docker"]);
+  expect(tabStops()).toEqual(["LanguageEnglishTürkçeDeutschРусскийEspañol简体中文日本語", "Download sample CSV", "Try sample data", "Run it yourself with Docker"]);
   expect(document.querySelector("[tabindex]:not([tabindex='-1'])")).toBeNull();
   focusEach();
 });
@@ -211,7 +211,7 @@ test("dashboard: keyboard order is Analyze another file, the dates, then Reset o
 
   // Success notice first (its Dismiss), then the page controls; Reset is disabled at the full range
   const stops = tabStops();
-  expect(stops.slice(0, 3)).toEqual(["LanguageEnglishTürkçe", "Dismiss", "Analyze another file"]);
+  expect(stops.slice(0, 3)).toEqual(["LanguageEnglishTürkçeDeutschРусскийEspañol简体中文日本語", "Dismiss", "Analyze another file"]);
   expect(stops.slice(3, 5)).toEqual(["Start date", "End date"]);
   expect(stops).not.toContain("Reset");
 

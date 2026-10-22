@@ -17,6 +17,11 @@ export default function LanguageSelector() {
       >
         <option value="en">English</option>
         <option value="tr">Türkçe</option>
+        <option value="de">Deutsch</option>
+        <option value="ru">Русский</option>
+        <option value="es">Español</option>
+        <option value="zh-CN">简体中文</option>
+        <option value="ja">日本語</option>
       </select>
     </label>
   );
