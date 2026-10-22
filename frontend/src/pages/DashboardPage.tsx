@@ -142,7 +142,7 @@ function CustomerMetrics({ data, onRetry, updating }: { data: CustomerResponse; 
         </dl>
       </CustomerMetricSection>
       <CustomerMetricSection label="Days between purchases" data={sections.days_between_purchases} lowCoverage={lowCoverage} onRetry={onRetry} updating={updating}>
-        <p>Median: {String(sections.days_between_purchases?.median_days ?? "—")} days</p>
+        <p>{`Median: ${sections.days_between_purchases?.median_days == null ? "—" : formatCount(Number(sections.days_between_purchases.median_days))} days`}</p>
         <div role="img" aria-label={`Bar chart of days between purchase interval buckets from ${selectedRange.start} to ${selectedRange.end}`} className="flex h-40 items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">{daysBuckets.map((bucket) => <div key={String(bucket.key)} className="flex flex-1 flex-col items-center justify-end gap-1"><div className="w-full bg-indigo-700" style={{ height: `${Math.max(4, ((Number(bucket.interval_count) || 0) / maxDaysIntervals) * maxDaysBarHeight)}px` }} /><span className="text-xs">{String(bucket.key)}</span></div>)}</div>
         <AggregateTable ariaLabel="Days between purchases table" headers={["Bucket", "Intervals"]} rows={((sections.days_between_purchases?.buckets as Record<string, unknown>[] | undefined) ?? []).map((bucket) => [String(bucket.key), formatCount(Number(bucket.interval_count))])} />
       </CustomerMetricSection>
@@ -391,7 +391,7 @@ function DateRangeCard({
           <div>
             <dt className={LABEL}>Period</dt>
             <dd className={VALUE}>
-              {data.date_range.min} to {data.date_range.max}
+              {`${data.date_range.min} to ${data.date_range.max}`}
             </dd>
           </div>
           <div>
@@ -400,7 +400,7 @@ function DateRangeCard({
           </div>
           <div>
             <dt className={LABEL}>Rows</dt>
-            <dd className={VALUE}>{data.row_count.toLocaleString("en-US")}</dd>
+            <dd className={VALUE}>{formatCount(data.row_count)}</dd>
           </div>
           <div>
             <dt className={LABEL}>Expires</dt>

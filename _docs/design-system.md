@@ -8,7 +8,7 @@ in `<main className="p-8">`. Everything below is the rule for new UI. All classe
 - Product name: the visible `<h1>` of the upload screen is exactly "Open Sales Analytics" (`App.test.tsx` looks for it).
 - The measure is "gross sales", never "revenue": the word appears nowhere (labels, tooltips, alt text, errors).
 - English source labels: "Gross sales", "Orders", "Units sold", "Average order value", "Try sample data", "Download sample CSV", "Upload", "Reset", "Retry", "Analyze another file". Turkish renders the matching bundled resource values.
-- Supported locales are English (`en`, formatted as `en-US`) and Turkish (`tr`, formatted as `tr-TR`), with English fallback. The shared page header places a visibly labelled language selector opposite the product name and lets it wrap below at narrow widths.
+- Supported locales are English (`en-US`), Turkish (`tr-TR`), German (`de-DE`), Russian (`ru-RU`), Spanish (`es-ES`), Simplified Chinese (`zh-CN`) and Japanese (`ja-JP`), with English fallback. The shared page header places a visibly labelled language selector opposite the product name and lets it wrap below at narrow widths. The selector uses each language's own name: English, Türkçe, Deutsch, Русский, Español, 简体中文 and 日本語.
 - Product names, CSV/user values and field names, ISO currency codes and API enum values are data, not interface copy: never translate them and always render them as text.
 - Text from the server or the user (reasons, field names, product names) is rendered as text, never as raw HTML.
 - Something not covered here: add one line to this file in your task; do not invent a private style.
@@ -100,7 +100,7 @@ Warnings from an accepted upload are a dismissible notice: warning look plus a l
 
 ## Dates and times
 
-Application-formatted numbers, money, percentages, instant month names and relative-expiry copy follow the selected locale (`en-US` or `tr-TR`). Calendar dates (period, range and all API `YYYY-MM-DD` values) are shown exactly as received and never converted or shifted. Only an instant (expiry) is shown in the browser's time zone. Relative text uses whole units rounded down in the selected language (for example "Expires in 23 hours" / "23 saat içinde sona erer").
+Application-formatted numbers, money, percentages, calendar dates, instant month names and relative-expiry copy follow the selected locale (`en-US`, `tr-TR`, `de-DE`, `ru-RU`, `es-ES`, `zh-CN` or `ja-JP`). Calendar dates are formatted from their API `YYYY-MM-DD` values as UTC calendar days, so they are never shifted; date inputs and API requests retain the unchanged ISO values. Only an instant (expiry) is shown in the browser's time zone. Relative text uses whole units rounded down and the selected language's plural rules.
 
 ## Helper text
 

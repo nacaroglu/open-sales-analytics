@@ -37,7 +37,7 @@ export default function CohortHeatmap({ rows }: { rows: CohortRow[] }) {
               <th className={`sticky left-0 bg-slate-100 ${TH}`}>Cohort</th>
               <th className={`${TH} text-right`}>Cohort size</th>
               <th className={`${TH} text-right`}>Months observed</th>
-              {Array.from({ length: maxOffset + 1 }, (_, offset) => <th key={offset} className={`${TH} text-right`}>Month {offset}</th>)}
+              {Array.from({ length: maxOffset + 1 }, (_, offset) => <th key={offset} className={`${TH} text-right`}>{`Month ${offset}`}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">

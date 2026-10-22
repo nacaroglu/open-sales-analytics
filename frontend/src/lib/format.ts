@@ -1,7 +1,7 @@
-import i18n, { normalizeLocale } from "../i18n";
+import i18n, { localeIntlTags, normalizeLocale } from "../i18n";
 
-function locale(): "en-US" | "tr-TR" {
-  return normalizeLocale(i18n.resolvedLanguage) === "tr" ? "tr-TR" : "en-US";
+function locale(): string {
+  return localeIntlTags[normalizeLocale(i18n.resolvedLanguage) ?? "en"];
 }
 
 const moneyFormats = new Map<string, Intl.NumberFormat>();
@@ -30,6 +30,7 @@ export function formatMoney(value: string, currency: string): string {
 }
 
 export function formatCount(value: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new TypeError("A finite count is required");
   return new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(value);
 }
 
@@ -38,9 +39,22 @@ export function formatShare(value: string): string {
   const digits = `${fraction}000000`.slice(0, 6);
   const scaled = BigInt(whole || "0") * 10000n + BigInt(digits);
   const rounded = (scaled + 50n) / 100n;
-  const text = rounded.toString().padStart(3, "0");
-  const decimal = locale() === "tr-TR" ? "," : ".";
-  return `${text.slice(0, -2)}${decimal}${text.slice(-2)}%`;
+  const exactPercent = Number(`${rounded / 100n}.${(rounded % 100n).toString().padStart(2, "0")}`);
+  const numberText = new Intl.NumberFormat(locale(), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(exactPercent);
+  const percentParts = new Intl.NumberFormat(locale(), {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).formatToParts(0);
+  const numericPart = (part: Intl.NumberFormatPart) => ["integer", "group", "decimal", "fraction"].includes(part.type);
+  const firstNumberPart = percentParts.findIndex(numericPart);
+  const lastNumberPart = percentParts.map(numericPart).lastIndexOf(true);
+  const prefix = percentParts.slice(0, firstNumberPart).map((part) => part.value).join("");
+  const suffix = percentParts.slice(lastNumberPart + 1).map((part) => part.value).join("");
+  return `${prefix}${numberText}${suffix}`;
 }
 
 export function formatPercent(value: number, fractionDigits: number = 1): string {
@@ -66,12 +80,20 @@ function parts(date: Date, options: Intl.DateTimeFormatOptions): Record<string, 
 // "5 Mar" or "5 Mar 2025" from a UTC date (calendar dates are read as UTC, so the
 // browser's zone never moves them).
 export function formatDay(date: Date, withYear: boolean): string {
+  if (locale() !== "en-US") {
+    return new Intl.DateTimeFormat(locale(), {
+      timeZone: "UTC", day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}),
+    }).format(date);
+  }
   const p = parts(date, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
   return `${p.day} ${p.month}${withYear ? ` ${p.year}` : ""}`;
 }
 
 // "Mar 2025" from a UTC date.
 export function formatMonthYear(date: Date): string {
+  if (locale() !== "en-US") {
+    return new Intl.DateTimeFormat(locale(), { timeZone: "UTC", month: "short", year: "numeric" }).format(date);
+  }
   const p = parts(date, { timeZone: "UTC", month: "short", year: "numeric" });
   return `${p.month} ${p.year}`;
 }
@@ -82,7 +104,7 @@ export function formatMonthYear(date: Date): string {
 export function formatExpiry(utc: string, timeZone?: string): string {
   const date = new Date(utc);
   if (Number.isNaN(date.getTime())) return utc;
-  const p = parts(date, {
+  const options: Intl.DateTimeFormatOptions = {
     timeZone,
     year: "numeric",
     month: "short",
@@ -91,7 +113,9 @@ export function formatExpiry(utc: string, timeZone?: string): string {
     minute: "2-digit",
     hourCycle: "h23",
     timeZoneName: "short",
-  });
+  };
+  if (locale() !== "en-US") return new Intl.DateTimeFormat(locale(), options).format(date);
+  const p = parts(date, options);
   return `${p.day} ${p.month} ${p.year}, ${p.hour}:${p.minute} ${p.timeZoneName}`;
 }
 
