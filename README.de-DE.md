@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 14122)
-Total output lines: 761
-
 # open-sales-analytics
 
 [English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
@@ -247,7 +244,219 @@ Der Server liest beim Start diese Umgebungsvariablen. Jede Variable ist optional
 | --- | --- | --- | --- |
 | `DATASET_DIR` | path | `./tmp_datasets` (`/data` im Docker-Image) | Verzeichnis mit einer DuckDB-Datei je Datensatz. Wird bei Bedarf mit privaten Berechtigungen erstellt. |
 | `DATASET_TTL_HOURS` | integer > 0 | `24` | Stunden bis zum Ablauf und Löschen eines Datensatzes. |
-| `DATASET_TTL_SECONDS` | integer > 0 | unset | Nur für Tests. Wen…4122 tokens truncated…s Uploads und keine universellen Benchmarks sind.
+| `DATASET_TTL_SECONDS` | integer > 0 | unset | Nur für Tests. Wenn gesetzt, Lebensdauer in Sekunden statt `DATASET_TTL_HOURS`. Browser-Tests verwenden dies für einen echten Ablauf. In Produktion nicht setzen. |
+| `MAX_UPLOAD_BYTES` | integer > 0 | `52428800` (50 MB) | Größter akzeptierter Upload in Bytes. Eine größere Datei wird mit `file_too_large` abgelehnt. |
+| `MAX_ROWS` | integer > 0 | `500000` | Höchste Anzahl Datenzeilen (Kopfzeile zählt nicht) in einem Upload. Mehr wird mit `too_many_rows` abgelehnt. |
+| `CUSTOMER_ID_MAX_LENGTH` | integer > 0 | `128` | Maximale Unicode-Zeichenanzahl einer nicht leeren `customer_id`; längere Werte werden mit `customer_id_too_long` abgelehnt. |
+| `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | Intervall, in dem der Server abgelaufene Datensätze entfernt (auch einmal beim Start). |
+| `PUBLIC_DEMO_MODE` | boolean | `false` | `true` deaktiviert Uploads; siehe [Demo-Modus](#demo-modus). |
+| `MAX_DATASETS` | integer > 0 | `200` | Höchste Anzahl nicht abgelaufener Datensätze auf dem Server. Ein weiterer (Upload oder **Beispieldaten ausprobieren**) gibt 503 `capacity_reached` zurück, bis einer abläuft oder gelöscht wird. |
+| `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Höchste Anzahl gecachter Overview/Product-Antworten in diesem Prozess. `0` deaktiviert den Antwortcache. |
+| `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Maximale Lebensdauer einer gecachten Overview/Product-Antwort; der Datensatzablauf hat immer Vorrang. |
+
+Boolesche Werte akzeptieren `true`/`false`, `1`/`0` und `yes`/`no` unabhängig von Groß-/Kleinschreibung
+(`on`/`off`, `t`/`f` und `y`/`n` funktionieren ebenfalls).
+
+Ein ungültiger Wert lässt den Server den Start mit einem Fehler verweigern, der die Variable nennt. Ungültig bedeutet:
+keine Zahl, null oder negativ, Dezimalzahl wie `1.5`, leere Zeichenfolge oder boolescher Wert außerhalb der obigen
+Schreibweisen. Beispielsweise beendet sich `MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` mit
+`MAX_ROWS  Input should be greater than 0`.
+
+## Datensatzvertrag
+
+Eine Zeile ist eine Produktposition in einer abgeschlossenen Bestellung. Die Datei muss diese sechs Pflichtspalten
+und eine optionale Spalte enthalten (dieselbe Tabelle steht auf dem Uploadbildschirm). Bedeutung und Datenschutzgrenzen
+von `customer_id` stehen unter [Kundenanalysen](#kundenanalysen):
+
+| Spalte | Typ | Regel |
+| --- | --- | --- |
+| `order_id` | String | Erforderlich und nicht leer. Wird zur Zählung eindeutiger Bestellungen verwendet. |
+| `order_date` | Date | Erforderliches ISO-Kalenderdatum im Format `YYYY-MM-DD`. Darf nicht in der Zukunft liegen. |
+| `product_id` | String | Erforderlich und nicht leer. Identifiziert das Produkt. |
+| `product_name` | String | Erforderlich und nicht leer. Eine `product_id` muss innerhalb eines Uploads genau einem Namen entsprechen. |
+| `quantity` | Integer | Erforderlich und größer als null. Null und negative Mengen sind ungültig. |
+| `unit_price` | Decimal | Erforderlich und nicht negativ. Ein Nullpreis wird mit Warnung akzeptiert; ein negativer Preis ist ungültig. |
+| `customer_id` | String | Optional. Darf leer sein; bis zu `CUSTOMER_ID_MAX_LENGTH` Unicode-Zeichen (standardmäßig 128); verwende Hash-ID, UUID oder nicht personenbezogenen internen Schlüssel. Niemals E-Mail-Adresse, Telefonnummer, Name oder andere direkte Kennung. |
+
+Regeln auf Dateiebene:
+
+- UTF-8, kommagetrennt, eine Kopfzeile. Die Kopfzeile ist in Fehlerberichten Zeile 1, die erste Datenzeile also Zeile 2.
+- Spaltennamen werden nach Entfernen äußerer Leerzeichen verglichen. Die Reihenfolge ist egal. Eine Spalte außerhalb
+  der sechs Pflichtspalten und `customer_id` wird mit Warnung (`extra_column`) ignoriert.
+- `(order_id, product_id)` ist eindeutig: Dasselbe Produkt erscheint höchstens einmal je Bestellung.
+- Ein Name je `product_id` in der gesamten Datei.
+- Innerhalb einer Bestellung werden leere `customer_id`-Werte aus der einzigen nicht leeren ID ergänzt; widersprüchliche
+  IDs lehnen den Upload ab, Bestellungen mit ausschließlich leeren Werten bleiben nicht identifiziert.
+- Eine Währung je Upload, ausgewählt im Uploadformular (siehe [Währungen](#währungen)).
+- Jede ungültige Zeile lehnt die gesamte Datei ab. Nichts wird gespeichert.
+- Standardmäßig höchstens 50 MB und 500.000 Zeilen (`MAX_UPLOAD_BYTES` und `MAX_ROWS`).
+- Mengen sind Ganzzahlen bis 2.147.483.647. Preise sind einfache Dezimalzahlen (kein Währungssymbol, kein
+  Tausendertrennzeichen) mit höchstens 14 Stellen vor und 4 nach dem Punkt.
+
+### Ein gültiges Beispiel
+
+Speichere dies als `example.csv`. Es hat drei Positionen und zwei Bestellungen; Bestellung `A-1001` hat zwei Positionen.
+
+```csv
+order_id,order_date,product_id,product_name,quantity,unit_price
+A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
+A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
+A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
+```
+
+Eine optionale `customer_id` kann enthalten sein; leere Zellen sind erlaubt:
+
+```csv
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
+A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
+```
+
+Importiere die Datei bei auf Port 8000 laufender Anwendung über die API:
+
+```sh
+curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
+```
+
+Die Antwort ist `201` mit `"warnings":[]`, einer `dataset_id`, einem `token` und der ersten Zusammenfassung. Der
+Bruttoumsatz beträgt hier 61.50 aus 2 Bestellungen und 4 Einheiten.
+
+### Ungültige Beispiele
+
+Jedes ist eine kleine Änderung an der gültigen Datei. Die Anwendung antwortet mit `422`, dem Fehlercode
+`validation_failed` und einer Fehlerliste; der `code` jedes Fehlers steht in dieser Tabelle. Jeder Fehler enthält auch
+Zeilennummer und Spalte.
+
+| Änderung an der gültigen Datei | Fehler-`code` | Zeile |
+| --- | --- | --- |
+| `unit_price` aus der Kopfzeile (und den letzten Wert jeder Zeile) entfernen | `missing_column` | keine (Dateiebene) |
+| Datum `2025-03-02` in `2025-13-02` ändern | `invalid_date` | 4 |
+| Menge der letzten Zeile von `1` auf `0` ändern | `invalid_quantity` | 4 |
+| Letzte Zeile wiederholen | `duplicate_line` | 5 |
+
+### Fehlercodes
+
+Der Bericht listet die ersten 100 Fehler auf und nennt die Gesamtzahl (`error_count`).
+
+| Code | Ursache |
+| --- | --- |
+| `file_too_large` | Datei ist größer als `MAX_UPLOAD_BYTES`. |
+| `empty_file` | Datei ist leer. |
+| `invalid_encoding` | Datei ist kein gültiges UTF-8. |
+| `malformed_csv` | Datei kann nicht als CSV gelesen werden (zum Beispiel ein einzelnes Feld länger als 131.072 Zeichen). |
+| `too_many_rows` | Mehr als `MAX_ROWS` Datenzeilen. |
+| `no_data_rows` | Es gibt eine Kopfzeile, aber keine Datenzeilen. |
+| `missing_column` | Eine der sechs Pflichtspalten fehlt in der Kopfzeile. |
+| `duplicate_column` | Eine Pflichtspalte erscheint mehrfach in der Kopfzeile. |
+| `missing_value` | Ein Pflichtwert ist leer. |
+| `invalid_date` | `order_date` ist kein echtes Datum in Schreibweise `YYYY-MM-DD`. |
+| `future_date` | `order_date` liegt nach heute (UTC). |
+| `invalid_quantity` | `quantity` ist keine Ganzzahl von 1 bis 2.147.483.647. |
+| `invalid_price` | `unit_price` ist keine einfache Dezimalzahl mit höchstens 14 Stellen vor und 4 nach dem Punkt. |
+| `negative_price` | `unit_price` ist kleiner als null. |
+| `line_total_too_large` | `quantity × unit_price` ist 100.000.000.000.000 oder mehr und liegt außerhalb des exakten Dezimalbereichs für Bruttoumsatz. |
+| `malformed_row` | Die Zeile hat eine andere Anzahl Werte als die Kopfzeile. |
+| `duplicate_line` | Dieselbe `order_id` und `product_id` stehen in einer früheren Zeile. |
+| `conflicting_product_name` | Eine `product_id` hat mehr als einen `product_name`. |
+| `conflicting_customer_id` | Eine Bestellung hat mehr als eine nicht leere `customer_id`. |
+| `customer_id_too_long` | Eine nicht leere `customer_id` überschreitet `CUSTOMER_ID_MAX_LENGTH` Unicode-Zeichen. |
+| `customer_id_looks_like_email` | Eine nicht leere `customer_id` entspricht der offensichtlichen E-Mail-Heuristik. |
+| `customer_id_looks_like_phone` | Eine nicht leere `customer_id` entspricht der offensichtlichen Telefon-Heuristik. |
+
+Die drei Prüfungen für `customer_id` sind eine Best-Effort-Leitplanke, keine Anonymisierung oder Compliance-Garantie.
+Die E-Mail-Prüfung sucht überall im Wert nach `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}`. Die Telefonprüfung erlaubt nur
+Ziffern, Leerzeichen, `+ - . ( )`, verlangt 7–15 Ziffern sowie entweder ein führendes `+`, sichtbare Leerzeichen/
+Klammern oder mindestens zwei `-`/`.`-Trenner. Diese Heuristiken haben bewusst bekannte Lücken: Eine rein numerische
+Telefonnummer wie `05321234567` wird akzeptiert, während Zifferngruppen mit zwei Bindestrichen wie `2024-01-000123`
+abgelehnt werden. Eine akzeptierte ID ist dadurch nicht anonym.
+
+Eine Anfrage kann auch vor dem Lesen der Datei scheitern: Eine Währung außerhalb der Liste ergibt `400 invalid_request`.
+
+### Kundenabdeckung
+
+Wenn `customer_id` vorhanden ist, wird die Abdeckung einmal beim Import auf Bestellebene berechnet, nachdem leere IDs
+aus einer anderen Position derselben Bestellung ergänzt wurden:
+
+`identified distinct orders / all distinct orders`
+
+Dies ist kein Zeilenprozentsatz; eine identifizierte Bestellung mit fünf Positionen zählt einmal. Datensatzmetadaten
+melden Zählungen und gerundetes Verhältnis, während die Stufe aus exakten Ganzzahlzählungen über den gesamten Datensatz
+bestimmt wird:
+
+- unter 50 %: `suppressed`; Kundenanalysen sind nicht verfügbar;
+- 50 % bis unter 80 %: `warning`; Kundenanalysen sind mit Warnung über geringe Abdeckung verfügbar;
+- 80 % oder mehr: `normal`; Kundenanalysen sind normal verfügbar.
+
+Dateien ohne `customer_id` haben die Stufe `missing` und `coverage: null` statt Null-Prozent-Abdeckung.
+Abdeckungsmetadaten enthalten nur Zählungen und nie Kundenkennungen. Die Abdeckung eines Datumsbereichs verwendet
+dieselbe Formel auf Bestellebene mit inklusiven Bestelldaten; ein leerer Bereich hat Nullzählungen und `coverage: null`.
+Die Stufe basiert weiter auf dem gesamten Datensatz; Datumsfilter lassen das Customers-Modul nicht erscheinen oder verschwinden.
+
+### Customers-API
+
+`GET /api/datasets/{id}/customers` ist durch Bearer-Token geschützt und akzeptiert dieselben optionalen
+Abfrageparameter `start`, `end` und `comparison` wie die Endpunkte der Module Overview und Products. Ohne Parameter
+verwendet es den gesamten Datensatz und den Standardvergleich `previous_period`. Ungültige, umgekehrte oder außerhalb
+liegende Daten ergeben `400 invalid_range`; ein unbekannter Vergleich `400 invalid_request`. Fehlende oder fehlerhafte
+Zugangsdaten ergeben `401 unauthorized` mit `WWW-Authenticate: Bearer`; ein unbekannter, abgelaufener oder gelöschter
+Datensatz ergibt `404 not_found`.
+
+Die typisierte Antwort enthält `module`, `range`, `comparison`, `currency`, `availability`, `coverage` und `sections`.
+`coverage.dataset` ist die gespeicherte Abdeckung des gesamten Datensatzes; `coverage.range` die inklusive Abdeckung
+des ausgewählten Bereichs. Beide enthalten Stufe, gerundetes Abdeckungsverhältnis und Zählungen identifizierter,
+nicht identifizierter und gesamter Bestellungen. Bei normaler oder warning-Abdeckung meldet
+`sections.identified_customers` die eindeutigen identifizierten Kunden mit Aktivität im inklusiven Bereich sowie
+gemeinsamen Vergleichswert und Änderungsfelder. Eine leere aktive Population ist `zero_result`.
+`sections.new_vs_returning` teilt den identifizierten Bruttoumsatz im Bereich in Neukundenumsatz (Positionen am ersten
+Kaufdatum des Kunden) und Umsatz wiederkehrender Kunden (spätere Positionen) mit denselben Vergleichsfeldern;
+die Klassifizierung verwendet stets `first_order_date` aus der Gesamthistorie des ganzen Uploads, sodass ein späterer
+Bereichsbeginn einen wiederkehrenden Kunden nie zu einem neuen macht.
+
+`sections.days_between_purchases` meldet Wiederbestellungszeitpunkte nur für den aktuellen Bereich (keine
+Vergleichsfelder). Die eindeutigen Bestellungen jedes identifizierten Kunden werden nach ihrer ersten Position datiert
+und sortiert; jedes aufeinanderfolgende Paar ist ein Intervall in Kalendertagen, zwei Bestellungen am selben Tag
+ergeben `0`. Ein Intervall zählt, wenn seine spätere Bestellung im inklusiven Bereich liegt, auch wenn die frühere vor
+Bereichsbeginn liegt; Bestellungen nach dem Bereichsende werden ignoriert. Der Abschnitt gibt `median_days` (Mittelwert
+der beiden mittleren Werte bei gerader Anzahl, kann also auf `.5` enden; kein mean wird gemeldet), `interval_count`,
+`contributing_customers` und neun feste `buckets` (`0`, `1-7`, `8-14`, `15-30`, `31-60`, `61-90`, `91-180`,
+`181-365`, `366+` days) zurück, jeweils mit `interval_count` und `share` aller Intervalle. Ohne enthaltenes Intervall
+sind Median und alle Anteile `null`, der Zustand ist `insufficient_data`.
+
+`sections.cohort_retention` ist eine monatliche Bindungsmatrix nach Akquisitionskohorte nur für den aktuellen Bereich
+(keine Vergleichsfelder). Die Kohorte eines Kunden ist der Monat seiner ersten Bestellung in der Gesamthistorie;
+Zeilen sind die Kohortenmonate vom Monat des Bereichsbeginns bis zum Monat des Bereichsendes, älteste zuerst, sodass
+eine Änderung nur des Starts keine Zeile ändert. Das Bereichsende ist der `data_cutoff`: Kunden, die danach erstmals
+auftreten, sind keine Mitglieder, und spätere Aktivität wird ignoriert; Aktivität vor dem Start zählt weiter. Jede
+Zeile hat `cohort_month` (`YYYY-MM`), `cohort_size`, `complete_months` und `cells`; Monat `N` (0 = Akquisitionsmonat)
+enthält `retained_count` (Mitglieder mit identifizierter Position in diesem Kalendermonat) und `retention`
+(`retained_count / cohort_size`). Der `state` jeder Zelle ist `complete` (ganzer Monat am oder vor Stichtag), `partial`
+(Monat enthält den Stichtag; bisherige Zählung) oder `not_observed` (Monat beginnt nach Stichtag; Werte sind `null`,
+nie `0`). Zeilen werden auf die Breite der ältesten Kohorte aufgefüllt. Ohne überlappende Kohorte ist `rows` leer und
+der Zustand `insufficient_data`.
+
+`sections.historical_customer_value` meldet beobachteten Historischen Kundenwert (bereits beobachteter Bruttoumsatz,
+keine Prognose) nur für den aktuellen Bereich. Seine Population sind die Mitglieder der `cohort_retention`-Zeilen;
+der Wert eines Kunden ist sein identifizierter Bruttoumsatz am oder vor `data_cutoff` (Bereichsende), einschließlich
+Verkäufen vor Bereichsbeginn. Zurückgegeben werden `customer_count`, `average` (Gesamtwert / `customer_count`) und
+`median` (Mittelwert der beiden mittleren Werte bei gerader Anzahl), Geld halb-auf auf 4 Dezimalstellen gerundet.
+`rows` spiegelt `cohort_retention`-Zeilen und Zellzustände; `value_per_customer` jeder Zelle = kumulierter Bruttoumsatz
+der Kohorte bis Ende von Monat `N` (am Stichtag gedeckelt) / `cohort_size` (`null` bei `not_observed`). `all_cohorts`
+ist ein Punkt je Monatsversatz über Kohorten mit `complete`-Zelle (`value_per_customer`, `contributing_cohorts`; `null`
+und `0`, wenn keine vollständig ist). Ohne Kohorte ist der Zustand `insufficient_data`; Mitglieder mit Gesamtwert 0
+ergeben `zero_result` mit Werten `0.0000`.
+
+`sections.rfm` meldet RFM-Segmentzählungen nur für den aktuellen Bereich ohne Vergleich. Seine Population
+(`customer_count`, N) sind identifizierte Kunden mit identifizierter Bestellung am oder vor Bereichsende; ihre gesamte
+identifizierte Aktivität bis zum Ende zählt, der Bereichsbeginn hat keine Wirkung. Aktualität sind Tage von der letzten
+identifizierten Position eines Kunden bis zum `recency_anchor` (Bereichsende), Häufigkeit sind eindeutige Bestellungen,
+Geldwert ist Bruttoumsatz. Jede Dimension wird aus dem Kundenrang mit 1–5 bewertet:
+`floor(5 × (2 × worse + ties) / (2 × N)) + 1`; `worse` zählt Kunden mit strikt schlechterem Wert, `ties` solche mit
+demselben Wert. Gleiche Werte erhalten denselben Score, eine konstante Dimension erhält 3. Mit `FM = F + M` benennt
+die erste passende Regel das Segment: Champions (R ≥ 4, FM ≥ 8), Loyal (R ≥ 3, FM ≥ 6), Potential Loyalists
+(R ≥ 4, FM ≤ 5), Needs Attention (R = 3, FM ≤ 5), At Risk (R ≤ 2, FM ≥ 6), Lost (R ≤ 2, FM ≤ 5). `segments` listet
+immer alle sechs in dieser Reihenfolge mit `customer_count` und `share`; Scores je Kunde verlassen das Backend nie.
+Weniger als 5 Kunden ergeben leere `segments` und `insufficient_data`. Ein fester `note` sagt, dass Segmente relativ
+zum Kundenbestand dieses Uploads und keine universellen Benchmarks sind.
 
 `sections.rfm_drilldown` meldet aggregierte Zahlen je RFM-Segment mit derselben Population, denselben Eingaben und
 Segmenten wie `sections.rfm` und ohne Vergleich. Auf oberster Ebene gibt es `customer_count` (N, wie in
