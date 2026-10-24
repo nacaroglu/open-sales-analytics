@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 14183)
-Total output lines: 733
-
 # open-sales-analytics
 
 [English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
@@ -234,7 +231,215 @@ bir gelecek metriğidir.
 
 ## Yapılandırma
 
-Sunucu başladığında bu ortam değişkenler…4183 tokens truncated…a göreli olduğunu belirtir.
+Sunucu başladığında bu ortam değişkenlerini okur. Her değişken isteğe bağlıdır.
+
+| Değişken | Tür | Varsayılan | Etki |
+| --- | --- | --- | --- |
+| `DATASET_DIR` | yol | `./tmp_datasets` (Docker imajında `/data`) | Veri kümesi başına bir DuckDB dosyası tutan dizin. Yoksa özel izinlerle oluşturulur. |
+| `DATASET_TTL_HOURS` | integer > 0 | `24` | Veri kümesinin sona erip silineceği saat sayısı. |
+| `DATASET_TTL_SECONDS` | integer > 0 | unset | Yalnız test. Ayarlandığında `DATASET_TTL_HOURS` yerine saniye cinsinden yaşam süresi. Tarayıcı testleri gerçek süre sonunu görmek için bunu kullanır. Üretimde ayarlamayın. |
+| `MAX_UPLOAD_BYTES` | integer > 0 | `52428800` (50 MB) | Kabul edilen en büyük yükleme, bayt cinsinden. Daha büyük dosya `file_too_large` ile reddedilir. |
+| `MAX_ROWS` | integer > 0 | `500000` | Tek yüklemedeki en fazla veri satırı (başlık sayılmaz). Fazlası `too_many_rows` ile reddedilir. |
+| `CUSTOMER_ID_MAX_LENGTH` | integer > 0 | `128` | Boş olmayan `customer_id` için azami Unicode karakteri; uzun değerler `customer_id_too_long` ile reddedilir. |
+| `CLEANUP_INTERVAL_MINUTES` | integer > 0 | `15` | Sunucunun süresi dolan veri kümelerini kaldırma sıklığı (başlangıçta da bir kez yapar). |
+| `PUBLIC_DEMO_MODE` | boolean | `false` | `true` yüklemeleri kapatır; bkz. [Demo modu](#demo-modu). |
+| `MAX_DATASETS` | integer > 0 | `200` | Sunucunun tuttuğu süresi dolmamış en fazla veri kümesi. Bir tane daha oluşturmak (yükleme veya **Örnek veriyi dene**), biri sona erene ya da silinene kadar 503 `capacity_reached` yanıtı verir. |
+| `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Bu süreçte önbelleğe alınan azami Overview/Product yanıtı. `0`, yanıt önbelleğini devre dışı bırakır. |
+| `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Önbelleğe alınmış Overview/Product yanıtının azami ömrü; veri kümesinin süre sonu her zaman önceliklidir. |
+
+Boolean değerleri harf büyüklüğünden bağımsız olarak `true`/`false`, `1`/`0` ve `yes`/`no` kabul eder
+(`on`/`off`, `t`/`f` ve `y`/`n` de çalışır).
+
+Geçersiz bir değer, değişkenin adını veren bir hatayla sunucunun başlamayı reddetmesine neden olur. Geçersiz; sayı
+olmayan, sıfır ya da negatif, `1.5` gibi ondalık, boş dize veya yukarıdaki yazımlardan biri olmayan boolean demektir.
+Örneğin `MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend`, `MAX_ROWS  Input should be greater than 0` ile çıkar.
+
+## Veri kümesi sözleşmesi
+
+Her satır, tamamlanmış bir sipariş içindeki bir ürün satırıdır. Dosya şu altı zorunlu sütun ile bir isteğe bağlı sütuna
+sahip olmalıdır (aynı tablo yükleme ekranındadır). `customer_id` anlamı ve gizlilik sınırları için
+[Müşteri analitiği](#müşteri-analitiği) bölümüne bakın:
+
+| Sütun | Tür | Kural |
+| --- | --- | --- |
+| `order_id` | String | Zorunlu ve boş olamaz. Benzersiz sipariş sayımında kullanılır. |
+| `order_date` | Date | `YYYY-MM-DD` biçiminde zorunlu ISO takvim tarihi. Gelecekte olamaz. |
+| `product_id` | String | Zorunlu ve boş olamaz. Ürünü tanımlar. |
+| `product_name` | String | Zorunlu ve boş olamaz. Yükleme içinde bir `product_id` tam olarak tek bir adla eşleşmelidir. |
+| `quantity` | Integer | Zorunlu ve sıfırdan büyük. Sıfır ve negatif miktarlar geçersizdir. |
+| `unit_price` | Decimal | Zorunlu ve negatif olamaz. Sıfır fiyat uyarıyla kabul edilir; negatif fiyat geçersizdir. |
+| `customer_id` | String | İsteğe bağlı. Boş olabilir; en fazla `CUSTOMER_ID_MAX_LENGTH` Unicode karakteri (varsayılan 128); karma kimlik, UUID veya kişisel olmayan dahili anahtar kullanın. Asla e-posta adresi, telefon numarası, ad veya başka doğrudan tanımlayıcı kullanmayın. |
+
+Dosya düzeyi kuralları:
+
+- UTF-8, virgülle ayrılmış, tek başlık satırı. Hata raporlarında başlık 1. satırdır; ilk veri satırı 2. satırdır.
+- Sütun adları boşlukları kırpıldıktan sonra eşleştirilir. Sıra önemli değildir. Altı zorunlu sütundan ya da
+  `customer_id`'den biri olmayan sütun uyarıyla (`extra_column`) yok sayılır.
+- `(order_id, product_id)` benzersizdir: aynı ürün bir siparişte en fazla bir kez görünür.
+- Tüm dosyada her `product_id` için tek ad bulunur.
+- Her sipariş içinde boş `customer_id` değerleri tek boş olmayan kimlikle doldurulur; çelişen kimlikler yüklemeyi
+  reddettirir, tüm değerleri boş siparişler tanımlanmamış kalır.
+- Her yüklemede, yükleme formunda seçilen tek para birimi vardır (bkz. [Para birimleri](#para-birimleri)).
+- Herhangi bir geçersiz satır tüm dosyayı reddettirir. Hiçbir şey saklanmaz.
+- Varsayılan olarak en fazla 50 MB ve 500.000 satır (`MAX_UPLOAD_BYTES` ve `MAX_ROWS` değişkenleri).
+- Miktarlar 2.147.483.647'ye kadar tam sayıdır. Fiyatlar para simgesi ve binlik ayırıcı içermeyen; noktadan önce en
+  fazla 14, sonra en fazla 4 basamaklı düz ondalıklardır.
+
+### Geçerli bir örnek
+
+Bunu `example.csv` olarak kaydedin. Üç satırı ve iki siparişi vardır; `A-1001` siparişi iki satır içerir.
+
+```csv
+order_id,order_date,product_id,product_name,quantity,unit_price
+A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
+A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
+A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
+```
+
+İsteğe bağlı `customer_id` eklenebilir; boş hücrelere izin verilir:
+
+```csv
+order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
+A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
+A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
+```
+
+Uygulama 8000 portunda çalışırken API aracılığıyla içe aktarın:
+
+```sh
+curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
+```
+
+Yanıt; `"warnings":[]`, bir `dataset_id`, bir `token` ve ilk özetle birlikte `201`'dir. Buradaki brüt satış 2 sipariş
+ve 4 birimden 61.50'dir.
+
+### Geçersiz örnekler
+
+Her biri geçerli dosyadaki küçük bir değişikliktir. Uygulama `validation_failed` hata kodu ve hata listesiyle `422`
+yanıtı verir; her hatanın `code` değeri bu tablodadır. Her hata satır numarası ve sütunu da taşır.
+
+| Geçerli dosyadaki değişiklik | Hata `code` | Satır |
+| --- | --- | --- |
+| Başlıktan `unit_price` değerini (ve her satırdaki son değeri) kaldırın | `missing_column` | yok (dosya düzeyi) |
+| `2025-03-02` tarihini `2025-13-02` yapın | `invalid_date` | 4 |
+| Son satırın miktarını `1` yerine `0` yapın | `invalid_quantity` | 4 |
+| Son satırı yineleyin | `duplicate_line` | 5 |
+
+### Hata kodları
+
+Rapor ilk 100 hatayı listeler ve toplam sayıyı (`error_count`) verir.
+
+| Kod | Neden |
+| --- | --- |
+| `file_too_large` | Dosya `MAX_UPLOAD_BYTES` değerinden büyüktür. |
+| `empty_file` | Dosya boştur. |
+| `invalid_encoding` | Dosya geçerli UTF-8 değildir. |
+| `malformed_csv` | Dosya CSV olarak okunamaz (örneğin 131.072 karakterden uzun tek alan). |
+| `too_many_rows` | `MAX_ROWS` değerinden fazla veri satırı. |
+| `no_data_rows` | Başlık vardır ama veri satırı yoktur. |
+| `missing_column` | Altı zorunlu sütundan biri başlıkta yoktur. |
+| `duplicate_column` | Zorunlu bir sütun başlıkta birden fazla kez bulunur. |
+| `missing_value` | Zorunlu bir değer boştur. |
+| `invalid_date` | `order_date`, `YYYY-MM-DD` olarak yazılmış gerçek bir tarih değildir. |
+| `future_date` | `order_date` bugünden (UTC) sonradır. |
+| `invalid_quantity` | `quantity`, 1 ile 2.147.483.647 arasında bir tam sayı değildir. |
+| `invalid_price` | `unit_price`, noktadan önce 14 ve sonra 4 basamak sınırındaki düz ondalık değildir. |
+| `negative_price` | `unit_price` sıfırın altındadır. |
+| `line_total_too_large` | `quantity × unit_price`, brüt satış için kullanılan kesin ondalık aralığın ötesinde, 100.000.000.000.000 veya daha fazladır. |
+| `malformed_row` | Satırın değer sayısı başlıktan farklıdır. |
+| `duplicate_line` | Aynı `order_id` ve `product_id` daha önceki satırda bulunur. |
+| `conflicting_product_name` | Bir `product_id` birden çok `product_name` değerine sahiptir. |
+| `conflicting_customer_id` | Bir sipariş birden çok boş olmayan `customer_id` değerine sahiptir. |
+| `customer_id_too_long` | Boş olmayan `customer_id`, `CUSTOMER_ID_MAX_LENGTH` Unicode karakterini aşar. |
+| `customer_id_looks_like_email` | Boş olmayan `customer_id`, bariz e-posta sezgiselleştirmesiyle eşleşir. |
+| `customer_id_looks_like_phone` | Boş olmayan `customer_id`, bariz telefon sezgiselleştirmesiyle eşleşir. |
+
+Üç `customer_id` kontrolü en iyi çaba korumasıdır; anonimleştirme veya uyumluluk garantisi değildir. E-posta kontrolü
+değerin herhangi bir yerinde `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}` arar. Telefon kontrolü yalnızca rakamlar, boşluklar,
+`+ - . ( )`, 7–15 rakam ve başta `+`, görünür boşluk/parantez ya da en az iki `-`/`.` ayırıcı gerektirir. Bu
+sezgiselleştirmelerin kasıtlı olarak bilinen eksikleri vardır: `05321234567` gibi tümü rakam bir telefon kabul edilirken
+`2024-01-000123` gibi iki tireli rakam grupları reddedilir. Kabul edilen kimlik bu nedenle anonim değildir.
+
+İstek dosya okunmadan da başarısız olabilir: listede olmayan para birimi `400 invalid_request` yanıtı verir.
+
+### Müşteri kapsamı
+
+`customer_id` varsa kapsam içe aktarma sırasında, aynı siparişin başka satırından boş kimlikler doldurulduktan sonra,
+sipariş düzeyinde bir kez hesaplanır:
+
+`identified distinct orders / all distinct orders`
+
+Bu satır yüzdesi değildir; beş satırlı tanımlanmış sipariş bir kez sayılır. Veri kümesi meta verileri sayıları ve
+yuvarlanmış oranı bildirir; katman tüm veri kümesindeki kesin tam sayı sayılarından belirlenir:
+
+- %50'nin altı: `suppressed`; Müşteri analitiği kullanılamaz;
+- %50'den %80'in altına kadar: `warning`; Müşteri analitiği düşük kapsam uyarısıyla kullanılabilir;
+- %80 veya üzeri: `normal`; Müşteri analitiği normal biçimde kullanılabilir.
+
+`customer_id` olmayan dosyaların katmanı `missing`, kapsamı sıfır yüzde yerine `coverage: null` olur. Kapsam meta
+verileri yalnızca sayılar içerir, asla müşteri kimliği içermez. Tarih aralığı kapsamı iki ucu dahil sipariş tarihleriyle
+aynı sipariş düzeyi formülünü kullanır; boş aralık sıfır sayı ve `coverage: null` verir. Katmanlama tüm veri kümesine
+dayanmaya devam eder; tarih filtresi Customers modülünü ortaya çıkarmaz veya gizlemez.
+
+### Customers API
+
+`GET /api/datasets/{id}/customers` bearer token ile korunur ve Overview ile Products modül uç noktalarıyla aynı isteğe
+bağlı `start`, `end` ve `comparison` sorgu parametrelerini kabul eder. Parametre olmadığında tüm veri kümesini ve
+varsayılan `previous_period` karşılaştırmasını kullanır. Geçersiz, ters veya aralık dışı tarihler `400 invalid_range`;
+bilinmeyen karşılaştırma `400 invalid_request` döndürür. Eksik ya da bozuk kimlik bilgileri `WWW-Authenticate: Bearer`
+ile `401 unauthorized`; bilinmeyen, süresi dolmuş veya silinmiş veri kümesi `404 not_found` döndürür.
+
+Türlenmiş yanıt `module`, `range`, `comparison`, `currency`, `availability`, `coverage` ve `sections` içerir.
+`coverage.dataset` saklanan tüm veri kümesi kapsamıdır; `coverage.range` iki ucu dahil seçili aralık kapsamıdır; ikisi
+de katman, yuvarlanmış kapsam oranı ve tanımlanmış, tanımlanmamış ve toplam sipariş sayılarını içerir. Kapsam normal
+veya warning olduğunda `sections.identified_customers`, dahilî aralıkta etkinliği olan benzersiz tanımlanmış müşterileri,
+paylaşılan karşılaştırma değeri ve değişim alanlarıyla bildirir. Boş etkin nüfus `zero_result` durumudur.
+`sections.new_vs_returning`, aralıktaki tanımlanmış brüt satışı yeni müşteri satışları (müşterinin ilk satın alma
+tarihindeki satırlar) ile geri dönen müşteri satışlarına (sonraki satırlar) böler ve aynı karşılaştırma alanlarını içerir;
+sınıflandırma her zaman tüm yüklemedeki tam geçmiş `first_order_date` değerini kullanır, dolayısıyla aralık başlangıcını
+değiştirmek geri dönen müşteriyi yeniye dönüştürmez.
+
+`sections.days_between_purchases`, yalnızca güncel aralık için yeniden sipariş zamanlamasını bildirir (karşılaştırma
+alanı yoktur). Her tanımlanmış müşterinin benzersiz siparişleri ilk satırlarıyla tarihlenir ve sıralanır; her ardışık
+çift takvim günü cinsinden bir aralıktır, aynı gündeki iki sipariş `0` verir. Önceki sipariş başlangıçtan önce olsa bile
+sonraki sipariş dahilî aralıktaysa aralık sayılır; son tarihten sonraki siparişler yok sayılır. Bölüm `median_days`
+(çift sayıda iki orta değerin ortalaması; bu yüzden `.5` ile bitebilir; mean bildirilmez), `interval_count`,
+`contributing_customers` ve dokuz sabit `buckets` (`0`, `1-7`, `8-14`, `15-30`, `31-60`, `61-90`, `91-180`,
+`181-365`, `366+` days) döndürür; her biri kendi `interval_count` değerini ve tüm aralıkların `share` değerini taşır.
+Dahil edilen aralık yoksa medyan ve tüm paylar `null`, durum `insufficient_data` olur.
+
+`sections.cohort_retention`, yalnız güncel aralık için aylık edinme kohortu elde tutma matrisidir (karşılaştırma alanı
+yoktur). Müşterinin kohortu tam geçmiş ilk siparişinin ayıdır; satırlar aralık başlangıcını içeren aydan sonunu içeren
+aya kadar, eskiden yeniye kohort aylarıdır; yalnız başlangıcı değiştirmek satırı değiştirmez. Aralık sonu `data_cutoff`
+değeridir: sonrasında ilk kez görülen müşteriler üye değildir ve sonraki etkinlik yok sayılır, başlangıçtan önceki etkinlik
+ise sayılır. Her satır `cohort_month` (`YYYY-MM`), `cohort_size`, `complete_months` ve `cells` içerir; ay `N`
+(0 = edinme ayı), o takvim ayında tanımlanmış satırı olan üyeler için `retained_count` ve
+`retention` (`retained_count / cohort_size`) taşır. Her hücrenin `state` değeri `complete` (tüm ay kesimde veya öncesinde),
+`partial` (ay kesimi içerir; o ana kadarki sayılar) ya da `not_observed` (ay kesimden sonra başlar; değerler `0` değil
+`null`) olur. Satırlar en eski kohortla aynı genişliğe doldurulur. Örtüşen kohort yoksa `rows` boş ve durum
+`insufficient_data` olur.
+
+`sections.historical_customer_value`, yalnızca güncel aralık için gözlenen Geçmiş Müşteri Değerini (halihazırda
+gözlenmiş brüt satış, tahmin değil) bildirir. Nüfusu `cohort_retention` satırlarının üyeleridir; müşterinin değeri,
+başlangıçtan önceki satışlar dahil `data_cutoff` (aralık sonu) tarihinde veya öncesindeki tanımlanmış brüt satışıdır.
+`customer_count`, `average` (toplam değer / `customer_count`) ve `median` (çift sayıda iki orta değerin ortalaması)
+döndürür; para yarımdan yukarı 4 ondalığa yuvarlanır. `rows`, `cohort_retention` satırları ve hücre durumlarını yansıtır;
+her hücrenin `value_per_customer` değeri = kohortun ay `N` sonuna kadar (kesimle sınırlı) kümülatif brüt satışı /
+`cohort_size` (`not_observed` olduğunda `null`). `all_cohorts`, hücresi `complete` olan kohortlar üzerinden her ay
+uzaklığı için bir noktadır (`value_per_customer`, `contributing_cohorts`; hiçbiri tam değilse `null` ve `0`). Kohort
+yoksa durum `insufficient_data`; toplam değeri 0 olan üyeler `0.0000` değerlerle `zero_result` verir.
+
+`sections.rfm`, yalnızca güncel aralık için, karşılaştırmasız RFM segment sayılarını bildirir. Nüfusu (`customer_count`,
+N), aralık sonunda veya öncesinde tanımlanmış siparişi olan müşterilerdir; sona kadarki tüm tanımlanmış etkinlikleri
+sayılır ve başlangıcın etkisi yoktur. Güncellik müşterinin son tanımlanmış satırından `recency_anchor`'a (aralık sonu)
+kadar gün, sıklık benzersiz siparişler, parasal değer brüt satıştır. Her boyut müşteri sırasına göre 1-5 puanlanır:
+`floor(5 × (2 × worse + ties) / (2 × N)) + 1`; burada `worse`, kesin olarak daha kötü değere sahip müşterileri,
+`ties` aynı değere sahip olanları sayar; böylece eşit değerler aynı puanı alır ve sabit boyut 3 puan alır.
+`FM = F + M` ile ilk eşleşen kural segmenti adlandırır: Champions (R ≥ 4, FM ≥ 8), Loyal (R ≥ 3, FM ≥ 6), Potential
+Loyalists (R ≥ 4, FM ≤ 5), Needs Attention (R = 3, FM ≤ 5), At Risk (R ≤ 2, FM ≥ 6), Lost (R ≤ 2, FM ≤ 5).
+`segments` her zaman altısını bu sırada `customer_count` ve `share` ile listeler; müşteri başı puanlar backend'den
+çıkmaz. 5'ten az müşteri boş `segments` ve `insufficient_data` verir. Sabit `note`, segmentlerin evrensel kıyaslara
+değil bu yüklemenin müşteri tabanına göreli olduğunu belirtir.
 
 `sections.rfm_drilldown`, `sections.rfm` ile aynı nüfus, girdiler ve segmentlerle, karşılaştırmasız toplu segment
 rakamlarını bildirir. Üst düzeyde `customer_count` (N, `sections.rfm` ile aynı), `recency_anchor` (aralık sonu) ve
