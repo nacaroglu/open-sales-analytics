@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 11782)
+Total output lines: 515
+
 # open-sales-analytics
 
 语言：[English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
@@ -212,104 +215,7 @@ API 文档位于 [`/docs`](http://localhost:8000/docs)。`GET /api/datasets/{id}
 - 列名去除空格后匹配，顺序无关。不属于六个必需列或 `customer_id` 的列会忽略并给出警告（`extra_column`）。
 - `(order_id, product_id)` 唯一：同一产品在每个订单中最多出现一次。
 - 整个文件中每个 `product_id` 只能有一个名称。
-- 每个订单内，空白 `customer_id` 会由其唯一非空 ID 填充；冲突 ID 会拒绝上传，全空订单保持未识别。
-- 每次上传一种货币，在上传表单中选择（参见[货币](#货币)）。
-- 任意无效行都会拒绝整个文件，不存储任何内容。
-- 默认最多 50 MB 和 500,000 行（`MAX_UPLOAD_BYTES` 和 `MAX_ROWS` 变量）。
-- 数量为不超过 2,147,483,647 的整数。价格为普通小数（无货币符号、无千位分隔符），小数点前最多 14 位、后最多 4 位。
-
-### 有效示例
-
-将其保存为 `example.csv`。它有三条明细和两个订单；订单 `A-1001` 有两条明细。
-
-```csv
-order_id,order_date,product_id,product_name,quantity,unit_price
-A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
-A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
-A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
-```
-
-可包含可选 `customer_id`，允许空单元格：
-
-```csv
-order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
-A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
-A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
-```
-
-应用在端口 8000 运行时，通过 API 导入：
-
-```sh
-curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
-```
-
-响应为 `201`，包含 `"warnings":[]`、`dataset_id`、`token` 和首个摘要。此处总销售额为 61.50，来自 2 个订单和 4 件商品。
-
-### 无效示例
-
-每项都是对有效文件的小改动。应用返回 `422`、错误码 `validation_failed` 和错误列表；每个错误的 `code` 如下表，并带行号和列。
-
-| 对有效文件的改动 | 错误 `code` | 行 |
-| --- | --- | --- |
-| 从表头删除 `unit_price`（并删除每行最后一个值） | `missing_column` | 无（文件级） |
-| 将日期 `2025-03-02` 改为 `2025-13-02` | `invalid_date` | 4 |
-| 将最后一行数量从 `1` 改为 `0` | `invalid_quantity` | 4 |
-| 重复最后一行 | `duplicate_line` | 5 |
-
-### 错误代码
-
-报告列出前 100 个错误和总数（`error_count`）。
-
-| 代码 | 原因 |
-| --- | --- |
-| `file_too_large` | 文件大于 `MAX_UPLOAD_BYTES`。 |
-| `empty_file` | 文件为空。 |
-| `invalid_encoding` | 文件不是有效 UTF-8。 |
-| `malformed_csv` | 文件无法读取为 CSV（例如单字段超过 131,072 个字符）。 |
-| `too_many_rows` | 数据行超过 `MAX_ROWS`。 |
-| `no_data_rows` | 有表头但没有数据行。 |
-| `missing_column` | 表头缺少六个必需列之一。 |
-| `duplicate_column` | 必需列在表头出现多次。 |
-| `missing_value` | 必需值为空。 |
-| `invalid_date` | `order_date` 不是以 `YYYY-MM-DD` 书写的真实日期。 |
-| `future_date` | `order_date` 晚于今天（UTC）。 |
-| `invalid_quantity` | `quantity` 不是 1 到 2,147,483,647 的整数。 |
-| `invalid_price` | `unit_price` 不是小数点前 14 位、后 4 位以内的普通小数。 |
-| `negative_price` | `unit_price` 小于零。 |
-| `line_total_too_large` | `quantity × unit_price` 大于等于 100,000,000,000,000，超出总销售额所用精确小数范围。 |
-| `malformed_row` | 该行值数量与表头不同。 |
-| `duplicate_line` | 相同 `order_id` 和 `product_id` 已在先前行出现。 |
-| `conflicting_product_name` | 一个 `product_id` 有多个 `product_name`。 |
-| `conflicting_customer_id` | 一个订单有多个非空 `customer_id`。 |
-| `customer_id_too_long` | 非空 `customer_id` 超过 `CUSTOMER_ID_MAX_LENGTH` 个 Unicode 字符。 |
-| `customer_id_looks_like_email` | 非空 `customer_id` 匹配明显邮箱启发式。 |
-| `customer_id_looks_like_phone` | 非空 `customer_id` 匹配明显电话启发式。 |
-
-三项 `customer_id` 检查只是尽力而为的防护，并非匿名化或合规保证。邮箱检查在值中查找 `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}`。电话检查只允许数字、空格、`+ - . ( )`，要求 7–15 位数字，并且有前导 `+`、可见空格/括号或至少两个 `-`/`.` 分隔符。启发式有意保留已知漏检：`05321234567` 这样的全数字电话会接受，而 `2024-01-000123` 这样有两个连字符的数字组会拒绝。ID 被接受并不表示匿名。
-
-请求也可能在读取文件前失败：不在列表中的货币返回 `400 invalid_request`。
-
-### 客户覆盖率
-
-存在 `customer_id` 时，导入期间会在订单级计算一次覆盖率，先用同一订单另一行的 ID 填充空值：
-
-`identified distinct orders / all distinct orders`
-
-它不是行百分比，因此一个有五行的已识别订单只计一次。数据集元数据报告计数和四舍五入比率，而等级按整个数据集的精确整数计数决定：
-
-- 低于 50%：`suppressed`；客户分析不可用；
-- 50% 至不足 80%：`warning`；客户分析可用并显示低覆盖警告；
-- 80% 或以上：`normal`；客户分析正常可用。
-
-没有 `customer_id` 的文件等级为 `missing`，且 `coverage: null`，而非零覆盖。覆盖元数据只含计数，不含客户标识符。日期范围覆盖使用相同订单级公式及包含边界的订单日期；空范围计数为零且 `coverage: null`。等级仍以完整数据集为准，因此筛选日期不会使客户模块出现或消失。
-
-### 客户 API
-
-`GET /api/datasets/{id}/customers` 受 bearer 令牌保护，接受与概览、产品模块相同的可选 `start`、`end`、`comparison` 查询参数。无参数时使用完整数据集和默认 `previous_period` 比较。无效日期、反向或范围外日期返回 `400 invalid_range`；未知比较返回 `400 invalid_request`。凭据缺失或格式错误返回 `401 unauthorized` 和 `WWW-Authenticate: Bearer`；未知、过期或已删除数据集返回 `404 not_found`。
-
-类型化响应含 `module`、`range`、`comparison`、`currency`、`availability`、`coverage` 和 `sections`。`coverage.dataset` 为存储的完整数据集覆盖，`coverage.range` 为所选包含边界范围覆盖；两者均含等级、四舍五入比率以及已识别、未识别和总订单计数。覆盖正常或警告时，`sections.identified_customers` 报告包含边界范围内有活动的不同已识别客户，以及共享比较值和变化字段。空活动群体状态为 `zero_result`。`sections.new_vs_returning` 将范围内已识别总销售额拆为新客户销售（客户首次购买日期上的明细）和回访客户销售（后续明细），并含相同比较字段；分类始终使用完整上传历史的 `first_order_date`，因此移动范围开始日不会把回访客户变为新客户。
-
-`sections.days_between_purchases` 仅报告当前范围的复购时间（无比较字段）。各已识别客户的不同订单按首条明细日期排序；每对相邻订单构成一个日历日间隔，同日两个订单为 `0`。若后一个订单在包含边界范围内，则间隔计入，即使前一个订单早于范围开始；范围结束后的订单忽略。返回 `median_days`（偶数数量时取两个中间值的均值，因此可为 `.5`；不报告平均数）、`interval_count`、`contributing_customers` 和九个固定 `buckets`（`0`、`1-7`、`8-14`、`15-30`、`31-60`、`61-90`、`91-180`、`181-365`、`366+` 天），每个桶含 `interval_count` 和占全部间隔的 `share`。无计入间隔时中位数和所有份额为 `null`，状态为 `insufficient_data`。
+- 每个订单内，空白 `customer_id` 会由其唯一非空 ID 填充；冲突 ID 会拒绝上…1782 tokens truncated…的 `share`。无计入间隔时中位数和所有份额为 `null`，状态为 `insufficient_data`。
 
 `sections.cohort_retention` 是仅针对当前范围的月度获客同期群留存矩阵（无比较字段）。客户同期群是完整历史首次订单所在月份；行从包含范围开始日的月份到包含结束日的月份，按最早优先，因此只移动开始日不会改变行。范围结束日为 `data_cutoff`：之后首次出现的客户不属于成员，之后活动忽略，开始日前活动仍计入。每行含 `cohort_month`（`YYYY-MM`）、`cohort_size`、`complete_months`、`cells`；第 `N` 月（0 = 获客月）含 `retained_count`（该日历月有已识别明细的成员）和 `retention`（`retained_count / cohort_size`）。每个单元格的 `state` 为 `complete`（整月不晚于截止日）、`partial`（该月包含截止日；统计迄今）或 `not_observed`（该月始于截止日后；值为 `null`，绝非 `0`）。各行填充至与最老同期群等宽。没有重叠同期群时 `rows` 为空，状态为 `insufficient_data`。
 
@@ -476,7 +382,7 @@ Dependabot（`.github/dependabot.yml`）每周一为过时的 Python（`uv.lock`
 
 ### 容器镜像固定
 
-决定：`Dockerfile` 中基础镜像（`node:22`、`python:3.12-slim`）按摘要固定（`FROM image:tag@sha256:...`，多架构索引摘要）。原因：标签会移动，同一提交的两次构建可能不同，未经审查的上游变化可能破坏或危及构建；摘要使构建可复现，且每次基础镜像变化都经过拉取请求审查。Dependabot（`.github/dependabot.yml` 的 `docker` 项，每周一）同时更新标签和摘要，`docker-smoke` CI 作业会在合并前构建并启动新镜像。手动更新时，查找所需标签摘要并替换 `FROM` 行两部分。用 `COPY --from=ghcr.io/astral-sh/uv:0.8` 复制的 `uv` 镜像目前仍使用标签。
+决定：`Dockerfile` 中基础镜像（`node:26`、`python:3.14-slim`）按摘要固定（`FROM image:tag@sha256:...`，多架构索引摘要）。原因：标签会移动，同一提交的两次构建可能不同，未经审查的上游变化可能破坏或危及构建；摘要使构建可复现，且每次基础镜像变化都经过拉取请求审查。Dependabot（`.github/dependabot.yml` 的 `docker` 项，每周一）同时更新标签和摘要，`docker-smoke` CI 作业会在合并前构建并启动新镜像。手动更新时，查找所需标签摘要并替换 `FROM` 行两部分。用 `COPY --from=ghcr.io/astral-sh/uv:0.8` 复制的 `uv` 镜像目前仍使用标签。
 
 ### 固定 Actions
 
