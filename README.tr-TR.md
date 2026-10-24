@@ -50,7 +50,7 @@ istemci vazgeçtiğinde sona erer.
 [Aşağıdaki tablodan](#yapılandırma) bir değişkeni `-e` ile geçirerek ayar sağlayın:
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## Demo adımları
@@ -246,6 +246,8 @@ Sunucu başladığında bu ortam değişkenlerini okur. Her değişken isteğe b
 | `MAX_DATASETS` | integer > 0 | `200` | Sunucunun tuttuğu süresi dolmamış en fazla veri kümesi. Bir tane daha oluşturmak (yükleme veya **Örnek veriyi dene**), biri sona erene ya da silinene kadar 503 `capacity_reached` yanıtı verir. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Bu süreçte önbelleğe alınan azami Overview/Product yanıtı. `0`, yanıt önbelleğini devre dışı bırakır. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Önbelleğe alınmış Overview/Product yanıtının azami ömrü; veri kümesinin süre sonu her zaman önceliklidir. |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | Çalışma ortamı. Diğer değerler başlangıcı engeller. |
+| `OSA_VERSION` | string | `local` | Okunabilir sürüm. CI derleme sürümünü ayarlar; `docker run -e` ile değiştirilebilir. |
 
 Boolean değerleri harf büyüklüğünden bağımsız olarak `true`/`false`, `1`/`0` ve `yes`/`no` kabul eder
 (`on`/`off`, `t`/`f` ve `y`/`n` de çalışır).
