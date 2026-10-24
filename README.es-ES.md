@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 12123)
+Total output lines: 709
+
 # open-sales-analytics
 
 [English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
@@ -251,149 +254,7 @@ El servidor lee estas variables de entorno al iniciarse. Todas son opcionales.
 Los booleanos aceptan `true`/`false`, `1`/`0` y `yes`/`no` sin distinguir mayúsculas (también `on`/`off`,
 `t`/`f` y `y`/`n`).
 
-Un valor no válido impide el arranque y el error nombra la variable. Es inválido no ser número, ser cero o negativo,
-un decimal como `1.5`, una cadena vacía o un booleano distinto de los anteriores. Por ejemplo,
-`MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` termina con `MAX_ROWS  Input should be greater than 0`.
-
-## Contrato del conjunto de datos
-
-Cada fila es una línea de producto de un pedido completado. El archivo debe tener las seis columnas obligatorias y una
-opcional (la misma tabla aparece en la carga). Consulte [Análisis de clientes](#análisis-de-clientes) para el significado
-y los límites de privacidad de `customer_id`:
-
-| Columna | Tipo | Regla |
-| --- | --- | --- |
-| `order_id` | String | Obligatoria y no vacía. Se usa para contar pedidos distintos. |
-| `order_date` | Date | Fecha ISO obligatoria `YYYY-MM-DD`. No puede estar en el futuro. |
-| `product_id` | String | Obligatoria y no vacía. Identifica el producto. |
-| `product_name` | String | Obligatoria y no vacía. Un `product_id` debe corresponder a un solo nombre en la carga. |
-| `quantity` | Integer | Obligatoria y mayor que cero. Cero y negativos no son válidos. |
-| `unit_price` | Decimal | Obligatorio y no negativo. Cero se acepta con advertencia; negativo no es válido. |
-| `customer_id` | String | Opcional. Puede estar vacío; hasta `CUSTOMER_ID_MAX_LENGTH` caracteres Unicode (128 por defecto); use hash, UUID o clave interna no personal. Nunca correo, teléfono, nombre u otro identificador directo. |
-
-Reglas del archivo:
-
-- UTF-8, separado por comas y una cabecera. La cabecera es la fila 1 en los errores y los datos empiezan en la 2.
-- Los nombres se comparan tras recortar espacios; el orden no importa. Una columna ajena a las seis obligatorias o
-  `customer_id` se ignora con una advertencia (`extra_column`).
-- `(order_id, product_id)` es único: un producto aparece como máximo una vez por pedido.
-- Un solo nombre por `product_id` en todo el archivo.
-- En un pedido, los `customer_id` vacíos se rellenan con su único ID no vacío; los ID en conflicto rechazan la carga
-  y los pedidos enteramente vacíos siguen sin identificar.
-- Una moneda por carga, elegida en el formulario (consulte [Monedas](#monedas)).
-- Cualquier fila inválida rechaza todo el archivo. No se almacena nada.
-- Máximo predeterminado de 50 MB y 500,000 filas (`MAX_UPLOAD_BYTES` y `MAX_ROWS`).
-- Las cantidades son enteros hasta 2,147,483,647. Los precios son decimales simples (sin símbolo ni separador de miles)
-  con hasta 14 dígitos antes y 4 después del punto.
-
-### Ejemplo válido
-
-Guárdelo como `example.csv`. Tiene tres líneas y dos pedidos; `A-1001` tiene dos líneas.
-
-```csv
-order_id,order_date,product_id,product_name,quantity,unit_price
-A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
-A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
-A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
-```
-
-Puede incluir `customer_id`; se permiten celdas vacías:
-
-```csv
-order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
-A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
-A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
-```
-
-Con la aplicación en el puerto 8000, impórtelo por la API:
-
-```sh
-curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
-```
-
-La respuesta es `201` con `"warnings":[]`, `dataset_id`, `token` y el primer resumen. Las ventas brutas son 61.50 de
-2 pedidos y 4 unidades.
-
-### Ejemplos no válidos
-
-Cada uno es un pequeño cambio al archivo válido. La aplicación responde `422` con `validation_failed` y una lista;
-el `code` de cada error figura en la tabla. También incluye fila y columna.
-
-| Cambio | `code` de error | Fila |
-| --- | --- | --- |
-| Quitar `unit_price` de la cabecera y el último valor de cada fila | `missing_column` | ninguna (archivo) |
-| Cambiar `2025-03-02` a `2025-13-02` | `invalid_date` | 4 |
-| Cambiar la última cantidad de `1` a `0` | `invalid_quantity` | 4 |
-| Repetir la última fila | `duplicate_line` | 5 |
-
-### Códigos de error
-
-El informe enumera los primeros 100 y da el total (`error_count`).
-
-| Código | Causa |
-| --- | --- |
-| `file_too_large` | El archivo supera `MAX_UPLOAD_BYTES`. |
-| `empty_file` | El archivo está vacío. |
-| `invalid_encoding` | No es UTF-8 válido. |
-| `malformed_csv` | No se puede leer como CSV (por ejemplo, un campo supera 131,072 caracteres). |
-| `too_many_rows` | Más de `MAX_ROWS` filas de datos. |
-| `no_data_rows` | Hay cabecera pero no datos. |
-| `missing_column` | Falta una de las seis columnas obligatorias. |
-| `duplicate_column` | Una columna obligatoria aparece más de una vez. |
-| `missing_value` | Un valor obligatorio está vacío. |
-| `invalid_date` | `order_date` no es una fecha real `YYYY-MM-DD`. |
-| `future_date` | `order_date` es posterior a hoy (UTC). |
-| `invalid_quantity` | `quantity` no es un entero entre 1 y 2,147,483,647. |
-| `invalid_price` | `unit_price` no es un decimal simple con hasta 14 dígitos antes y 4 después del punto. |
-| `negative_price` | `unit_price` es menor que cero. |
-| `line_total_too_large` | `quantity × unit_price` es 100,000,000,000,000 o más, fuera del rango decimal exacto. |
-| `malformed_row` | La fila tiene distinto número de valores que la cabecera. |
-| `duplicate_line` | Los mismos `order_id` y `product_id` aparecieron antes. |
-| `conflicting_product_name` | Un `product_id` tiene más de un `product_name`. |
-| `conflicting_customer_id` | Un pedido tiene más de un `customer_id` no vacío. |
-| `customer_id_too_long` | Un `customer_id` supera `CUSTOMER_ID_MAX_LENGTH` caracteres Unicode. |
-| `customer_id_looks_like_email` | Un `customer_id` coincide con la heurística obvia de correo. |
-| `customer_id_looks_like_phone` | Un `customer_id` coincide con la heurística obvia de teléfono. |
-
-Las tres comprobaciones de `customer_id` son defensas de mejor esfuerzo, no anonimización ni garantía de cumplimiento.
-La de correo busca `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}` en cualquier parte. La de teléfono exige solo dígitos, espacios,
-`+ - . ( )`, entre 7 y 15 dígitos y además un `+` inicial, espacios/paréntesis visibles o al menos dos separadores
-`-`/`.`. Tienen omisiones conocidas: `05321234567` se acepta y `2024-01-000123` se rechaza. Un ID aceptado no es
-por ello anónimo.
-
-Una solicitud también puede fallar antes de leer el archivo: una moneda fuera de la lista responde `400 invalid_request`.
-
-### Cobertura de clientes
-
-Si existe `customer_id`, la cobertura se calcula una vez al importar, por pedido y después de rellenar ID vacíos:
-
-`identified distinct orders / all distinct orders`
-
-No es un porcentaje de filas: un pedido identificado de cinco líneas cuenta una vez. Los metadatos informan recuentos
-y proporción redondeada; el nivel usa recuentos enteros exactos de todo el conjunto:
-
-- menos de 50%: `suppressed`; análisis de clientes no disponible;
-- de 50% hasta menos de 80%: `warning`; disponible con advertencia;
-- 80% o más: `normal`; disponible normalmente.
-
-Los archivos sin `customer_id` tienen nivel `missing` y `coverage: null`, no cobertura cero. Los metadatos solo contienen
-recuentos, nunca ID. La cobertura por fechas usa la misma fórmula inclusiva; un intervalo vacío tiene recuentos cero y
-`coverage: null`. El nivel sigue basándose en todo el conjunto, así que filtrar fechas no oculta ni muestra Customers.
-
-### API de clientes
-
-`GET /api/datasets/{id}/customers` está protegido por bearer y acepta `start`, `end` y `comparison` como Overview y
-Products. Sin parámetros usa todo el conjunto y `previous_period`. Fechas inválidas, invertidas o fuera del rango
-devuelven `400 invalid_range`; comparación desconocida, `400 invalid_request`. Credenciales ausentes o mal formadas
-dan `401 unauthorized` con `WWW-Authenticate: Bearer`; conjunto desconocido, caducado o eliminado, `404 not_found`.
-
-La respuesta tipada contiene `module`, `range`, `comparison`, `currency`, `availability`, `coverage` y `sections`.
-`coverage.dataset` es la cobertura guardada de todo el conjunto y `coverage.range` la del intervalo inclusivo; ambas
-incluyen nivel, proporción redondeada y pedidos identificados, no identificados y totales. Con cobertura normal o de
-advertencia, `sections.identified_customers` informa clientes distintos activos y campos comunes de comparación y cambio.
-Una población vacía es `zero_result`. `sections.new_vs_returning` separa las ventas identificadas entre nuevos (líneas
-de la primera fecha de compra) y recurrentes (posteriores), con los mismos campos; siempre usa `first_order_date` del
-historial completo, así que mover el inicio no convierte a un recurrente en nuevo.
+Un valor no válido impide el arranque y el error nombra la variable. Es inválido no ser número, ser …2123 tokens truncated…over el inicio no convierte a un recurrente en nuevo.
 
 `sections.days_between_purchases` informa del tiempo entre pedidos solo para el intervalo actual, sin comparación.
 Los pedidos distintos de cada cliente se fechan por su primera línea y se ordenan; cada par consecutivo es un intervalo
@@ -656,7 +517,7 @@ a habilitarlo en Actions.
 
 ### Fijación de imágenes de contenedor
 
-Decisión: las imágenes base de `Dockerfile` (`node:22`, `python:3.12-slim`) se fijan por digest
+Decisión: las imágenes base de `Dockerfile` (`node:26`, `python:3.14-slim`) se fijan por digest
 (`FROM image:tag@sha256:...`, índice multiarquitectura). Una etiqueta se mueve y haría distintas dos compilaciones o
 introduciría cambios no revisados; el digest hace la compilación reproducible y cada cambio revisable. Dependabot
 (entrada `docker` en `.github/dependabot.yml`, lunes) actualiza etiqueta y digest juntos, y `docker-smoke` compila e
