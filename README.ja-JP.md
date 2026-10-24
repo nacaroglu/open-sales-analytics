@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 13462)
+Total output lines: 515
+
 # open-sales-analytics
 
 言語：[English](README.md) | [Türkçe](README.tr-TR.md) | [Deutsch](README.de-DE.md) | [Русский](README.ru-RU.md) | [Español](README.es-ES.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
@@ -180,142 +183,7 @@ API 文書は [`/docs`](http://localhost:8000/docs) にあります。`GET /api/
 | `DATASET_TTL_HOURS` | 0 より大きい整数 | `24` | データセットが失効し削除されるまでの時間。 |
 | `DATASET_TTL_SECONDS` | 0 より大きい整数 | 未設定 | テスト専用。設定時は `DATASET_TTL_HOURS` の代わりに秒単位寿命。ブラウザテストで実失効を確認し、本番では未設定にする。 |
 | `MAX_UPLOAD_BYTES` | 0 より大きい整数 | `52428800`（50 MB） | 最大アップロードバイト数。超過は `file_too_large` で拒否。 |
-| `MAX_ROWS` | 0 より大きい整数 | `500000` | 一アップロードの最大データ行数（ヘッダー除外）。超過は `too_many_rows`。 |
-| `CUSTOMER_ID_MAX_LENGTH` | 0 より大きい整数 | `128` | 非空 `customer_id` の最大 Unicode 文字数。超過は `customer_id_too_long`。 |
-| `CLEANUP_INTERVAL_MINUTES` | 0 より大きい整数 | `15` | 期限切れデータセット削除間隔（起動時にも一度実行）。 |
-| `PUBLIC_DEMO_MODE` | 真偽値 | `false` | `true` でアップロード無効。[デモモード](#デモモード)参照。 |
-| `MAX_DATASETS` | 0 より大きい整数 | `200` | 未失効データセット上限。さらに作成（アップロードまたは**サンプルデータを試す**）すると失効/削除まで 503 `capacity_reached`。 |
-| `RESPONSE_CACHE_MAX_ENTRIES` | 0 以上の整数 | `256` | このプロセスの概要/商品レスポンスキャッシュ上限。`0` で無効。 |
-| `RESPONSE_CACHE_TTL_SECONDS` | 0 より大きい整数 | `300` | 概要/商品キャッシュの最長寿命。データセット失効が常に優先。 |
-
-真偽値は大文字小文字を問わず `true`/`false`、`1`/`0`、`yes`/`no`（`on`/`off`、`t`/`f`、`y`/`n` も可）を受け付けます。
-
-無効値ではサーバーが起動を拒否し、エラーに変数名を示します。数字でない値、ゼロ/負数、`1.5` のような小数、空文字列、上記以外の真偽値表記が無効です。例：`MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` は `MAX_ROWS  Input should be greater than 0` で終了します。
-
-## データセット契約
-
-一行は完了済み注文内の商品明細一つです。ファイルには次の必須 6 列と任意 1 列が必要です（アップロード画面にも同じ表を表示）。`customer_id` の意味とプライバシー制限は[顧客分析](#顧客分析)を参照してください。
-
-| 列 | 型 | ルール |
-| --- | --- | --- |
-| `order_id` | 文字列 | 必須、非空。個別注文の計数に使用。 |
-| `order_date` | 日付 | `YYYY-MM-DD` 形式の ISO 暦日が必須。未来日は不可。 |
-| `product_id` | 文字列 | 必須、非空。商品を識別。 |
-| `product_name` | 文字列 | 必須、非空。一アップロード内で一つの `product_id` は一つの名前だけに対応。 |
-| `quantity` | 整数 | 必須、0 より大きい。ゼロ/負数は無効。 |
-| `unit_price` | 小数 | 必須、非負。ゼロ価格は警告付きで受理、負価格は無効。 |
-| `customer_id` | 文字列 | 任意。空欄可。Unicode で最大 `CUSTOMER_ID_MAX_LENGTH` 文字（既定 128）。ハッシュ ID、UUID、非個人内部キーを使用。メール、電話、氏名など直接識別子は禁止。 |
-
-ファイル単位のルール：
-
-- UTF-8、カンマ区切り、ヘッダー一行。エラー報告ではヘッダーが行 1、最初のデータが行 2。
-- 列名は空白除去後に照合し、順序不問。必須 6 列または `customer_id` 以外は警告（`extra_column`）付きで無視し保存しない。
-- `(order_id, product_id)` は一意。同一商品は一注文に一度まで。
-- ファイル全体で一つの `product_id` に一つの名前。
-- 注文内の空 `customer_id` は唯一の非空 ID で補完。競合 ID はアップロード拒否、全空欄注文は未識別。
-- アップロードごとに一通貨。フォームで選択（[通貨](#通貨)参照）。
-- 無効行が一つでもあればファイル全体を拒否し、何も保存しない。
-- 既定で最大 50 MB、500,000 行（`MAX_UPLOAD_BYTES` と `MAX_ROWS`）。
-- 数量は最大 2,147,483,647 の整数。価格は通貨記号や桁区切りなしの小数で、小数点前最大 14 桁、後最大 4 桁。
-
-### 有効な例
-
-`example.csv` として保存します。3 明細 2 注文で、注文 `A-1001` は 2 明細です。
-
-```csv
-order_id,order_date,product_id,product_name,quantity,unit_price
-A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50
-A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00
-A-1002,2025-03-02,P-10,Ceramic Mug,1,12.50
-```
-
-任意の `customer_id` を含められ、空セルも許可されます。
-
-```csv
-order_id,order_date,product_id,product_name,quantity,unit_price,customer_id
-A-1001,2025-03-01,P-10,Ceramic Mug,2,12.50,CUST-007
-A-1001,2025-03-01,P-20,Travel Tumbler,1,24.00,
-```
-
-アプリがポート 8000 で動作中なら API からインポートします。
-
-```sh
-curl -F currency=USD -F file=@example.csv http://localhost:8000/api/datasets
-```
-
-レスポンスは `201` で、`"warnings":[]`、`dataset_id`、`token`、最初のサマリーを含みます。総売上は 2 注文、4 個から 61.50 です。
-
-### 無効な例
-
-各項目は有効ファイルへの小さな変更です。アプリは `422`、エラーコード `validation_failed`、エラー一覧を返し、各エラーの `code` は下表どおりです。行番号と列も含みます。
-
-| 有効ファイルへの変更 | エラー `code` | 行 |
-| --- | --- | --- |
-| ヘッダーから `unit_price`（および各行の末尾値）を削除 | `missing_column` | なし（ファイル単位） |
-| 日付 `2025-03-02` を `2025-13-02` に変更 | `invalid_date` | 4 |
-| 最終行の数量を `1` から `0` に変更 | `invalid_quantity` | 4 |
-| 最終行を複製 | `duplicate_line` | 5 |
-
-### エラーコード
-
-報告は先頭 100 エラーと合計（`error_count`）を示します。
-
-| コード | 原因 |
-| --- | --- |
-| `file_too_large` | ファイルが `MAX_UPLOAD_BYTES` より大きい。 |
-| `empty_file` | ファイルが空。 |
-| `invalid_encoding` | 有効な UTF-8 でない。 |
-| `malformed_csv` | CSV として読めない（例：一フィールドが 131,072 文字超）。 |
-| `too_many_rows` | データ行が `MAX_ROWS` 超。 |
-| `no_data_rows` | ヘッダーはあるがデータ行なし。 |
-| `missing_column` | 必須 6 列の一つがヘッダーにない。 |
-| `duplicate_column` | 必須列がヘッダーに複数回出現。 |
-| `missing_value` | 必須値が空。 |
-| `invalid_date` | `order_date` が `YYYY-MM-DD` の実在日でない。 |
-| `future_date` | `order_date` が今日（UTC）より後。 |
-| `invalid_quantity` | `quantity` が 1～2,147,483,647 の整数でない。 |
-| `invalid_price` | `unit_price` が小数点前 14 桁・後 4 桁以内の通常小数でない。 |
-| `negative_price` | `unit_price` がゼロ未満。 |
-| `line_total_too_large` | `quantity × unit_price` が 100,000,000,000,000 以上で、総売上の厳密小数範囲外。 |
-| `malformed_row` | 行の値数がヘッダーと異なる。 |
-| `duplicate_line` | 同じ `order_id` と `product_id` が前行に存在。 |
-| `conflicting_product_name` | 一つの `product_id` に複数の `product_name`。 |
-| `conflicting_customer_id` | 一注文に複数の非空 `customer_id`。 |
-| `customer_id_too_long` | 非空 `customer_id` が Unicode で `CUSTOMER_ID_MAX_LENGTH` 文字超。 |
-| `customer_id_looks_like_email` | 非空 `customer_id` が明白なメールヒューリスティックに一致。 |
-| `customer_id_looks_like_phone` | 非空 `customer_id` が明白な電話ヒューリスティックに一致。 |
-
-3 つの `customer_id` 検査はベストエフォートのガードレールで、匿名化でも適合保証でもありません。メール検査は値中の `[^@\s]+@[^@\s]+\.[A-Za-z]{2,}` を探します。電話検査は数字、空白、`+ - . ( )` のみ、数字 7～15 桁、先頭 `+`、見える空白/括弧、または 2 個以上の `-`/`.` 区切りを要求します。既知の見逃しがあります。`05321234567` のような全数字電話は受理され、`2024-01-000123` のようなハイフン 2 個の数字群は拒否されます。受理 ID が匿名になるわけではありません。
-
-ファイル読取前に失敗する場合もあります。リスト外通貨は `400 invalid_request` です。
-
-### 顧客カバレッジ
-
-`customer_id` がある場合、同一注文の別明細から空 ID を補完した後、インポート時に注文単位で一度計算します。
-
-`identified distinct orders / all distinct orders`
-
-行の割合ではないため、5 明細の識別済み注文も一度だけ数えます。データセットメタデータは件数と丸めた比率を報告し、階層は全データセットの正確な整数件数で決まります。
-
-- 50% 未満：`suppressed`。顧客分析は利用不可。
-- 50% 以上 80% 未満：`warning`。顧客分析は低カバレッジ警告付きで利用可。
-- 80% 以上：`normal`。通常どおり利用可。
-
-`customer_id` なしのファイルは 0% でなく階層 `missing`、`coverage: null` です。カバレッジメタデータは件数だけで顧客 ID を含みません。日付範囲カバレッジも両端を含む注文日で同じ式を使い、空範囲は件数ゼロ、`coverage: null` です。階層は全データセット基準なので、日付絞り込みで顧客モジュールが出入りしません。
-
-### 顧客 API
-
-`GET /api/datasets/{id}/customers` は bearer トークン保護され、概要・商品モジュールと同じ任意の `start`、`end`、`comparison` クエリを受け付けます。パラメーターなしでは全データセットと既定 `previous_period` 比較です。無効、逆順、範囲外の日付は `400 invalid_range`、未知比較は `400 invalid_request`。資格情報欠落/不正は `WWW-Authenticate: Bearer` 付き `401 unauthorized`、未知・失効・削除済みデータセットは `404 not_found`。
-
-型付きレスポンスは `module`、`range`、`comparison`、`currency`、`availability`、`coverage`、`sections` を含みます。`coverage.dataset` は保存済み全体カバレッジ、`coverage.range` は選択した両端含有範囲カバレッジで、両方に階層、丸め比率、識別済み/未識別/全注文数があります。正常/警告時、`sections.identified_customers` は範囲内で活動した個別識別済み顧客と共通比較値・変化フィールドを報告します。空の活動母集団は `zero_result`。`sections.new_vs_returning` は範囲内識別総売上を新規顧客販売（初回購入日の明細）とリピーター販売（後日明細）に分け、同じ比較フィールドを持ちます。分類は常に全アップロード履歴の `first_order_date` を使うため、範囲開始を動かしてもリピーターは新規になりません。
-
-`sections.days_between_purchases` は現在範囲の再注文タイミングだけを報告し、比較フィールドはありません。各識別済み顧客の個別注文を最初の明細日で並べ、連続ペアを暦日間隔とし、同日 2 注文は `0`。後の注文が両端含有範囲内なら前が範囲開始前でも含み、範囲終了後は無視します。`median_days`（偶数個なら中央 2 値の平均なので `.5` になり得る。平均値そのものは報告しない）、`interval_count`、`contributing_customers`、固定 9 `buckets`（`0`、`1-7`、`8-14`、`15-30`、`31-60`、`61-90`、`91-180`、`181-365`、`366+` 日）を返し、各バケットに `interval_count` と全間隔の `share` があります。間隔なしでは中央値と全シェアが `null`、状態は `insufficient_data`。
-
-`sections.cohort_retention` は現在範囲だけの月次獲得コホート継続率行列（比較なし）です。顧客コホートは全履歴初回注文月です。行は範囲開始月から終了月まで古い順で、開始だけ動かしても行は変わりません。範囲終了日が `data_cutoff` で、それ以後に初出の顧客は非メンバー、後続活動は無視、開始前活動は計数します。各行は `cohort_month`（`YYYY-MM`）、`cohort_size`、`complete_months`、`cells` を持ち、月 `N`（0 = 獲得月）は `retained_count`（その暦月に識別明細があるメンバー）と `retention`（`retained_count / cohort_size`）を持ちます。セルの `state` は `complete`（月全体がカットオフ以前）、`partial`（カットオフを含み途中まで）、`not_observed`（月開始がカットオフ後、値は `null` で `0` ではない）。最古コホートと同じ幅まで行を埋めます。重なるコホートなしでは `rows` が空、状態 `insufficient_data`。
-
-`sections.historical_customer_value` は現在範囲だけの観測済み過去顧客価値（既に観測した総売上、予測ではない）です。母集団は `cohort_retention` 行メンバーで、顧客価値は `data_cutoff`（範囲終了）以前の識別総売上（開始前も含む）。`customer_count`、`average`（総価値 / `customer_count`）、`median`（偶数なら中央 2 値平均）を返し、金額は half-up で小数 4 桁。`rows` は `cohort_retention` の行と状態に対応し、セル `value_per_customer` = コホートの月 `N` 末までの累積総売上（カットオフ上限）/ `cohort_size`（`not_observed` は `null`）。`all_cohorts` はセルが `complete` のコホートについて月オフセットごとに一点（`value_per_customer`、`contributing_cohorts`。完全セルなしは `null` と `0`）。コホートなしは `insufficient_data`、メンバー総価値 0 は `0.0000` 値の `zero_result`。
-
-`sections.rfm` は現在範囲の RFM セグメント件数だけを報告し、比較なし。母集団（`customer_count`、N）は範囲終了以前に識別注文がある顧客で、それまでの全識別活動を数え、開始は影響しません。Recency は最新識別明細から `recency_anchor`（範囲終了）までの日数、frequency は個別注文、monetary は総売上です。各次元を順位から 1-5 点：`floor(5 × (2 × worse + ties) / (2 × N)) + 1`。`worse` は厳密に悪い値、`ties` は同値顧客数なので、同値は同点、定数次元は 3 点。`FM = F + M` とし、最初の一致規則で Champions (R ≥ 4, FM ≥ 8)、Loyal (R ≥ 3, FM ≥ 6)、Potential Loyalists (R ≥ 4, FM ≤ 5)、Needs Attention (R = 3, FM ≤ 5)、At Risk (R ≤ 2, FM ≥ 6)、Lost (R ≤ 2, FM ≤ 5)。`segments` は常にこの順で 6 種すべてと `customer_count`、`share` を列挙し、顧客別スコアはバックエンド外へ出ません。5 顧客未満では空 `segments` と `insufficient_data`。固定 `note` は、本アップロード顧客基盤相対で普遍的ベンチマークでないと伝えます。
+| `MAX_ROWS` | 0 より大きい整数 | `500000` | 一…3462 tokens truncated…です。各次元を順位から 1-5 点：`floor(5 × (2 × worse + ties) / (2 × N)) + 1`。`worse` は厳密に悪い値、`ties` は同値顧客数なので、同値は同点、定数次元は 3 点。`FM = F + M` とし、最初の一致規則で Champions (R ≥ 4, FM ≥ 8)、Loyal (R ≥ 3, FM ≥ 6)、Potential Loyalists (R ≥ 4, FM ≤ 5)、Needs Attention (R = 3, FM ≤ 5)、At Risk (R ≤ 2, FM ≥ 6)、Lost (R ≤ 2, FM ≤ 5)。`segments` は常にこの順で 6 種すべてと `customer_count`、`share` を列挙し、顧客別スコアはバックエンド外へ出ません。5 顧客未満では空 `segments` と `insufficient_data`。固定 `note` は、本アップロード顧客基盤相対で普遍的ベンチマークでないと伝えます。
 
 `sections.rfm_drilldown` は `sections.rfm` と同じ母集団、入力、セグメントで RFM 別集計を報告し、比較なし。最上位は `customer_count`（N、`sections.rfm` と同じ）、`recency_anchor`（範囲終了）、`gross_sales`（終了までの N 顧客金額合計、half-up 小数 4 桁）を返します。`segments` は `sections.rfm` 順に 6 種すべてを列挙し、それぞれ `customer_count`、`gross_sales`（メンバー金額合計）、`gross_sales_share`（セグメント `gross_sales` / 最上位 `gross_sales`、合計 `0` は `null`）、アンカーまでの日数を 6 固定バケットにした `recency_distribution`（`0-30`、`31-60`、`61-90`、`91-180`、`181-365`、`366+`。`key`、`min_days`、`max_days`、`customer_count`）、個別注文を 8 固定バケットにした `frequency_distribution`（`1`、`2`、`3`、`4`、`5`、`6-10`、`11-20`、`21+`。`key`、`min_orders`、`max_orders`、`customer_count`）を持ちます。開放バケットの最大値は `null`、空セグメント/バケットは `0`。顧客 ID やスコアを返さないため、一人セグメントも同様に報告。5 顧客未満は実 `customer_count`、`gross_sales`、空 `segments` で `insufficient_data`。
 
@@ -476,7 +344,7 @@ Dependabot（`.github/dependabot.yml`）は毎週月曜、既存 Python（`pypro
 
 ### コンテナイメージの固定
 
-決定：`Dockerfile` の基本イメージ（`node:22`、`python:3.12-slim`）はダイジェスト（`FROM image:tag@sha256:...`、マルチアーキテクチャ索引）で固定。タグは移動し同一コミットのビルドが異なり、未レビュー上流変更が破損/侵害し得るため、ダイジェストで再現可能にし、基本イメージ変更を PR レビュー対象にします。Dependabot（`.github/dependabot.yml` の `docker`、月曜）がタグとダイジェストを同時更新し、`docker-smoke` CI がマージ前に構築/起動。手動更新は必要タグのダイジェストを調べ `FROM` の両方を置換。`COPY --from=ghcr.io/astral-sh/uv:0.8` の `uv` は現時点でタグのままです。
+決定：`Dockerfile` の基本イメージ（`node:26`、`python:3.14-slim`）はダイジェスト（`FROM image:tag@sha256:...`、マルチアーキテクチャ索引）で固定。タグは移動し同一コミットのビルドが異なり、未レビュー上流変更が破損/侵害し得るため、ダイジェストで再現可能にし、基本イメージ変更を PR レビュー対象にします。Dependabot（`.github/dependabot.yml` の `docker`、月曜）がタグとダイジェストを同時更新し、`docker-smoke` CI がマージ前に構築/起動。手動更新は必要タグのダイジェストを調べ `FROM` の両方を置換。`COPY --from=ghcr.io/astral-sh/uv:0.8` の `uv` は現時点でタグのままです。
 
 ### Actions の固定
 
