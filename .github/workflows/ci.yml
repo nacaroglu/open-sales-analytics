@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Issue branches need runner evidence before their PR review.
+    branches: [main, 'feature/issue-*']
   # Never pull_request_target: a pull request runs its own code, without secrets.
   pull_request:
 
@@ -108,6 +109,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
         run: docker build -t open-sales-analytics .
+      - name: Verify the runtime image contains only production artifacts
+        run: |
+          docker run --rm --entrypoint python open-sales-analytics -c '
+          from importlib.util import find_spec
+          from pathlib import Path
+
+          assert Path("/app/frontend/dist/index.html").is_file()
+          assert not Path("/app/frontend/src").exists()
+          assert not Path("/app/frontend/node_modules").exists()
+          assert not Path("/usr/local/bin/node").exists()
+          assert not Path("/usr/local/lib/node_modules").exists()
+          for module in ("pytest", "ruff", "mypy"):
+              assert find_spec(module) is None, f"development dependency {module} is installed"
+          '
       - name: Start container
         # The one-minute lifetime lets the browser suite see a real expiry.
         run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
@@ -122,6 +137,15 @@ jobs:
         run: |
           curl -f http://localhost:8000/api/health
           curl -f http://localhost:8000/d/anything | grep -qi '<div id="root"'
+      - name: Wait for Docker health status
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' oca)
+            if [ "$status" = healthy ]; then exit 0; fi
+            sleep 1
+          done
+          docker inspect --format='container health status: {{.State.Health.Status}}' oca
+          exit 1
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
