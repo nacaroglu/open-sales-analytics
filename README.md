@@ -673,7 +673,7 @@ and GitHub pauses them after 60 days without repository activity; re-enable one 
 
 ### Container image pinning
 
-Decision: the base images in the `Dockerfile` (`node:22`, `python:3.12-slim`) are pinned by digest
+Decision: the base images in the `Dockerfile` (`node:26`, `python:3.14-slim`) are pinned by digest
 (`FROM image:tag@sha256:...`, the multi-architecture index digest). Reason: a tag moves, so two builds of the same
 commit could differ and an unreviewed upstream change could break or compromise the build; a digest makes the build
 reproducible and every base image change a reviewed pull request. Dependabot (`docker` entry in
