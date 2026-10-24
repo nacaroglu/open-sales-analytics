@@ -32,7 +32,7 @@ docker run -p 8000:8000 -v osa-data:/data open-sales-analytics
 用 `-e` 传入[下表](#配置)中的设置：
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## 演示导览
@@ -187,6 +187,8 @@ API 文档位于 [`/docs`](http://localhost:8000/docs)。`GET /api/datasets/{id}
 | `MAX_DATASETS` | 大于 0 的整数 | `200` | 服务器最多保存的未过期数据集。再创建一个（上传或**试用示例数据**）会返回 503 `capacity_reached`，直到有数据集过期或删除。 |
 | `RESPONSE_CACHE_MAX_ENTRIES` | 大于等于 0 的整数 | `256` | 此进程中缓存的概览/产品响应上限。`0` 禁用响应缓存。 |
 | `RESPONSE_CACHE_TTL_SECONDS` | 大于 0 的整数 | `300` | 缓存概览/产品响应的最长生命周期；数据集过期始终优先。 |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | 运行环境。其他值会阻止启动。 |
+| `OSA_VERSION` | string | `local` | 易读的版本。CI 设置镜像构建版本；可用 `docker run -e` 覆盖。 |
 
 布尔值不区分大小写，可用 `true`/`false`、`1`/`0` 和 `yes`/`no`（`on`/`off`、`t`/`f`、`y`/`n` 也可）。
 

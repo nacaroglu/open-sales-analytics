@@ -32,7 +32,7 @@ docker run -p 8000:8000 -v osa-data:/data open-sales-analytics
 [下表](#設定)の変数を `-e` で渡します。
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## デモ手順
@@ -187,6 +187,8 @@ API 文書は [`/docs`](http://localhost:8000/docs) にあります。`GET /api/
 | `MAX_DATASETS` | 0 より大きい整数 | `200` | 未失効データセット上限。さらに作成（アップロードまたは**サンプルデータを試す**）すると失効/削除まで 503 `capacity_reached`。 |
 | `RESPONSE_CACHE_MAX_ENTRIES` | 0 以上の整数 | `256` | このプロセスの概要/商品レスポンスキャッシュ上限。`0` で無効。 |
 | `RESPONSE_CACHE_TTL_SECONDS` | 0 より大きい整数 | `300` | 概要/商品キャッシュの最長寿命。データセット失効が常に優先。 |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | 実行環境。他の値では起動しません。 |
+| `OSA_VERSION` | string | `local` | 読みやすいバージョン。CI がビルド版を設定し、`docker run -e` で上書きできます。 |
 
 真偽値は大文字小文字を問わず `true`/`false`、`1`/`0`、`yes`/`no`（`on`/`off`、`t`/`f`、`y`/`n` も可）を受け付けます。
 
