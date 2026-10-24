@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Issue branches need runner evidence before their PR review.
+    branches: [main, 'feature/issue-*']
   # Never pull_request_target: a pull request runs its own code, without secrets.
   pull_request:
 
