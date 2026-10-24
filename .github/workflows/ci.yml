@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Issue branches need runner evidence before their PR review.
+    branches: [main, 'feature/issue-*']
   # Never pull_request_target: a pull request runs its own code, without secrets.
   pull_request:
 
@@ -108,6 +109,43 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
         run: docker build -t open-sales-analytics .
+      - name: Verify non-root identity and scoped writable paths
+        run: |
+          if grep -Eq 'chmod[[:space:]]+0?777' Dockerfile; then
+            echo "The Dockerfile must not grant world-writable permissions"
+            exit 1
+          fi
+          docker run --rm --entrypoint python open-sales-analytics -c '
+          import os
+          from pathlib import Path
+
+          uid = os.geteuid()
+          assert uid == 10001 and uid != 0, f"unexpected effective uid: {uid}"
+          data = Path("/data")
+          info = data.stat()
+          assert info.st_uid == uid
+          assert info.st_mode & 0o777 == 0o700
+          assert Path("/app/backend/app/main.py").read_text()
+          assert Path("/etc/passwd").read_text()
+
+          def round_trip(directory):
+              path = Path(directory) / f".osa-permission-check-{os.getpid()}"
+              path.write_text("ok")
+              assert path.read_text() == "ok"
+              path.unlink()
+
+          for directory in ("/data", "/tmp"):
+              round_trip(directory)
+
+          for directory in ("/app", "/etc", "/var/tmp"):
+              path = Path(directory) / f".osa-denied-check-{os.getpid()}"
+              try:
+                  path.write_text("must not be writable")
+              except PermissionError:
+                  continue
+              path.unlink(missing_ok=True)
+              raise AssertionError(f"unexpected write access to {directory}")
+          '
       - name: Start container
         # The one-minute lifetime lets the browser suite see a real expiry.
         run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
