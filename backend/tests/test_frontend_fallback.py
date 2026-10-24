@@ -51,11 +51,15 @@ def test_deep_links_return_index_html(client, path):
     assert response.headers["content-type"].startswith("text/html")
 
 
-def test_head_on_a_deep_link_is_served(client):
-    response = client.head("/d/anything")
+@pytest.mark.parametrize("path", ["/", "/d/anything"])
+def test_head_on_root_and_deep_link_returns_html_headers_without_a_body(client, path):
+    get_response = client.get(path)
+    head_response = client.head(path)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
+    assert head_response.status_code == 200
+    assert head_response.headers["content-type"] == get_response.headers["content-type"]
+    assert head_response.headers["content-type"].startswith("text/html")
+    assert head_response.content == b""
 
 
 @pytest.mark.parametrize("path", ["/api", "/api/", "/api/does-not-exist", "/api/datasets/x/y"])
