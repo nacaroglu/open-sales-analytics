@@ -658,7 +658,7 @@ a habilitarlo en Actions.
 
 ### Fijación de imágenes de contenedor
 
-Decisión: las imágenes base de `Dockerfile` (`node:22`, `python:3.12-slim`) se fijan por digest
+Decisión: las imágenes base de `Dockerfile` (`node:26`, `python:3.14-slim`) se fijan por digest
 (`FROM image:tag@sha256:...`, índice multiarquitectura). Una etiqueta se mueve y haría distintas dos compilaciones o
 introduciría cambios no revisados; el digest hace la compilación reproducible y cada cambio revisable. Dependabot
 (entrada `docker` en `.github/dependabot.yml`, lunes) actualiza etiqueta y digest juntos, y `docker-smoke` compila e

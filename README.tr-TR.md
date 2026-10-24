@@ -678,7 +678,7 @@ dalda çalışır ve GitHub 60 gün depo etkinliği olmazsa onları duraklatır;
 
 ### Kapsayıcı imajını sabitleme
 
-Karar: `Dockerfile` temel imajları (`node:22`, `python:3.12-slim`) digest ile sabitlenir
+Karar: `Dockerfile` temel imajları (`node:26`, `python:3.14-slim`) digest ile sabitlenir
 (`FROM image:tag@sha256:...`, çok mimarili indeks digest'i). Nedeni: etiket hareket eder; aynı commit'in iki derlemesi
 farklı olabilir ve incelenmemiş yukarı akış değişikliği derlemeyi bozabilir veya tehlikeye atabilir. Digest derlemeyi
 yinelenebilir ve her temel imaj değişikliğini incelenmiş pull request yapar. Dependabot (`.github/dependabot.yml`

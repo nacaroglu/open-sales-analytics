@@ -478,7 +478,7 @@ Dependabot（`.github/dependabot.yml`）每周一为过时的 Python（`uv.lock`
 
 ### 容器镜像固定
 
-决定：`Dockerfile` 中基础镜像（`node:22`、`python:3.12-slim`）按摘要固定（`FROM image:tag@sha256:...`，多架构索引摘要）。原因：标签会移动，同一提交的两次构建可能不同，未经审查的上游变化可能破坏或危及构建；摘要使构建可复现，且每次基础镜像变化都经过拉取请求审查。Dependabot（`.github/dependabot.yml` 的 `docker` 项，每周一）同时更新标签和摘要，`docker-smoke` CI 作业会在合并前构建并启动新镜像。手动更新时，查找所需标签摘要并替换 `FROM` 行两部分。用 `COPY --from=ghcr.io/astral-sh/uv:0.8` 复制的 `uv` 镜像目前仍使用标签。
+决定：`Dockerfile` 中基础镜像（`node:26`、`python:3.14-slim`）按摘要固定（`FROM image:tag@sha256:...`，多架构索引摘要）。原因：标签会移动，同一提交的两次构建可能不同，未经审查的上游变化可能破坏或危及构建；摘要使构建可复现，且每次基础镜像变化都经过拉取请求审查。Dependabot（`.github/dependabot.yml` 的 `docker` 项，每周一）同时更新标签和摘要，`docker-smoke` CI 作业会在合并前构建并启动新镜像。手动更新时，查找所需标签摘要并替换 `FROM` 行两部分。用 `COPY --from=ghcr.io/astral-sh/uv:0.8` 复制的 `uv` 镜像目前仍使用标签。
 
 ### 固定 Actions
 

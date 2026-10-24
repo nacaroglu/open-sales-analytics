@@ -478,7 +478,7 @@ Dependabot（`.github/dependabot.yml`）は毎週月曜、既存 Python（`pypro
 
 ### コンテナイメージの固定
 
-決定：`Dockerfile` の基本イメージ（`node:22`、`python:3.12-slim`）はダイジェスト（`FROM image:tag@sha256:...`、マルチアーキテクチャ索引）で固定。タグは移動し同一コミットのビルドが異なり、未レビュー上流変更が破損/侵害し得るため、ダイジェストで再現可能にし、基本イメージ変更を PR レビュー対象にします。Dependabot（`.github/dependabot.yml` の `docker`、月曜）がタグとダイジェストを同時更新し、`docker-smoke` CI がマージ前に構築/起動。手動更新は必要タグのダイジェストを調べ `FROM` の両方を置換。`COPY --from=ghcr.io/astral-sh/uv:0.8` の `uv` は現時点でタグのままです。
+決定：`Dockerfile` の基本イメージ（`node:26`、`python:3.14-slim`）はダイジェスト（`FROM image:tag@sha256:...`、マルチアーキテクチャ索引）で固定。タグは移動し同一コミットのビルドが異なり、未レビュー上流変更が破損/侵害し得るため、ダイジェストで再現可能にし、基本イメージ変更を PR レビュー対象にします。Dependabot（`.github/dependabot.yml` の `docker`、月曜）がタグとダイジェストを同時更新し、`docker-smoke` CI がマージ前に構築/起動。手動更新は必要タグのダイジェストを調べ `FROM` の両方を置換。`COPY --from=ghcr.io/astral-sh/uv:0.8` の `uv` は現時点でタグのままです。
 
 ### Actions の固定
 

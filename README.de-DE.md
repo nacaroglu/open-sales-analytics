@@ -706,7 +706,7 @@ Standardbranch und werden von GitHub nach 60 Tagen ohne Repositoryaktivität pau
 
 ### Container-Images pinnen
 
-Entscheidung: Die Basisimages im `Dockerfile` (`node:22`, `python:3.12-slim`) sind per Digest gepinnt
+Entscheidung: Die Basisimages im `Dockerfile` (`node:26`, `python:3.14-slim`) sind per Digest gepinnt
 (`FROM image:tag@sha256:...`, der Multiarchitektur-Index-Digest). Grund: Ein Tag bewegt sich, zwei Builds desselben
 Commits könnten sich unterscheiden, und eine ungeprüfte vorgelagerte Änderung könnte den Build brechen oder
 kompromittieren. Ein Digest macht den Build reproduzierbar und jede Basisimage-Änderung zu einem geprüften Pull Request.
