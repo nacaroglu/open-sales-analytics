@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    # Issue branches need runner evidence before their PR review.
     branches: [main, 'feature/issue-*']
   # Never pull_request_target: a pull request runs its own code, without secrets.
   pull_request:
@@ -108,7 +107,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image
-        run: docker build -t open-sales-analytics .
+        run: |
+          version="$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
+          docker build --build-arg OSA_VERSION="$version" -t open-sales-analytics .
+          label="$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.version" }}' open-sales-analytics)"
+          test "$label" = "$version"
+          [[ "$label" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}$ ]]
+          docker run --rm -e PYTHONPATH=/app/backend --entrypoint python open-sales-analytics -c 'from app.config import Settings; s = Settings(); assert s.osa_environment == "development"; assert s.osa_version == "'"$version"'"'
+          docker run --rm -e PYTHONPATH=/app/backend -e OSA_ENVIRONMENT=production -e OSA_VERSION=runtime-override --entrypoint python open-sales-analytics -c 'from app.config import Settings; s = Settings(); assert s.osa_environment == "production"; assert s.osa_version == "runtime-override"'
       - name: Start container
         # The one-minute lifetime lets the browser suite see a real expiry.
         run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
