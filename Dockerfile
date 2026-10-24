@@ -32,7 +32,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir /data \
     && chown app:app /data \
-    && chmod 700 /data
+    && chmod 700 /data \
+    && chmod 755 /var/tmp
 
 WORKDIR /app
 COPY --from=backend-deps /app/.venv /app/.venv
