@@ -12,8 +12,9 @@ services:
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ./observability/collector-test.yaml:/etc/otelcol-contrib/config.yaml:ro
-    tmpfs:
-      - /tmp:mode=1777,uid=10001,gid=10001
+      - type: bind
+        source: "${OSA_TEST_TELEMETRY_DIR:?Set OSA_TEST_TELEMETRY_DIR to a writable local directory}"
+        target: /var/lib/otelcol
     ports:
       - "127.0.0.1:4318:4318"
       - "127.0.0.1:13133:13133"

@@ -141,20 +141,31 @@ jobs:
           COMPOSE_PROJECT_NAME: osa-telemetry-ci-${{ github.run_id }}
         run: |
           set -euo pipefail
+          sink_dir="/tmp/osa-telemetry-${GITHUB_RUN_ID}"
+          export OSA_TEST_TELEMETRY_DIR="$sink_dir"
           compose=(docker compose -f docker-compose.yaml -f docker-compose.test-telemetry.yaml)
           cleanup() {
             status=$?
             trap - EXIT
             "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || status=1
-            rm -f "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+            rm -rf "$sink_dir"
             if [ -n "$("${compose[@]}" ps -aq 2>/dev/null)" ] || \
               [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" 2>/dev/null)" ]; then
               echo "Test telemetry Compose resources remain after cleanup"
               status=1
             fi
+            if [ -e "$sink_dir" ]; then
+              echo "Test telemetry sink directory remains after cleanup"
+              status=1
+            fi
             exit "$status"
           }
           trap cleanup EXIT
+
+          mkdir -p "$sink_dir"
+          chmod 0777 "$sink_dir"
+          test -w "$sink_dir"
+          test "$(stat -c '%a' "$sink_dir")" = "777"
 
           "${compose[@]}" config --quiet
           "${compose[@]}" config --format json | python3 -c '
@@ -182,6 +193,17 @@ jobs:
           "${compose[@]}" up --detach telemetry-collector
           collector_id="$("${compose[@]}" ps -q telemetry-collector)"
           test -n "$collector_id"
+          docker inspect --format='{{json .Mounts}}' "$collector_id" | python3 -c '
+          import json
+          import os
+          import sys
+
+          mounts = json.load(sys.stdin)
+          sink = next(mount for mount in mounts if mount["Destination"] == "/var/lib/otelcol")
+          assert sink["Type"] == "bind"
+          assert sink["Source"] == os.environ["OSA_TEST_TELEMETRY_DIR"]
+          assert sink["RW"] is True
+          '
           ready=0
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:13133/ >/dev/null; then
@@ -200,11 +222,10 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:4318/v1/logs \
             -H 'Content-Type: application/json' \
             --data '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"osa-ci-synthetic"}},{"key":"deployment.environment.name","value":{"stringValue":"test"}},{"key":"service.version","value":{"stringValue":"ci-synthetic"}}]},"scopeLogs":[{"logRecords":[{"body":{"stringValue":"telemetry-sink-smoke"}}]}]}]}'
-          sink_file="/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+          sink_file="$sink_dir/osa-telemetry.json"
           captured=0
           for _ in $(seq 1 15); do
-            rm -f "$sink_file"
-            if docker cp "$collector_id:/tmp/osa-telemetry.json" "$sink_file" >/dev/null 2>&1 && [ -s "$sink_file" ]; then
+            if [ -s "$sink_file" ]; then
               captured=1
               break
             fi
@@ -253,8 +274,8 @@ jobs:
             exit 1
           fi
           test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")"
-          rm -f "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
-          test ! -e "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+          rm -rf "$sink_dir"
+          test ! -e "$sink_dir"
           trap - EXIT
           OSA_ENVIRONMENT=production OSA_VERSION=ci-version OSA_PORT=18080 DATASET_DIR=/custom-data \
             docker compose -f docker-compose.yaml config --format json | python3 -c '

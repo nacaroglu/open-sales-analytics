@@ -11,7 +11,7 @@ processors:
 
 exporters:
   file:
-    path: /tmp/osa-telemetry.json
+    path: /var/lib/otelcol/osa-telemetry.json
     format: json
 
 extensions:
