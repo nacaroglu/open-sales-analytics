@@ -168,7 +168,7 @@ jobs:
           assert app["environment"]["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/protobuf"
           assert str(app["ports"][0]["published"]) == "8000"
           collector = config["services"]["telemetry-collector"]
-          assert "@sha256:" in collector["image"]
+          assert collector["image"] == "otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6"
           assert len(collector["image"].split("@sha256:", 1)[1]) == 64
           assert {str(port["published"]) for port in collector["ports"]} == {"4318", "13133"}
           assert all(port["host_ip"] == "127.0.0.1" for port in collector["ports"])
@@ -176,7 +176,7 @@ jobs:
           '
           docker run --rm \
             -v "$PWD/observability/collector-test.yaml:/etc/otelcol-contrib/config.yaml:ro" \
-            ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib@sha256:9bb39ed7220947178a93b9c0c7fa20d598b83e7fa96fe27b0735012da873ee50 \
+            otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6 \
             validate --config=/etc/otelcol-contrib/config.yaml
 
           "${compose[@]}" up --detach telemetry-collector
