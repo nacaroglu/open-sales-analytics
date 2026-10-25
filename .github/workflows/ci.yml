@@ -98,6 +98,25 @@ jobs:
     name: Dependency scan (Python, npm)
     uses: ./.github/workflows/dependency-scan.yml
 
+  compose-integration:
+    name: Compose integration (IT-01 through IT-07)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate integration Compose configuration
+        run: |
+          set -euo pipefail
+          sink_dir="/tmp/osa-compose-it-config"
+          trap 'rm -rf "$sink_dir"' EXIT
+          mkdir -p "$sink_dir"
+          chmod 0777 "$sink_dir"
+          OSA_TEST_TELEMETRY_DIR="$sink_dir" \
+            docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml \
+            -f docker-compose.test-telemetry.yaml config --quiet
+      - name: Run Compose integration cases
+        run: python3 scripts/compose_integration.py
+
   telemetry-resource-identity:
     name: Telemetry resource identity (OTLP test Collector)
     runs-on: ubuntu-latest
