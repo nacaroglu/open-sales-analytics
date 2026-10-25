@@ -1,0 +1,26 @@
+services:
+  app:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://telemetry-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    depends_on:
+      telemetry-collector:
+        condition: service_healthy
+
+  telemetry-collector:
+    image: otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/collector-test.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - type: bind
+        source: "${OSA_TEST_TELEMETRY_DIR:?Set OSA_TEST_TELEMETRY_DIR to a writable local directory}"
+        target: /var/lib/otelcol
+    ports:
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:13133:13133"
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol-contrib/config.yaml"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
