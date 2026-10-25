@@ -200,17 +200,46 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:4318/v1/logs \
             -H 'Content-Type: application/json' \
             --data '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"osa-ci-synthetic"}},{"key":"deployment.environment.name","value":{"stringValue":"test"}},{"key":"service.version","value":{"stringValue":"ci-synthetic"}}]},"scopeLogs":[{"logRecords":[{"body":{"stringValue":"telemetry-sink-smoke"}}]}]}]}'
+          sink_file="/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
           captured=0
           for _ in $(seq 1 15); do
-            if docker exec "$collector_id" test -s /tmp/osa-telemetry.json; then
+            rm -f "$sink_file"
+            if docker cp "$collector_id:/tmp/osa-telemetry.json" "$sink_file" >/dev/null 2>&1 && [ -s "$sink_file" ]; then
               captured=1
               break
             fi
             sleep 1
           done
           test "$captured" -eq 1
-          docker cp "$collector_id:/tmp/osa-telemetry.json" "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
-          python3 -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); lines=p.read_text().splitlines(); records=[json.loads(line) for line in lines]; assert records; assert all("telemetry-sink-smoke" in line and "osa-ci-synthetic" in line for line in lines)' "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+          python3 -c '
+          import json
+          import pathlib
+          import sys
+
+          lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+          records = [json.loads(line) for line in lines]
+          assert records, "Collector sink contains no JSON records"
+          attributes = {
+              item["key"]: item["value"].get("stringValue")
+              for record in records
+              for resource_log in record.get("resourceLogs", [])
+              for item in resource_log.get("resource", {}).get("attributes", [])
+          }
+          expected = {
+              "service.name": "osa-ci-synthetic",
+              "deployment.environment.name": "test",
+              "service.version": "ci-synthetic",
+          }
+          assert all(attributes.get(key) == value for key, value in expected.items()), attributes
+          bodies = [
+              log_record.get("body", {}).get("stringValue")
+              for record in records
+              for resource_log in record.get("resourceLogs", [])
+              for scope_log in resource_log.get("scopeLogs", [])
+              for log_record in scope_log.get("logRecords", [])
+          ]
+          assert "telemetry-sink-smoke" in bodies, bodies
+          ' "$sink_file"
 
           "${compose[@]}" down --volumes --remove-orphans
           test -z "$("${compose[@]}" ps -aq)"
