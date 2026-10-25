@@ -13,10 +13,15 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from shlex import join as shell_join
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+COMPOSE_OUTPUT_TIMEOUT = 30
+COMPOSE_COMMAND_TIMEOUT = 120
+COMPOSE_START_TIMEOUT = 600
+COMPOSE_CLEANUP_TIMEOUT = 60
 COMPOSE_FILES = (
     "docker-compose.yaml",
     "docker-compose.integration-test.yaml",
@@ -98,8 +103,9 @@ def wait_ready(base_url: str, compose: list[str], timeout: float = 120) -> None:
 
 
 def compose_output(compose: list[str], *args: str) -> str:
-    result = subprocess.run(
+    result = bounded_run(
         [*compose, *args],
+        timeout=COMPOSE_OUTPUT_TIMEOUT,
         cwd=ROOT,
         env=ACTIVE_ENV,
         capture_output=True,
@@ -109,9 +115,15 @@ def compose_output(compose: list[str], *args: str) -> str:
     return result.stdout + result.stderr
 
 
-def compose_run(compose: list[str], *args: str, check_success: bool = True) -> str:
-    result = subprocess.run(
+def compose_run(
+    compose: list[str],
+    *args: str,
+    check_success: bool = True,
+    timeout: int = COMPOSE_COMMAND_TIMEOUT,
+) -> str:
+    result = bounded_run(
         [*compose, *args],
+        timeout=timeout,
         cwd=ROOT,
         env=ACTIVE_ENV,
         capture_output=True,
@@ -124,6 +136,15 @@ def compose_run(compose: list[str], *args: str, check_success: bool = True) -> s
             f"Compose command {' '.join(args)} failed with exit code {result.returncode}:\n{output}"
         )
     return output
+
+
+def bounded_run(args: list[str], *, timeout: int, **kwargs) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(args, timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired:
+        raise IntegrationFailure(
+            f"Command exceeded its {timeout}-second timeout: {shell_join(args)}"
+        ) from None
 
 
 def compose_command(project: str) -> list[str]:
@@ -249,7 +270,7 @@ def validate_openapi_response(base_url: str, path: str, payload: dict, module: s
     validate_schema(response_schema, payload, document_schemas, f"{module} response")
 
 
-def dataset_file_count(compose: list[str]) -> int:
+def dataset_state(compose: list[str]) -> list[dict[str, str | int | bool]]:
     output = compose_run(
         compose,
         "exec",
@@ -257,13 +278,33 @@ def dataset_file_count(compose: list[str]) -> int:
         "app",
         "python",
         "-c",
-        "from pathlib import Path; print(sum(1 for path in Path('/data').glob('*.duckdb'))) ",
+        "import json; from pathlib import Path; root=Path('/data'); "
+        "print(json.dumps(sorted(({ 'path': str(path.relative_to(root)), "
+        "'directory': path.is_dir(), 'size': path.stat().st_size, "
+        "'mtime_ns': path.stat().st_mtime_ns } for path in root.rglob('*')), "
+        "key=lambda item: item['path'])))",
     )
     try:
-        return int(output.strip().splitlines()[-1])
-    except (ValueError, IndexError):
+        state = json.loads(output.strip().splitlines()[-1])
+        if isinstance(state, list) and all(isinstance(entry, dict) for entry in state):
+            return state
+    except (ValueError, IndexError, json.JSONDecodeError):
+        pass
+    raise IntegrationFailure(
+        "Could not inspect dataset artifacts without exposing their names or contents"
+    )
+
+
+def dataset_file_count(compose: list[str]) -> int:
+    try:
+        return sum(
+            1
+            for artifact in dataset_state(compose)
+            if not artifact["directory"] and str(artifact["path"]).endswith(".duckdb")
+        )
+    except (KeyError, TypeError):
         raise IntegrationFailure(
-            "Could not inspect dataset state without exposing dataset names"
+            "Could not count datasets without exposing their names or contents"
         ) from None
 
 
@@ -403,20 +444,22 @@ def run_self_hosted(base_url: str, compose: list[str]) -> None:
         "IT-04",
         f"dataset request with incorrect token returned HTTP {status}",
     )
-    status, _, body = http(base_url, "GET", protected_path, headers=auth(uploaded_token))
+    status, response_headers, body = http(
+        base_url, "GET", protected_path, headers=auth(uploaded_token)
+    )
     check(status == 200, "IT-04", f"valid token request returned HTTP {status}")
-    check(isinstance(json.loads(body), dict), "IT-04", "valid token response was not a JSON object")
+    json_body((status, response_headers, body), "IT-04 valid token request")
     mark("IT-04", "valid fixture created a token-protected dataset")
 
-    count_before_invalid = dataset_file_count(compose)
+    artifacts_before_invalid = dataset_state(compose)
     body, headers = multipart(INVALID_FIXTURE)
     invalid_status, _, _ = http(base_url, "POST", "/api/datasets", headers=headers, body=body)
     check(invalid_status in (400, 422), "IT-05", f"invalid upload returned HTTP {invalid_status}")
-    count_after_invalid = dataset_file_count(compose)
+    artifacts_after_invalid = dataset_state(compose)
     check(
-        count_after_invalid == count_before_invalid,
+        artifacts_after_invalid == artifacts_before_invalid,
         "IT-05",
-        "invalid upload left a dataset file behind",
+        "invalid upload changed dataset files, WALs, temporary uploads, or directory state",
     )
     mark("IT-05", "invalid CSV was rejected without creating a dataset")
 
@@ -459,11 +502,11 @@ def run_self_hosted(base_url: str, compose: list[str]) -> None:
 
 
 def run_public_demo(base_url: str) -> None:
-    before = dataset_file_count_for_demo()
+    before = dataset_state_for_demo()
     body, headers = multipart(FIXTURE)
     status, _, _ = http(base_url, "POST", "/api/datasets", headers=headers, body=body)
     check(status == 403, "IT-07", f"public-demo upload returned HTTP {status}")
-    after = dataset_file_count_for_demo()
+    after = dataset_state_for_demo()
     check(after == before, "IT-07", "public-demo upload created a dataset")
     sample = json_body(http(base_url, "POST", "/api/datasets/sample"), "IT-07 sample workflow")
     dataset_id = sample.get("dataset_id")
@@ -477,22 +520,8 @@ def run_public_demo(base_url: str) -> None:
     mark("IT-07", "public-demo rejected uploads and kept the sample API usable")
 
 
-def dataset_file_count_for_demo() -> int:
-    output = compose_run(
-        ACTIVE_COMPOSE,
-        "exec",
-        "-T",
-        "app",
-        "python",
-        "-c",
-        "from pathlib import Path; print(sum(1 for path in Path('/data').glob('*.duckdb'))) ",
-    )
-    try:
-        return int(output.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        raise IntegrationFailure(
-            "Could not inspect demo dataset state without exposing dataset names"
-        ) from None
+def dataset_state_for_demo() -> list[dict[str, str | int | bool]]:
+    return dataset_state(ACTIVE_COMPOSE)
 
 
 def run_project(*, public_demo: bool) -> None:
@@ -519,14 +548,17 @@ def run_project(*, public_demo: bool) -> None:
         )
         ACTIVE_ENV = environment
         try:
-            up_args = [*compose, "up", "--detach"]
+            up_args = ["up", "--detach"]
             if not public_demo:
                 up_args.append("--build")
-            subprocess.run(
-                up_args,
-                cwd=ROOT,
-                env=environment,
-                check=True,
+            print(
+                compose_run(
+                    compose,
+                    *up_args,
+                    timeout=COMPOSE_START_TIMEOUT,
+                ),
+                end="",
+                flush=True,
             )
             wait_ready(base_url, compose)
             if public_demo:
@@ -543,11 +575,18 @@ def run_project(*, public_demo: bool) -> None:
             )
             raise
         finally:
-            compose_run(compose, "down", "--volumes", "--remove-orphans", check_success=False)
+            compose_run(
+                compose,
+                "down",
+                "--volumes",
+                "--remove-orphans",
+                check_success=False,
+                timeout=COMPOSE_CLEANUP_TIMEOUT,
+            )
             containers = compose_output(compose, "ps", "--all", "-q").strip()
             if containers:
                 raise IntegrationFailure("Compose cleanup left a service container behind")
-            volumes = subprocess.run(
+            volumes = bounded_run(
                 [
                     "docker",
                     "volume",
@@ -556,6 +595,7 @@ def run_project(*, public_demo: bool) -> None:
                     "--filter",
                     f"label=com.docker.compose.project={project}",
                 ],
+                timeout=COMPOSE_OUTPUT_TIMEOUT,
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
