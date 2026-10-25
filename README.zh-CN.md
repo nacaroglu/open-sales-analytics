@@ -32,7 +32,7 @@ docker run -p 8000:8000 -v osa-data:/data open-sales-analytics
 用 `-e` 传入[下表](#配置)中的设置：
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## 演示导览
@@ -187,6 +187,8 @@ API 文档位于 [`/docs`](http://localhost:8000/docs)。`GET /api/datasets/{id}
 | `MAX_DATASETS` | 大于 0 的整数 | `200` | 服务器最多保存的未过期数据集。再创建一个（上传或**试用示例数据**）会返回 503 `capacity_reached`，直到有数据集过期或删除。 |
 | `RESPONSE_CACHE_MAX_ENTRIES` | 大于等于 0 的整数 | `256` | 此进程中缓存的概览/产品响应上限。`0` 禁用响应缓存。 |
 | `RESPONSE_CACHE_TTL_SECONDS` | 大于 0 的整数 | `300` | 缓存概览/产品响应的最长生命周期；数据集过期始终优先。 |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | 运行环境。其他值会阻止启动。 |
+| `OSA_VERSION` | string | `local` | 易读的版本。CI 设置镜像构建版本；可用 `docker run -e` 覆盖。 |
 
 布尔值不区分大小写，可用 `true`/`false`、`1`/`0` 和 `yes`/`no`（`on`/`off`、`t`/`f`、`y`/`n` 也可）。
 
@@ -476,7 +478,7 @@ Dependabot（`.github/dependabot.yml`）每周一为过时的 Python（`uv.lock`
 
 ### 容器镜像固定
 
-决定：`Dockerfile` 中基础镜像（`node:22`、`python:3.12-slim`）按摘要固定（`FROM image:tag@sha256:...`，多架构索引摘要）。原因：标签会移动，同一提交的两次构建可能不同，未经审查的上游变化可能破坏或危及构建；摘要使构建可复现，且每次基础镜像变化都经过拉取请求审查。Dependabot（`.github/dependabot.yml` 的 `docker` 项，每周一）同时更新标签和摘要，`docker-smoke` CI 作业会在合并前构建并启动新镜像。手动更新时，查找所需标签摘要并替换 `FROM` 行两部分。用 `COPY --from=ghcr.io/astral-sh/uv:0.8` 复制的 `uv` 镜像目前仍使用标签。
+决定：`Dockerfile` 中基础镜像（`node:26`、`python:3.14-slim`）按摘要固定（`FROM image:tag@sha256:...`，多架构索引摘要）。原因：标签会移动，同一提交的两次构建可能不同，未经审查的上游变化可能破坏或危及构建；摘要使构建可复现，且每次基础镜像变化都经过拉取请求审查。Dependabot（`.github/dependabot.yml` 的 `docker` 项，每周一）同时更新标签和摘要，`docker-smoke` CI 作业会在合并前构建并启动新镜像。手动更新时，查找所需标签摘要并替换 `FROM` 行两部分。用 `COPY --from=ghcr.io/astral-sh/uv:0.8` 复制的 `uv` 镜像目前仍使用标签。
 
 ### 固定 Actions
 

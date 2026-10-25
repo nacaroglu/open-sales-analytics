@@ -51,7 +51,7 @@ cuando el cliente deja de esperar.
 Pase un ajuste con `-e` usando una variable de la [tabla siguiente](#configuración):
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## Recorrido de demostración
@@ -247,6 +247,8 @@ El servidor lee estas variables de entorno al iniciarse. Todas son opcionales.
 | `MAX_DATASETS` | integer > 0 | `200` | Máximo de conjuntos vigentes. Crear otro responde 503 `capacity_reached` hasta que caduque o se elimine uno. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Máximo de respuestas Overview/Product en caché en este proceso. `0` desactiva la caché. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Vida máxima de una respuesta Overview/Product en caché; la caducidad del conjunto prevalece. |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | Entorno de ejecución. Otros valores impiden el inicio. |
+| `OSA_VERSION` | string | `local` | Versión legible. CI establece la versión de compilación; se puede cambiar con `docker run -e`. |
 
 Los booleanos aceptan `true`/`false`, `1`/`0` y `yes`/`no` sin distinguir mayúsculas (también `on`/`off`,
 `t`/`f` y `y`/`n`).
@@ -656,7 +658,7 @@ a habilitarlo en Actions.
 
 ### Fijación de imágenes de contenedor
 
-Decisión: las imágenes base de `Dockerfile` (`node:22`, `python:3.12-slim`) se fijan por digest
+Decisión: las imágenes base de `Dockerfile` (`node:26`, `python:3.14-slim`) se fijan por digest
 (`FROM image:tag@sha256:...`, índice multiarquitectura). Una etiqueta se mueve y haría distintas dos compilaciones o
 introduciría cambios no revisados; el digest hace la compilación reproducible y cada cambio revisable. Dependabot
 (entrada `docker` en `.github/dependabot.yml`, lunes) actualiza etiqueta y digest juntos, y `docker-smoke` compila e

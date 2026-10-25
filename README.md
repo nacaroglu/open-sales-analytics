@@ -45,7 +45,7 @@ under a second with exit code 0, after stopping the background cleanup. The serv
 Pass a setting with `-e`, using a variable from the [table below](#configuration):
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## Demo walkthrough
@@ -242,6 +242,8 @@ The server reads these environment variables when it starts. Every variable is o
 | `MAX_DATASETS` | integer > 0 | `200` | Most unexpired datasets the server holds. Creating one more (an upload or **Try sample data**) answers 503 `capacity_reached` until one expires or is deleted. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Maximum cached Overview/Product responses in this process. `0` disables the response cache. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Maximum lifetime of a cached Overview/Product response; dataset expiry always wins. |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | Runtime environment. Other values prevent startup. |
+| `OSA_VERSION` | string | `local` | Readable release version. CI sets the image build version; `docker run -e` can override it. |
 
 Booleans accept `true`/`false`, `1`/`0` and `yes`/`no` in any letter case (`on`/`off`, `t`/`f` and `y`/`n` also work).
 
@@ -673,7 +675,7 @@ and GitHub pauses them after 60 days without repository activity; re-enable one 
 
 ### Container image pinning
 
-Decision: the base images in the `Dockerfile` (`node:22`, `python:3.12-slim`) are pinned by digest
+Decision: the base images in the `Dockerfile` (`node:26`, `python:3.14-slim`) are pinned by digest
 (`FROM image:tag@sha256:...`, the multi-architecture index digest). Reason: a tag moves, so two builds of the same
 commit could differ and an unreviewed upstream change could break or compromise the build; a digest makes the build
 reproducible and every base image change a reviewed pull request. Dependabot (`docker` entry in

@@ -20,16 +20,20 @@ RUN uv sync --locked --no-dev --no-install-project
 
 # Stage 3: runtime. Only the virtual environment, backend/app and the built frontend.
 FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
+ARG OSA_VERSION=local
+LABEL org.opencontainers.image.version="${OSA_VERSION}"
 ENV PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
-    DATASET_DIR=/data
+    DATASET_DIR=/data \
+    OSA_VERSION=${OSA_VERSION}
 
 # Non-root user. /data is created owned by it with private permissions (0700, as the README promises), so a named volume mounted at /data is
 # writable. A host directory mounted at /data must be writable by this user (UID 10001).
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir /data \
     && chown app:app /data \
-    && chmod 700 /data
+    && chmod 700 /data \
+    && chmod 755 /var/tmp
 
 WORKDIR /app
 COPY --from=backend-deps /app/.venv /app/.venv

@@ -51,7 +51,7 @@ Client aufgibt.
 Übergib eine Einstellung mit `-e` und einer Variable aus der [folgenden Tabelle](#konfiguration):
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## Demo-Anleitung
@@ -253,6 +253,8 @@ Der Server liest beim Start diese Umgebungsvariablen. Jede Variable ist optional
 | `MAX_DATASETS` | integer > 0 | `200` | Höchste Anzahl nicht abgelaufener Datensätze auf dem Server. Ein weiterer (Upload oder **Beispieldaten ausprobieren**) gibt 503 `capacity_reached` zurück, bis einer abläuft oder gelöscht wird. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Höchste Anzahl gecachter Overview/Product-Antworten in diesem Prozess. `0` deaktiviert den Antwortcache. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Maximale Lebensdauer einer gecachten Overview/Product-Antwort; der Datensatzablauf hat immer Vorrang. |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | Laufzeitumgebung. Andere Werte verhindern den Start. |
+| `OSA_VERSION` | string | `local` | Lesbare Version. CI setzt die Build-Version; mit `docker run -e` überschreibbar. |
 
 Boolesche Werte akzeptieren `true`/`false`, `1`/`0` und `yes`/`no` unabhängig von Groß-/Kleinschreibung
 (`on`/`off`, `t`/`f` und `y`/`n` funktionieren ebenfalls).
@@ -704,7 +706,7 @@ Standardbranch und werden von GitHub nach 60 Tagen ohne Repositoryaktivität pau
 
 ### Container-Images pinnen
 
-Entscheidung: Die Basisimages im `Dockerfile` (`node:22`, `python:3.12-slim`) sind per Digest gepinnt
+Entscheidung: Die Basisimages im `Dockerfile` (`node:26`, `python:3.14-slim`) sind per Digest gepinnt
 (`FROM image:tag@sha256:...`, der Multiarchitektur-Index-Digest). Grund: Ein Tag bewegt sich, zwei Builds desselben
 Commits könnten sich unterscheiden, und eine ungeprüfte vorgelagerte Änderung könnte den Build brechen oder
 kompromittieren. Ein Digest macht den Build reproduzierbar und jede Basisimage-Änderung zu einem geprüften Pull Request.

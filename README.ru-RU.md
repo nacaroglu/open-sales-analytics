@@ -50,7 +50,7 @@ docker run -p 8000:8000 -v osa-data:/data open-sales-analytics
 Передайте настройку через `-e`, используя переменную из [таблицы ниже](#настройка):
 
 ```sh
-docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true open-sales-analytics
+docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
 
 ## Пошаговая демонстрация
@@ -250,6 +250,8 @@ DuckDB набора данных, удаляются с ним после `DATAS
 | `MAX_DATASETS` | integer > 0 | `200` | Максимум неистекших наборов на сервере. Создание еще одного (загрузка или **Попробовать пример данных**) возвращает 503 `capacity_reached`, пока один не истечет или не будет удален. |
 | `RESPONSE_CACHE_MAX_ENTRIES` | integer >= 0 | `256` | Максимум закешированных ответов Overview/Product в этом процессе. `0` отключает кеш ответов. |
 | `RESPONSE_CACHE_TTL_SECONDS` | integer > 0 | `300` | Максимальный срок жизни закешированного ответа Overview/Product; истечение набора данных всегда имеет приоритет. |
+| `OSA_ENVIRONMENT` | `development` or `production` | `development` | Среда выполнения. Другие значения запрещают запуск. |
+| `OSA_VERSION` | string | `local` | Читаемая версия. CI задаёт версию сборки; можно переопределить через `docker run -e`. |
 
 Булевы значения принимают `true`/`false`, `1`/`0` и `yes`/`no` в любом регистре (также работают `on`/`off`,
 `t`/`f` и `y`/`n`).
@@ -693,7 +695,7 @@ workflow выполняются только в ветке по умолчани
 
 ### Закрепление образов контейнера
 
-Решение: базовые образы в `Dockerfile` (`node:22`, `python:3.12-slim`) закреплены по digest
+Решение: базовые образы в `Dockerfile` (`node:26`, `python:3.14-slim`) закреплены по digest
 (`FROM image:tag@sha256:...`, digest мультиархитектурного индекса). Причина: тег перемещается, поэтому две сборки одного
 коммита могут отличаться, а непроверенное изменение upstream может сломать или скомпрометировать сборку; digest делает
 сборку воспроизводимой, а каждое изменение базового образа — проверяемым pull request. Dependabot (запись `docker` в

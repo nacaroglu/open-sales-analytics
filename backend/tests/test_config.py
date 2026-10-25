@@ -7,6 +7,8 @@ from app.config import Settings, get_settings
 from pydantic import ValidationError
 
 VARIABLES = [
+    "OSA_ENVIRONMENT",
+    "OSA_VERSION",
     "DATASET_DIR",
     "DATASET_TTL_HOURS",
     "DATASET_TTL_SECONDS",
@@ -31,6 +33,8 @@ def clean_environment(monkeypatch):
 def test_defaults_with_empty_environment():
     settings = Settings()
 
+    assert settings.osa_environment == "development"
+    assert settings.osa_version == "local"
     assert settings.dataset_dir == Path("./tmp_datasets")
     assert settings.dataset_ttl_hours == 24
     assert settings.dataset_ttl_seconds is None
@@ -45,6 +49,8 @@ def test_defaults_with_empty_environment():
 @pytest.mark.parametrize(
     ("variable", "raw", "field", "expected"),
     [
+        ("OSA_ENVIRONMENT", "production", "osa_environment", "production"),
+        ("OSA_VERSION", "20261024-123456-abc1234", "osa_version", "20261024-123456-abc1234"),
         ("DATASET_DIR", "/srv/data", "dataset_dir", Path("/srv/data")),
         ("DATASET_TTL_HOURS", "6", "dataset_ttl_hours", 6),
         ("MAX_UPLOAD_BYTES", "1000", "max_upload_bytes", 1000),
@@ -58,6 +64,14 @@ def test_each_variable_overrides_its_field(monkeypatch, variable, raw, field, ex
     monkeypatch.setenv(variable, raw)
 
     assert getattr(Settings(), field) == expected
+
+
+@pytest.mark.parametrize("raw", ["staging", "", "Production"])
+def test_unsupported_environment_names_variable(monkeypatch, raw):
+    monkeypatch.setenv("OSA_ENVIRONMENT", raw)
+
+    with pytest.raises(ValidationError, match="OSA_ENVIRONMENT"):
+        Settings()
 
 
 @pytest.mark.parametrize(

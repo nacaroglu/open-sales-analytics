@@ -1,7 +1,7 @@
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +12,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
 
+    osa_environment: Literal["development", "production"] = Field(
+        "development", validation_alias="OSA_ENVIRONMENT"
+    )
+    osa_version: str = Field("local", min_length=1, validation_alias="OSA_VERSION")
     dataset_dir: Path = Field(Path("./tmp_datasets"), validation_alias="DATASET_DIR")
     dataset_ttl_hours: int = Field(24, gt=0, validation_alias="DATASET_TTL_HOURS")
     # Test-only override: a lifetime in seconds that wins over DATASET_TTL_HOURS, so a browser
