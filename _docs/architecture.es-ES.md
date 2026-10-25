@@ -69,7 +69,9 @@ comprueba esta tabla frente a él.
 
 | Método | Ruta | Autorización | Propósito y opciones principales |
 | --- | --- | --- | --- |
-| GET | `/api/health` | No | Comprobación de actividad |
+| GET | `/api/health` | No | Respuesta de salud anterior |
+| GET | `/health/live` | No | Solo actividad del proceso; sin comprobar dependencias |
+| GET | `/health/ready` | No | Disponibilidad e identidad segura del servicio |
 | GET | `/api/config` | No | Indicador de demo pública y límites de carga; nunca secretos ni rutas |
 | POST | `/api/datasets` | No | Carga multipart; campo de formulario `currency` |
 | POST | `/api/datasets/sample` | No | Importar el ejemplo incluido en USD |

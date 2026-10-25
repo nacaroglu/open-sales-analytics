@@ -67,7 +67,9 @@ Konfiguration und Beispieldownload. Das aktive OpenAPI-Schema ist maßgeblich; d
 
 | Methode | Pfad | Auth | Zweck und wichtigste Optionen |
 | --- | --- | --- | --- |
-| GET | `/api/health` | Nein | Verfügbarkeitsprüfung |
+| GET | `/api/health` | Nein | Ältere Statusantwort |
+| GET | `/health/live` | Nein | Nur Prozessverfügbarkeit; keine Abhängigkeitsprüfungen |
+| GET | `/health/ready` | Nein | Bereitschaft und sichere Dienstidentität |
 | GET | `/api/config` | Nein | Öffentlicher Demo-Schalter und Uploadgrenzen; niemals Geheimnisse oder Pfade |
 | POST | `/api/datasets` | Nein | Mehrteiliger Upload; Formularfeld `currency` |
 | POST | `/api/datasets/sample` | Nein | Mitgeliefertes Beispiel in USD importieren |

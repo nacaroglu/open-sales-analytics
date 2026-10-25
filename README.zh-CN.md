@@ -19,6 +19,10 @@ docker run -p 8000:8000 open-sales-analytics
 
 打开 <http://localhost:8000>。您会看到上传页面；**试用示例数据**会用样例文件打开仪表板。`curl http://localhost:8000/api/health` 返回 `{"status":"ok"}`。
 
+`/health/live` 只检查进程是否响应。初始化、临时存储、DuckDB 和内置样例均可用时，`/health/ready` 返回 `200` 和
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}`；否则返回通用状态和
+`503`。`environment` 与 `version` 字段来自 `OSA_ENVIRONMENT` 和 `OSA_VERSION`。两个端点都不会返回主机名、文件系统路径、凭据或密钥。
+
 容器以非 root 用户（UID 10001）运行，并将数据集保存在 `/data`（`DATASET_DIR=/data`）。未挂载卷时，删除容器也会丢失数据。要保留数据，请将命名卷挂载到 `/data`：
 
 ```sh

@@ -92,7 +92,9 @@ def test_metric_catalogue_covers_the_authoritative_registry() -> None:
 
 def test_architecture_endpoint_table_matches_openapi() -> None:
     architecture = (ROOT / "_docs" / "architecture.md").read_text(encoding="utf-8")
-    documented = set(re.findall(r"`(/api/[^`]+)`", architecture))
+    documented = set(
+        re.findall(r"^\| (?:GET|POST|DELETE|PUT|PATCH) \| `([^`]+)` \|", architecture, re.MULTILINE)
+    )
     assert documented == set(app.openapi()["paths"])
 
 

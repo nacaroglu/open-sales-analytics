@@ -48,7 +48,9 @@ Open Sales Analytics 是由 FastAPI 提供服务的同源 React/Vite 应用。�
 
 | 方法 | 路径 | 授权 | 用途和主要选项 |
 | --- | --- | --- | --- |
-| GET | `/api/health` | 否 | 存活检查 |
+| GET | `/api/health` | 否 | 旧版健康响应 |
+| GET | `/health/live` | 否 | 仅检查进程存活，不检查依赖项 |
+| GET | `/health/ready` | 否 | 就绪状态和安全的服务标识 |
 | GET | `/api/config` | 否 | 公开演示标志和上传限制；绝不含秘密或路径 |
 | POST | `/api/datasets` | 否 | Multipart 上传；`currency` 表单字段 |
 | POST | `/api/datasets/sample` | 否 | 以 USD 导入内置样例 |

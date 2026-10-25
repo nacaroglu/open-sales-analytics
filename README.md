@@ -26,6 +26,12 @@ docker run -p 8000:8000 open-sales-analytics
 Open <http://localhost:8000>. You see the upload screen; **Try sample data** opens a dashboard with the sample file.
 `curl http://localhost:8000/api/health` returns `{"status":"ok"}`.
 
+`/health/live` checks only that the process responds. `/health/ready` returns `200` and
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}` only when initialization,
+temporary storage, DuckDB and the bundled sample are ready; otherwise it returns `503` with a generic status. The `environment`
+and `version` fields come from `OSA_ENVIRONMENT` and `OSA_VERSION`. Neither endpoint returns a hostname, filesystem path,
+credential or secret.
+
 The container runs as a non-root user (UID 10001) and keeps its datasets in `/data` (`DATASET_DIR=/data`). Without a
 volume they are lost when the container is removed. To keep them, mount a named volume at `/data`:
 

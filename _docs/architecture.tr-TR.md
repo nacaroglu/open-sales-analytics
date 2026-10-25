@@ -65,7 +65,9 @@ Herkese açık sağlık, yapılandırma ve örnek indirme rotaları dışında t
 
 | Yöntem | Yol | Yetki | Amaç ve ana seçenekler |
 | --- | --- | --- | --- |
-| GET | `/api/health` | Hayır | Canlılık kontrolü |
+| GET | `/api/health` | Hayır | Eski sağlık yanıtı |
+| GET | `/health/live` | Hayır | Yalnızca süreç canlılığı; bağımlılık kontrolü yok |
+| GET | `/health/ready` | Hayır | Hazır olma durumu ve güvenli hizmet kimliği |
 | GET | `/api/config` | Hayır | Herkese açık demo bayrağı ve yükleme sınırları; asla sırlar veya yollar değil |
 | POST | `/api/datasets` | Hayır | Çok parçalı yükleme; `currency` form alanı |
 | POST | `/api/datasets/sample` | Hayır | Paketlenmiş örneği USD olarak içe aktar |

@@ -29,6 +29,12 @@ docker run -p 8000:8000 open-sales-analytics
 Abra <http://localhost:8000>. Verá la pantalla de carga; **Probar datos de ejemplo** abre un panel con el archivo de ejemplo.
 `curl http://localhost:8000/api/health` devuelve `{"status":"ok"}`.
 
+`/health/live` solo comprueba que responde el proceso. `/health/ready` devuelve `200` y
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}` cuando la inicialización,
+el almacenamiento temporal, DuckDB y la muestra incluida están disponibles; de lo contrario devuelve un estado genérico con
+`503`. Los campos `environment` y `version` proceden de `OSA_ENVIRONMENT` y `OSA_VERSION`. Ningún endpoint devuelve el nombre
+del host, una ruta del sistema de archivos, credenciales ni secretos.
+
 El contenedor se ejecuta con un usuario sin privilegios (UID 10001) y guarda los conjuntos de datos en `/data`
 (`DATASET_DIR=/data`). Sin un volumen, se pierden al eliminar el contenedor. Para conservarlos, monte un volumen con
 nombre en `/data`:
