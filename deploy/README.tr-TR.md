@@ -37,3 +37,22 @@ yönlendirir). Sertifika olmadan site düz HTTP kullanır; dolayısıyla yüklen
 Gerçek kullanım için bir sertifika ayarlayın. Yeni bir imaj yayımlamak için onu gönderin ve
 `aws ecs update-service --force-new-deployment` çalıştırın. Yığını `aws cloudformation delete-stack` ile silin; önce
 ECR deposunu boşaltın.
+
+
+## Docker Compose dağıtımı
+
+Dağıtım Compose geçersiz kılması, uygulama imajını değişmez bir digest ile Caddy arkasında çalıştırır. Tam imaj referansını, genel hostname değerini, ortamı ve sürümü çalışma anında sağlayın. Geliştirme ortamı ayrıca kullanıcı adı ve parola özeti içeren bir Caddy basic-auth bloğu gerektirir; özeti çalışma anında oluşturup bloğu enjekte edin, depoya kaydetmeyin. Üretimde bu blok boş bırakılır ve genel demo modu etkinleştirilir.
+
+```sh
+export OSA_IMAGE='registry.example/open-sales-analytics@sha256:<64-character-image-digest>'
+export OSA_HOSTNAME='sales.example.com'
+export OSA_ENVIRONMENT=development
+export OSA_VERSION=1.2.3
+export PUBLIC_DEMO_MODE=false
+read -rsp 'Password: ' password; printf '\n'
+password_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$password")"; unset password
+export CADDY_AUTH_BLOCK="$(printf 'basic_auth {\n  demo %s\n}' "$password_hash")"
+docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
+```
+
+Üretim ayarları için `CADDY_AUTH_BLOCK=''` değerini ve `PUBLIC_DEMO_MODE=true` değerini sağlayıp `OSA_ENVIRONMENT=production` ayarlayın. Parola özeti çalışma zamanı girdisidir; kimlik bilgilerini veya özetleri Compose dosyalarına, kabuk geçmişine ya da CI günlüklerine koymayın.

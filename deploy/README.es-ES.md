@@ -36,3 +36,22 @@ Sin un certificado, el sitio usa HTTP sin cifrar, por lo que los datos de ventas
 uno para un uso real. Para publicar una imagen nueva, envíela al repositorio y ejecute
 `aws ecs update-service --force-new-deployment`. Elimine la pila con `aws cloudformation delete-stack`; primero vacíe
 el repositorio de ECR.
+
+
+## Despliegue con Docker Compose
+
+La configuración de despliegue de Compose ejecuta la imagen de la aplicación con un digest inmutable detrás de Caddy. Proporciona en tiempo de ejecución la referencia completa de la imagen, el nombre de host público, el entorno y la versión. El entorno de desarrollo también requiere un bloque basic-auth de Caddy con un usuario y un hash de contraseña; genera el hash en tiempo de ejecución e inyecta el bloque sin confirmarlo en el repositorio. En producción, deja el bloque vacío y activa el modo de demostración pública.
+
+```sh
+export OSA_IMAGE='registry.example/open-sales-analytics@sha256:<64-character-image-digest>'
+export OSA_HOSTNAME='sales.example.com'
+export OSA_ENVIRONMENT=development
+export OSA_VERSION=1.2.3
+export PUBLIC_DEMO_MODE=false
+read -rsp 'Password: ' password; printf '\n'
+password_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$password")"; unset password
+export CADDY_AUTH_BLOCK="$(printf 'basic_auth {\n  demo %s\n}' "$password_hash")"
+docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
+```
+
+Para la configuración de producción, proporciona `CADDY_AUTH_BLOCK=''` y `PUBLIC_DEMO_MODE=true`, y establece `OSA_ENVIRONMENT=production`. El hash de contraseña es una entrada de ejecución; no guardes credenciales ni hashes en archivos Compose, en el historial del shell ni en los registros de CI.

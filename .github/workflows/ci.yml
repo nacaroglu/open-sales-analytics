@@ -149,6 +149,65 @@ jobs:
           assert str(service["ports"][0]["published"]) == "18080"
           assert service["volumes"][0]["target"] == "/custom-data"
           '
+      - name: Validate deployment Compose configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='example.invalid/open-sales-analytics:ci@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          caddy_image='caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb'
+          ci_hash="$(docker run --rm --entrypoint caddy "$caddy_image" hash-password --plaintext ci-only)"
+          auth_block="$(printf 'basic_auth {\n  ci-user %s\n}' "$ci_hash")"
+          valid_image() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
+          if valid_image ''; then exit 1; fi
+          if valid_image 'example.invalid/open-sales-analytics:ci'; then exit 1; fi
+          if valid_image 'example.invalid/open-sales-analytics@sha256:abc'; then exit 1; fi
+          valid_image "$digest"
+
+          common_env=(OSA_IMAGE="$digest" OSA_HOSTNAME=osa.example.invalid OSA_VERSION=ci-version)
+          env "${common_env[@]}" OSA_ENVIRONMENT=development PUBLIC_DEMO_MODE=false \
+            CADDY_AUTH_BLOCK="$auth_block" \
+            docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml config --quiet
+          env "${common_env[@]}" OSA_ENVIRONMENT=development PUBLIC_DEMO_MODE=false \
+            CADDY_AUTH_BLOCK="$auth_block" \
+            docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml config --format json | python3 -c '
+          import json
+          import sys
+
+          config = json.load(sys.stdin)
+          app = config["services"]["app"]
+          caddy = config["services"]["caddy"]
+          assert app["image"] == "example.invalid/open-sales-analytics:ci@sha256:" + "a" * 64
+          assert "build" not in app
+          assert app.get("ports", []) == []
+          assert app["volumes"][0]["target"] == "/data"
+          assert "/health/ready" in " ".join(app["healthcheck"]["test"])
+          assert app["environment"]["OSA_ENVIRONMENT"] == "development"
+          assert app["environment"]["OSA_VERSION"] == "ci-version"
+          assert app["environment"]["PUBLIC_DEMO_MODE"] == "false"
+          assert app["restart"] == "unless-stopped"
+          assert caddy["image"] == "caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb"
+          assert {str(port["published"]) for port in caddy["ports"]} == {"80", "443"}
+          assert caddy["environment"]["OSA_HOSTNAME"] == "osa.example.invalid"
+          assert "basic_auth" in caddy["environment"]["CADDY_AUTH_BLOCK"]
+          assert caddy["depends_on"]["app"]["condition"] == "service_healthy"
+          assert caddy["restart"] == "unless-stopped"
+          '
+          env "${common_env[@]}" OSA_ENVIRONMENT=production PUBLIC_DEMO_MODE=true \
+            CADDY_AUTH_BLOCK= \
+            docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml config --format json | python3 -c '
+          import json
+          import sys
+
+          config = json.load(sys.stdin)
+          assert config["services"]["app"]["environment"]["PUBLIC_DEMO_MODE"] == "true"
+          assert config["services"]["caddy"]["environment"]["CADDY_AUTH_BLOCK"] == ""
+          '
+          docker run --rm --entrypoint caddy \
+            -e OSA_HOSTNAME=osa.example.invalid \
+            -e CADDY_AUTH_BLOCK="$auth_block" \
+            -v "$PWD/Caddyfile.deploy:/etc/caddy/Caddyfile:ro" \
+            "$caddy_image" \
+            validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Start and clean up the base Compose project
         run: |
           set -euo pipefail

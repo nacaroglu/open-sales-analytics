@@ -32,3 +32,25 @@ Optional parameters: `PublicDemoMode=true`, `DatasetTtlHours`, `CertificateArn` 
 Without a certificate the site is plain HTTP, so uploaded sales data travels unencrypted; set one for real use.
 To ship a new image, push it and run `aws ecs update-service --force-new-deployment`.
 Delete the stack with `aws cloudformation delete-stack`; empty the ECR repository first.
+
+## Docker Compose deployment
+
+The deployment Compose override runs the application image by immutable digest behind Caddy. Provide the complete
+image reference, public hostname, environment, and release version at runtime. Development also requires a Caddy
+basic-auth block containing a username and a password hash; generate the hash at runtime and inject the block without
+committing it. Production leaves that block empty and enables the public demo mode.
+
+```sh
+export OSA_IMAGE='registry.example/open-sales-analytics@sha256:<64-character-image-digest>'
+export OSA_HOSTNAME='sales.example.com'
+export OSA_ENVIRONMENT=development
+export OSA_VERSION=1.2.3
+export PUBLIC_DEMO_MODE=false
+read -rsp 'Password: ' password; printf '\n'
+password_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$password")"; unset password
+export CADDY_AUTH_BLOCK="$(printf 'basic_auth {\n  demo %s\n}' "$password_hash")"
+docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
+```
+
+For production, set `OSA_ENVIRONMENT=production`, `PUBLIC_DEMO_MODE=true`, and `CADDY_AUTH_BLOCK=''`.
+The password hash is runtime input; do not put credentials or hashes in Compose files, shell history, or CI logs.
