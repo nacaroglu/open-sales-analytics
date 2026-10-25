@@ -149,6 +149,46 @@ jobs:
           assert str(service["ports"][0]["published"]) == "18080"
           assert service["volumes"][0]["target"] == "/custom-data"
           '
+      - name: Start and clean up the base Compose project
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker compose down -v --remove-orphans
+          }
+          trap cleanup EXIT
+
+          docker compose up --build --detach
+          container_id="$(docker compose ps -q app)"
+          volume_name="$(docker compose config --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["volumes"]["osa-data"]["name"])')"
+          test -n "$container_id"
+          docker volume inspect "$volume_name" >/dev/null
+
+          ready=0
+          health="starting"
+          for _ in $(seq 1 45); do
+            if curl -fsS http://localhost:8000/health/ready -o /tmp/osa-compose-ready.json 2>/dev/null; then
+              ready=1
+            fi
+            health="$(docker inspect --format='{{.State.Health.Status}}' "$container_id")"
+            if [ "$ready" -eq 1 ] && [ "$health" = healthy ]; then
+              break
+            fi
+            if [ "$health" = unhealthy ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          test "$health" = healthy
+          python3 -c 'import json; d=json.load(open("/tmp/osa-compose-ready.json")); assert d["status"] == "ready"; assert d["environment"] == "development"; assert d["version"] == "local"'
+
+          docker compose down -v --remove-orphans
+          trap - EXIT
+          if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            echo "Compose-managed data volume still exists after docker compose down -v"
+            exit 1
+          fi
       - name: Build image
         run: |
           version="$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
