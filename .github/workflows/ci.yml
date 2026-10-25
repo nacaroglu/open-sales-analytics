@@ -210,6 +210,11 @@ jobs:
             fi
             sleep 1
           done
+          if [ "$captured" -ne 1 ]; then
+            echo "Collector accepted OTLP but did not produce a non-empty file sink; Collector diagnostics follow"
+            "${compose[@]}" logs --no-color --tail=100 telemetry-collector
+            docker inspect --format='state={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} mounts={{json .Mounts}}' "$collector_id"
+          fi
           test "$captured" -eq 1
           python3 -c '
           import json
