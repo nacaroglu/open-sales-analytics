@@ -1,5 +1,5 @@
 import pytest
-from app import health
+from app import health, main
 from app.config import get_settings
 from app.main import app
 from fastapi.testclient import TestClient
@@ -67,7 +67,7 @@ def test_cross_origin_request_gets_no_cors_headers():
 def test_liveness_is_process_only_even_when_readiness_is_not_available(monkeypatch):
     monkeypatch.setattr(app.state, "initialized", False)
     monkeypatch.setattr(
-        health,
+        main,
         "readiness_checks",
         lambda _: pytest.fail("liveness must not run readiness checks"),
     )
@@ -81,7 +81,7 @@ def test_liveness_is_process_only_even_when_readiness_is_not_available(monkeypat
 def test_readiness_is_503_before_initialization_and_does_not_probe(monkeypatch):
     monkeypatch.setattr(app.state, "initialized", False)
     monkeypatch.setattr(
-        health,
+        main,
         "readiness_checks",
         lambda _: pytest.fail("readiness dependencies must wait for initialization"),
     )
@@ -135,7 +135,7 @@ def test_readiness_sanitizes_probe_exceptions(initialized_client, monkeypatch, t
     def fail_with_sensitive_details(_):
         raise OSError(secret_error)
 
-    monkeypatch.setattr(health, "readiness_checks", fail_with_sensitive_details)
+    monkeypatch.setattr(main, "readiness_checks", fail_with_sensitive_details)
 
     response = test_client.get("/health/ready")
 
