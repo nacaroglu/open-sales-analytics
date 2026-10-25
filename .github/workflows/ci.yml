@@ -136,6 +136,92 @@ jobs:
           assert service["healthcheck"]["retries"] > 0
           assert set(config["volumes"]) == {"osa-data"}
           '
+      - name: Validate and exercise the test telemetry Compose override
+        env:
+          COMPOSE_PROJECT_NAME: osa-telemetry-ci-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f docker-compose.yaml -f docker-compose.test-telemetry.yaml)
+          cleanup() {
+            status=$?
+            trap - EXIT
+            "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || status=1
+            rm -f "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+            if [ -n "$("${compose[@]}" ps -aq 2>/dev/null)" ] || \
+              [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" 2>/dev/null)" ]; then
+              echo "Test telemetry Compose resources remain after cleanup"
+              status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          "${compose[@]}" config --quiet
+          "${compose[@]}" config --format json | python3 -c '
+          import json
+          import sys
+
+          config = json.load(sys.stdin)
+          assert set(config["services"]) == {"app", "telemetry-collector"}
+          app = config["services"]["app"]
+          assert app["environment"]["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://telemetry-collector:4318"
+          assert app["environment"]["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/protobuf"
+          assert str(app["ports"][0]["published"]) == "8000"
+          collector = config["services"]["telemetry-collector"]
+          assert "@sha256:" in collector["image"]
+          assert len(collector["image"].split("@sha256:", 1)[1]) == 64
+          assert {str(port["published"]) for port in collector["ports"]} == {"4318", "13133"}
+          assert all(port["host_ip"] == "127.0.0.1" for port in collector["ports"])
+          assert set(config["volumes"]) == {"osa-data"}
+          '
+          docker run --rm \
+            -v "$PWD/observability/collector-test.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+            ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib@sha256:9bb39ed7220947178a93b9c0c7fa20d598b83e7fa96fe27b0735012da873ee50 \
+            validate --config=/etc/otelcol-contrib/config.yaml
+
+          "${compose[@]}" up --detach telemetry-collector
+          collector_id="$("${compose[@]}" ps -q telemetry-collector)"
+          test -n "$collector_id"
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:13133/ >/dev/null; then
+              ready=1
+              break
+            fi
+            status="$(docker inspect --format='{{.State.Status}}' "$collector_id")"
+            if [ "$status" != running ]; then
+              "${compose[@]}" logs telemetry-collector
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+
+          curl -fsS -X POST http://127.0.0.1:4318/v1/logs \
+            -H 'Content-Type: application/json' \
+            --data '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"osa-ci-synthetic"}},{"key":"deployment.environment.name","value":{"stringValue":"test"}},{"key":"service.version","value":{"stringValue":"ci-synthetic"}}]},"scopeLogs":[{"logRecords":[{"body":{"stringValue":"telemetry-sink-smoke"}}]}]}]}'
+          captured=0
+          for _ in $(seq 1 15); do
+            if docker exec "$collector_id" test -s /tmp/osa-telemetry.json; then
+              captured=1
+              break
+            fi
+            sleep 1
+          done
+          test "$captured" -eq 1
+          docker cp "$collector_id:/tmp/osa-telemetry.json" "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+          python3 -c 'import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); lines=p.read_text().splitlines(); records=[json.loads(line) for line in lines]; assert records; assert all("telemetry-sink-smoke" in line and "osa-ci-synthetic" in line for line in lines)' "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+
+          "${compose[@]}" down --volumes --remove-orphans
+          test -z "$("${compose[@]}" ps -aq)"
+          if docker inspect "$collector_id" >/dev/null 2>&1; then
+            echo "Test telemetry Collector still exists after cleanup"
+            exit 1
+          fi
+          test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")"
+          rm -f "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+          test ! -e "/tmp/osa-telemetry-${GITHUB_RUN_ID}.json"
+          trap - EXIT
           OSA_ENVIRONMENT=production OSA_VERSION=ci-version OSA_PORT=18080 DATASET_DIR=/custom-data \
             docker compose -f docker-compose.yaml config --format json | python3 -c '
           import json
