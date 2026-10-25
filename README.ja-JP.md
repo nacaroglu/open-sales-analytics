@@ -13,9 +13,10 @@ Open Sales Analytics は小規模なセルフホスト型 Web アプリケーシ
 公開済みイメージはないため、このリポジトリをチェックアウトして一度ビルドしてから実行します。
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose はホストのポート `8000` を既定で公開します。変更するには `OSA_PORT` を設定します。`docker compose up --build` の実行前に `OSA_ENVIRONMENT`、`OSA_VERSION`、`DATASET_DIR` を設定できます。既定値は `development`、`local`、`/data` です。Compose は名前付きボリューム `osa-data` を `DATASET_DIR` にマウントします。保存したデータを含めてコンテナとボリュームを削除するには `docker compose down -v` を実行します。
 
 <http://localhost:8000> を開きます。アップロード画面が表示され、**サンプルデータを試す**でサンプルファイルのダッシュボードが開きます。`curl http://localhost:8000/api/health` は `{"status":"ok"}` を返します。
 

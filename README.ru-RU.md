@@ -22,9 +22,10 @@ Open Sales Analytics — небольшое самостоятельно раз�
 Опубликованного образа нет, поэтому один раз соберите его из рабочей копии репозитория, а затем запустите:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+По умолчанию Compose публикует порт хоста `8000`. Задайте `OSA_PORT`, чтобы изменить его. Перед запуском `docker compose up --build` можно задать `OSA_ENVIRONMENT`, `OSA_VERSION` или `DATASET_DIR`; значения по умолчанию — `development`, `local` и `/data`. Compose подключает именованный том `osa-data` к `DATASET_DIR`; `docker compose down -v` удаляет контейнер и том вместе с сохранёнными данными.
 
 Откройте <http://localhost:8000>. Появится экран загрузки; кнопка **Попробовать пример данных** откроет панель с примером файла.
 `curl http://localhost:8000/api/health` возвращает `{"status":"ok"}`.

@@ -106,6 +106,49 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate base Compose configuration
+        run: |
+          docker compose -f docker-compose.yaml config --quiet
+          docker compose -f docker-compose.yaml config --format json | python3 -c '
+          import json
+          import sys
+          from pathlib import Path
+
+          config = json.load(sys.stdin)
+          assert set(config["services"]) == {"app"}
+          service = config["services"]["app"]
+          assert Path(service["build"]["context"]).resolve() == Path(".").resolve()
+          assert service["build"]["dockerfile"] == "Dockerfile"
+          assert service["environment"] == {
+              "DATASET_DIR": "/data",
+              "OSA_ENVIRONMENT": "development",
+              "OSA_VERSION": "local",
+          }
+          assert service["ports"][0]["target"] == 8000
+          assert str(service["ports"][0]["published"]) == "8000"
+          assert service["volumes"][0]["type"] == "volume"
+          assert service["volumes"][0]["source"] == "osa-data"
+          assert service["volumes"][0]["target"] == "/data"
+          assert "/health/ready" in " ".join(service["healthcheck"]["test"])
+          assert service["healthcheck"]["interval"]
+          assert service["healthcheck"]["timeout"]
+          assert service["healthcheck"]["start_period"]
+          assert service["healthcheck"]["retries"] > 0
+          assert set(config["volumes"]) == {"osa-data"}
+          '
+          OSA_ENVIRONMENT=production OSA_VERSION=ci-version OSA_PORT=18080 DATASET_DIR=/custom-data \
+            docker compose -f docker-compose.yaml config --format json | python3 -c '
+          import json
+          import sys
+
+          config = json.load(sys.stdin)
+          service = config["services"]["app"]
+          assert service["environment"]["OSA_ENVIRONMENT"] == "production"
+          assert service["environment"]["OSA_VERSION"] == "ci-version"
+          assert service["environment"]["DATASET_DIR"] == "/custom-data"
+          assert str(service["ports"][0]["published"]) == "18080"
+          assert service["volumes"][0]["target"] == "/custom-data"
+          '
       - name: Build image
         run: |
           version="$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
