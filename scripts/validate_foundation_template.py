@@ -376,34 +376,34 @@ def role_body(role_name: str) -> str:
 
 def policy_statements(role_name: str) -> dict[str, str]:
     role = role_body(role_name)
-    policy = re.search(r"(?ms)^      Policies:\\n(?P<body>.*?)(?=^      Tags:|\\Z)", role)
+    policy = re.search(r"(?ms)^      Policies:\n(?P<body>.*?)(?=^      Tags:|\Z)", role)
     if policy is None:
         return {}
     return dict(
         re.findall(
-            r"(?ms)^              - Sid: ([A-Za-z0-9]+)\\n(?P<body>.*?)(?=^              - Sid:|\\Z)",
+            r"(?ms)^              - Sid: ([A-Za-z0-9]+)\n(?P<body>.*?)(?=^              - Sid:|\Z)",
             policy.group("body"),
         )
     )
 
 
 def statement_actions(statement: str) -> set[str]:
-    action = re.search(r"(?m)^\\s+Action: (.+)$", statement)
+    action = re.search(r"(?m)^\s+Action: (.+)$", statement)
     if action is not None:
         return {action.group(1)}
-    action_list = re.search(r"(?ms)^\\s+Action:\\n(?P<body>(?:^\\s+- .+\\n?)+)", statement)
+    action_list = re.search(r"(?ms)^\s+Action:\n(?P<body>(?:^\s+- .+\n?)+)", statement)
     if action_list is None:
         return set()
-    return {re.sub(r"^\\s+- ", "", item) for item in action_list.group("body").splitlines() if item.strip()}
+    return {re.sub(r"^\s+- ", "", item) for item in action_list.group("body").splitlines() if item.strip()}
 
 
 def exact_trust(role_name: str, principal: str, subject: str | None = None) -> None:
     body = role_body(role_name)
     require(
-        f"Principal:\\n              Service: {principal}" in body
+        f"Principal:\n              Service: {principal}" in body
         if subject is None
         else (
-            "Principal:\\n              Federated: !Ref GitHubOidcProvider" in body
+            "Principal:\n              Federated: !Ref GitHubOidcProvider" in body
             and f"token.actions.githubusercontent.com:aud: sts.amazonaws.com" in body
             and f"token.actions.githubusercontent.com:sub: !Sub \"{subject}\"" in body
             and "StringLike:" not in body
@@ -553,7 +553,7 @@ ec2_role_body = role_body("Ec2InstanceRole")
 ec2_statements = policy_statements("Ec2InstanceRole")
 require(
     "Service: ec2.amazonaws.com" in ec2_role_body
-    and "arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore" in ec2_role_body
+    and f"arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore" in ec2_role_body
     and set(ec2_statements) == {"EcrAuthorizationToken", "PullImagesFromFoundationRepository"}
     and "Resource: !GetAtt Repository.Arn" in ec2_statements.get("PullImagesFromFoundationRepository", "")
     and "cloudformation:" not in ec2_role_body
@@ -581,7 +581,7 @@ for role_name, (resource_type, _) in resources.items():
     if resource_type != "AWS::IAM::Role":
         continue
     for statement_id, statement in policy_statements(role_name).items():
-        if re.search(r'(?m)^\\s+Resource: "\*"
+        if re.search(r'(?m)^\s+Resource: "\*"
 
 require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
         "README must not defer the implemented lifecycle and force-empty behavior")
@@ -601,7 +601,7 @@ for output_name, role_name in (
     ("Ec2InstanceRoleArn", "Ec2InstanceRole"),
 ):
     output = re.search(
-        rf"(?ms)^  {output_name}:\\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\\n|\\Z)",
+        rf"(?ms)^  {output_name}:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
         outputs_section.group("body"),
     )
     require(
