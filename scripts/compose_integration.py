@@ -304,6 +304,33 @@ def dataset_state(compose: list[str]) -> list[dict[str, str | int | bool]]:
     )
 
 
+def dataset_state_delta(
+    before: list[dict[str, str | int | bool]], after: list[dict[str, str | int | bool]]
+) -> str:
+    """Summarize artifact changes by count only, without disclosing paths or contents."""
+    before_by_path = {str(entry["path"]): entry for entry in before}
+    after_by_path = {str(entry["path"]): entry for entry in after}
+    before_paths = set(before_by_path)
+    after_paths = set(after_by_path)
+    added = [after_by_path[path] for path in after_paths - before_paths]
+    removed = [before_by_path[path] for path in before_paths - after_paths]
+    changed = [
+        (before_by_path[path], after_by_path[path])
+        for path in before_paths & after_paths
+        if before_by_path[path] != after_by_path[path]
+    ]
+    changed_files = sum(not before_entry["directory"] for before_entry, _ in changed)
+    changed_directories = len(changed) - changed_files
+    return (
+        f"added_files={sum(not entry['directory'] for entry in added)}, "
+        f"removed_files={sum(not entry['directory'] for entry in removed)}, "
+        f"changed_files={changed_files}, "
+        f"added_directories={sum(bool(entry['directory']) for entry in added)}, "
+        f"removed_directories={sum(bool(entry['directory']) for entry in removed)}, "
+        f"changed_directories={changed_directories}"
+    )
+
+
 def dataset_file_count(compose: list[str]) -> int:
     try:
         return sum(
@@ -557,7 +584,8 @@ def run_self_hosted(base_url: str, compose: list[str]) -> None:
     check(
         artifacts_after_invalid == artifacts_before_invalid,
         "IT-05",
-        "invalid upload changed dataset artifacts or left a temporary upload",
+        "invalid upload changed dataset artifacts or left a temporary upload; "
+        f"artifact delta: {dataset_state_delta(artifacts_before_invalid, artifacts_after_invalid)}",
     )
     mark("IT-05", "invalid CSV was rejected without creating a dataset")
 
