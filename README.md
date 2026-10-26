@@ -7,7 +7,7 @@ gross sales, orders, units, average order value, a sales trend and the top produ
 Gross sales is quantity times unit price, summed over the lines in the chosen period. It has no refunds, discounts,
 taxes or shipping in it.
 
-Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configuration) | [Demo walkthrough](#demo-walkthrough) |
+Contents: [Run it with Docker](#run-it-with-docker) | [Local production-mode startup](#local-production-mode-startup-and-troubleshooting) | [Configuration](#configuration) | [Demo walkthrough](#demo-walkthrough) |
 [Explore the results](#6-explore-the-results) |
 [Product analytics](#product-analytics) | [Customer analytics](#customer-analytics) | [Comparisons](#comparisons) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
@@ -54,6 +54,63 @@ Pass a setting with `-e`, using a variable from the [table below](#configuration
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
+
+
+## Local production-mode startup and troubleshooting
+
+This procedure runs the production application image locally with production runtime settings. It binds only to your own
+machine; it does not configure authentication, HTTPS ingress, or the other controls needed for a hardened public
+deployment. Credentials are not required. Use the bundled sample or synthetic data, not real customer data.
+
+From the repository root, build and start the app with a readable version derived from the checked-out commit:
+
+```sh
+export OSA_ENVIRONMENT=production
+export OSA_VERSION="local-production-$(git rev-parse --short HEAD)"
+export OSA_PORT=127.0.0.1:8000
+
+docker compose -f docker-compose.yaml config --quiet
+docker compose -f docker-compose.yaml up --build --detach
+```
+
+The base Compose file builds the pinned Dockerfile and binds the app to `127.0.0.1:8000`. To use another available
+loopback port, set `OSA_PORT` to `127.0.0.1:18000` (or another port) before running the commands. Do not change the
+address to `0.0.0.0` for this local procedure.
+
+Check readiness and verify the configured environment and version:
+
+```sh
+curl --fail --silent --show-error http://127.0.0.1:8000/health/ready |
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == "local-production-$(git rev-parse --short HEAD)"'
+curl --fail --silent --show-error http://127.0.0.1:8000/ -o /dev/null
+```
+
+Open <http://127.0.0.1:8000>. Readiness returns only service status, environment, and version; it does not expose host paths,
+credentials, or secrets.
+
+Compose stores uploaded datasets in the named `osa-data` volume. `docker compose down` stops and removes the app
+container while preserving that volume and its datasets. To delete the container, project resources, volume, and stored
+datasets, run:
+
+```sh
+docker compose -f docker-compose.yaml down --volumes --remove-orphans
+```
+
+### Troubleshooting
+
+- **Image build fails:** Run `timeout 10m docker compose -f docker-compose.yaml build --progress=plain app`. Resolve
+  the first Dockerfile/build error, then repeat the startup commands.
+- **Port is already in use:** Choose another available loopback port, such as `OSA_PORT=127.0.0.1:18000`, and rerun
+  the Compose commands. Keep the address on `127.0.0.1`.
+- **Readiness stays unhealthy:** Check `docker compose -f docker-compose.yaml ps --all`, then inspect the bounded app
+  diagnostics with `docker compose -f docker-compose.yaml logs --no-color --tail=100 app`. Fix the reported startup
+  or storage problem, then restart with `docker compose -f docker-compose.yaml up --build --detach`.
+- **Runtime configuration is invalid:** Confirm `OSA_ENVIRONMENT` is exactly `development` or `production`, and
+  `OSA_VERSION` is non-empty. `docker compose ... logs --no-color --tail=100 app` reports the variable that prevented
+  startup; correct that value and recreate the app with `docker compose -f docker-compose.yaml up --build --force-recreate --detach`.
+
+To stop the app but keep its data, use `docker compose -f docker-compose.yaml down`. To remove its volume and datasets,
+use the `down --volumes --remove-orphans` command above.
 
 ## Demo walkthrough
 
