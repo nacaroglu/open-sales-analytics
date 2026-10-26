@@ -354,6 +354,95 @@ def verify_module(base_url: str, path: str, token: str, module: str) -> None:
         )
 
 
+def run_telemetry_identity(compose: list[str], sink_dir: Path) -> None:
+    compose_run(
+        compose,
+        "exec",
+        "-T",
+        "app",
+        "env",
+        "PYTHONPATH=/app/backend",
+        "OSA_ENVIRONMENT=development",
+        "OSA_VERSION=integration-test",
+        "python",
+        "-m",
+        "app.telemetry_test_signal",
+    )
+
+    expected = {
+        "service.name": "open-sales-analytics",
+        "service.namespace": "osa",
+        "deployment.environment.name": "development",
+        "service.version": "integration-test",
+    }
+    signal_shapes = {
+        "traces": ("resourceSpans", "scopeSpans", "spans"),
+        "metrics": ("resourceMetrics", "scopeMetrics", "metrics"),
+        "logs": ("resourceLogs", "scopeLogs", "logRecords"),
+    }
+    sink_file = sink_dir / "osa-telemetry.json"
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            records = [
+                json.loads(line) for line in sink_file.read_text().splitlines() if line.strip()
+            ]
+        except (OSError, json.JSONDecodeError):
+            time.sleep(0.5)
+            continue
+
+        signals_ready = True
+        for signal, (resource_key, scope_key, data_key) in signal_shapes.items():
+            resource_signals = [
+                resource_signal
+                for record in records
+                for resource_signal in record.get(resource_key, [])
+            ]
+            if not resource_signals:
+                signals_ready = False
+                break
+            for resource_signal in resource_signals:
+                attributes = {
+                    item["key"]: item["value"].get("stringValue")
+                    for item in resource_signal.get("resource", {}).get("attributes", [])
+                }
+                check(attributes == expected, "IT-08", f"{signal} resource identity did not match")
+                signal_records = [
+                    item
+                    for scope in resource_signal.get(scope_key, [])
+                    for item in scope.get(data_key, [])
+                ]
+                if signal == "logs":
+                    emitted = any(
+                        item.get("eventName") == "osa.synthetic.resource_identity"
+                        and item.get("body", {}).get("stringValue")
+                        == "osa.synthetic.resource_identity"
+                        for item in signal_records
+                    )
+                else:
+                    emitted = any(
+                        item.get("name") == "osa.synthetic.resource_identity"
+                        for item in signal_records
+                    )
+                if not emitted:
+                    signals_ready = False
+                    break
+            if not signals_ready:
+                break
+        if signals_ready:
+            mark(
+                "IT-08",
+                "synthetic trace, metric, and log carried all four configured resource attributes",
+            )
+            return
+        time.sleep(0.5)
+
+    raise IntegrationFailure(
+        "IT-08: test Collector did not capture the synthetic trace, metric, and log "
+        "with the expected resource attributes"
+    )
+
+
 def frontend_and_sample(base_url: str) -> dict:
     status, headers, body = http(base_url, "GET", "/")
     check(status == 200, "IT-02", f"frontend HTML returned HTTP {status}")
@@ -564,6 +653,7 @@ def run_project(*, public_demo: bool) -> None:
             if public_demo:
                 run_public_demo(base_url)
             else:
+                run_telemetry_identity(compose, Path(sink_dir))
                 run_self_hosted(base_url, compose)
         except (subprocess.CalledProcessError, IntegrationFailure) as exc:
             print(f"Compose integration failed: {exc}", file=sys.stderr, flush=True)
@@ -619,7 +709,7 @@ def main() -> int:
     except (IntegrationFailure, subprocess.CalledProcessError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-    print("Compose integration cases IT-01 through IT-07 passed.")
+    print("Compose integration cases IT-01 through IT-08 passed.")
     return 0
 
 

@@ -99,7 +99,7 @@ jobs:
     uses: ./.github/workflows/dependency-scan.yml
 
   compose-integration:
-    name: Compose integration (IT-01 through IT-07)
+    name: Compose integration (IT-01 through IT-08)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

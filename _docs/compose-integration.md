@@ -19,6 +19,11 @@ output directory. Both projects are stopped with `down --volumes`; the runner ve
 containers and named volumes are gone, then removes their local output directories, including on an
 ordinary test failure.
 
-IT-08 resource-identity assertions are coupled to the application's instrumentation contract in
-[#253](https://github.com/nacaroglu/open-sales-analytics/issues/253). The test Collector used by the
-suite is defined in [#230](https://github.com/nacaroglu/open-sales-analytics/issues/230).
+IT-08 invokes the private `app.telemetry_test_signal` command inside the running app container. It
+sets `PYTHONPATH=/app/backend`, `OSA_ENVIRONMENT=development`, and `OSA_VERSION=integration-test`,
+then waits up to 30 seconds for the test Collector file sink. The harness checks that synthetic trace,
+metric, and log records each carry `service.name=open-sales-analytics`, `service.namespace=osa`,
+`deployment.environment.name=development`, and `service.version=integration-test`. It reports only a
+PASS/FAIL line and never prints the sink contents. The application identity and synthetic signal are
+provided by [#253](https://github.com/nacaroglu/open-sales-analytics/issues/253); the local Collector
+is defined by [#230](https://github.com/nacaroglu/open-sales-analytics/issues/230).
