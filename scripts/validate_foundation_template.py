@@ -351,6 +351,298 @@ for url in (
 ):
     require(url in readme, f"README must cite the applicable AWS source: {url}")
 
+
+# Phase 4B role separation contracts.
+required_roles = {
+    "BuildRole",
+    "FoundationExecutionRole",
+    "DevDeployRole",
+    "ProductionPromotionRole",
+    "DevApplicationExecutionRole",
+    "ProdApplicationExecutionRole",
+    "ObservabilityExecutionRole",
+    "Ec2InstanceRole",
+}
+for role_name in required_roles:
+    require(
+        role_name in resources and resources[role_name][0] == "AWS::IAM::Role",
+        f"{role_name} must remain an IAM role resource",
+    )
+
+
+def role_body(role_name: str) -> str:
+    return resources[role_name][1]
+
+
+def policy_statements(role_name: str) -> dict[str, str]:
+    role = role_body(role_name)
+    policy = re.search(r"(?ms)^      Policies:\\n(?P<body>.*?)(?=^      Tags:|\\Z)", role)
+    if policy is None:
+        return {}
+    return dict(
+        re.findall(
+            r"(?ms)^              - Sid: ([A-Za-z0-9]+)\\n(?P<body>.*?)(?=^              - Sid:|\\Z)",
+            policy.group("body"),
+        )
+    )
+
+
+def statement_actions(statement: str) -> set[str]:
+    action = re.search(r"(?m)^\\s+Action: (.+)$", statement)
+    if action is not None:
+        return {action.group(1)}
+    action_list = re.search(r"(?ms)^\\s+Action:\\n(?P<body>(?:^\\s+- .+\\n?)+)", statement)
+    if action_list is None:
+        return set()
+    return {re.sub(r"^\\s+- ", "", item) for item in action_list.group("body").splitlines() if item.strip()}
+
+
+def exact_trust(role_name: str, principal: str, subject: str | None = None) -> None:
+    body = role_body(role_name)
+    require(
+        f"Principal:\\n              Service: {principal}" in body
+        if subject is None
+        else (
+            "Principal:\\n              Federated: !Ref GitHubOidcProvider" in body
+            and f"token.actions.githubusercontent.com:aud: sts.amazonaws.com" in body
+            and f"token.actions.githubusercontent.com:sub: !Sub \"{subject}\"" in body
+            and "StringLike:" not in body
+        ),
+        f"{role_name} trust must be limited to {principal if subject is None else subject}",
+    )
+
+
+dollar = chr(36)
+branch_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref:refs/heads/{dollar}{{GitHubMainBranch}}"
+production_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"
+exact_trust("BuildRole", "github", branch_subject)
+exact_trust("DevDeployRole", "github", branch_subject)
+exact_trust("ProductionPromotionRole", "github", production_subject)
+for role_name in (
+    "FoundationExecutionRole",
+    "DevApplicationExecutionRole",
+    "ProdApplicationExecutionRole",
+    "ObservabilityExecutionRole",
+):
+    exact_trust(role_name, "cloudformation.amazonaws.com")
+exact_trust("Ec2InstanceRole", "ec2.amazonaws.com")
+
+build_statements = policy_statements("BuildRole")
+require(
+    set(build_statements) == {"EcrAuthorizationToken", "PushImagesToFoundationRepository"}
+    and statement_actions(build_statements["EcrAuthorizationToken"]) == {"ecr:GetAuthorizationToken"}
+    and statement_actions(build_statements["PushImagesToFoundationRepository"])
+    == {
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+    }
+    and "Resource: !GetAtt Repository.Arn" in build_statements["PushImagesToFoundationRepository"]
+    and "cloudformation:" not in role_body("BuildRole")
+    and "iam:PassRole" not in role_body("BuildRole"),
+    "BuildRole must be limited to repository pushes with no deployment or PassRole permissions",
+)
+
+for deploy_role, stack_name, exec_role, prefix in (
+    ("DevDeployRole", "osa-dev", "DevApplicationExecutionRole", "OsaDev"),
+    ("ProductionPromotionRole", "osa-prod", "ProdApplicationExecutionRole", "OsaProd"),
+):
+    statements = policy_statements(deploy_role)
+    manage = statements.get(f"Manage{prefix}Stack", "")
+    read = statements.get(f"Read{prefix}Stack", "")
+    passed = statements.get(f"PassOnly{prefix}ExecutionRole", "")
+    expected_stack_arn = (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:cloudformation:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:stack/{stack_name}/*"'
+    )
+    require(
+        statement_actions(manage)
+        == {"cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"}
+        and expected_stack_arn in manage
+        and f"cloudformation:RoleArn: !GetAtt {exec_role}.Arn" in manage,
+        f"{deploy_role} must mutate only {stack_name} when using its one execution role",
+    )
+    require(
+        statement_actions(read)
+        == {
+            "cloudformation:DescribeStackEvents",
+            "cloudformation:DescribeStackResources",
+            "cloudformation:DescribeStacks",
+            "cloudformation:GetTemplate",
+        }
+        and expected_stack_arn in read
+        and "Resource: \"*\"" not in read,
+        f"{deploy_role} read permissions must stay limited to {stack_name}",
+    )
+    require(
+        statement_actions(passed) == {"iam:PassRole"}
+        and f"Resource: !GetAtt {exec_role}.Arn" in passed
+        and "iam:PassedToService: cloudformation.amazonaws.com" in passed
+        and sum("iam:PassRole" in item for item in statements.values()) == 1,
+        f"{deploy_role} may pass only {exec_role} to CloudFormation",
+    )
+    require(
+        not any("Resource: \"*\"" in item for item in statements.values()),
+        f"{deploy_role} must not have wildcard-resource permissions",
+    )
+
+environment_roles = (
+    ("DevApplicationExecutionRole", "osa-dev", "OsaDev"),
+    ("ProdApplicationExecutionRole", "osa-prod", "OsaProd"),
+    ("ObservabilityExecutionRole", "osa-observability", "OsaObservability"),
+)
+for role_name, environment, sid_prefix in environment_roles:
+    statements = policy_statements(role_name)
+    require(
+        f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"RunTagged{sid_prefix}Instances", "")
+        and "ArnEqualsIfExists:" in statements.get(f"RunTagged{sid_prefix}Instances", "")
+        and f"vpc/{dollar}{{Vpc}}" in statements.get(f"RunTagged{sid_prefix}Instances", ""),
+        f"{role_name} instance creation must require its environment tag and foundation VPC",
+    )
+    require(
+        f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Instances", ""),
+        f"{role_name} instance management must require its environment resource tag",
+    )
+    require(
+        f"vpc/{dollar}{{Vpc}}" in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", "")
+        and f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", ""),
+        f"{role_name} security groups must be created only in the foundation VPC with the environment tag",
+    )
+    require(
+        f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}SecurityGroups", ""),
+        f"{role_name} security-group changes must require its environment resource tag",
+    )
+    require(
+        f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"AllocateTagged{sid_prefix}Addresses", "")
+        and f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Addresses", ""),
+        f"{role_name} address operations must be environment tagged",
+    )
+    require(
+        f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod' if environment == 'osa-prod' else 'observability'}/*"
+        in statements.get(f"ReadOsa{'Dev' if environment == 'osa-dev' else 'Prod' if environment == 'osa-prod' else 'Observability'}Parameters", ""),
+        f"{role_name} parameter reads must stay in their environment path",
+    )
+    require(
+        "iam:PassRole" in role_body(role_name)
+        and "Resource: !GetAtt Ec2InstanceRole.Arn" in role_body(role_name)
+        and "iam:PassedToService: ec2.amazonaws.com" in role_body(role_name)
+        and role_body(role_name).count("iam:PassRole") == 1,
+        f"{role_name} may pass only Ec2InstanceRole to EC2",
+    )
+    require(
+        not any(other in role_body(role_name) for other in {"osa-prod", "osa-dev", "osa-observability"} - {environment}),
+        f"{role_name} must not include another environment's resource scope",
+    )
+    tag_statement = statements.get(f"Manage{sid_prefix}Tags", "")
+    require(
+        "ForAllValues:StringEquals:" in tag_statement
+        and "- OSAStack" not in tag_statement,
+        f"{role_name} must not be able to change or remove its OSAStack boundary tag",
+    )
+
+obs_statements = policy_statements("ObservabilityExecutionRole")
+require(
+    "aws:RequestTag/OSAStack: osa-observability" in obs_statements.get("CreateTaggedOsaObservabilityVolumes", "")
+    and "ec2:ResourceTag/OSAStack: osa-observability" in obs_statements.get("ManageTaggedOsaObservabilityVolumes", ""),
+    "observability EBS volume operations must stay tagged to osa-observability",
+)
+
+ec2_role_body = role_body("Ec2InstanceRole")
+ec2_statements = policy_statements("Ec2InstanceRole")
+require(
+    "Service: ec2.amazonaws.com" in ec2_role_body
+    and "arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore" in ec2_role_body
+    and set(ec2_statements) == {"EcrAuthorizationToken", "PullImagesFromFoundationRepository"}
+    and "Resource: !GetAtt Repository.Arn" in ec2_statements.get("PullImagesFromFoundationRepository", "")
+    and "cloudformation:" not in ec2_role_body
+    and "iam:PassRole" not in ec2_role_body,
+    "Ec2InstanceRole must trust only EC2, attach the SSM core policy, and pull only from Repository",
+)
+
+expected_wildcards = {
+    ("BuildRole", "EcrAuthorizationToken"),
+    ("FoundationExecutionRole", "DescribeVpcState"),
+    ("FoundationExecutionRole", "ListFoundationProviders"),
+    ("DevApplicationExecutionRole", "DescribeEc2State"),
+    ("DevApplicationExecutionRole", "RunTaggedOsaDevInstances"),
+    ("DevApplicationExecutionRole", "CreateTagsForOsaDevInstances"),
+    ("ProdApplicationExecutionRole", "DescribeEc2State"),
+    ("ProdApplicationExecutionRole", "RunTaggedOsaProdInstances"),
+    ("ProdApplicationExecutionRole", "CreateTagsForOsaProdInstances"),
+    ("ObservabilityExecutionRole", "DescribeEc2State"),
+    ("ObservabilityExecutionRole", "RunTaggedOsaObservabilityInstances"),
+    ("ObservabilityExecutionRole", "CreateTagsForOsaObservabilityInstances"),
+    ("Ec2InstanceRole", "EcrAuthorizationToken"),
+}
+actual_wildcards: set[tuple[str, str]] = set()
+for role_name, (resource_type, _) in resources.items():
+    if resource_type != "AWS::IAM::Role":
+        continue
+    for statement_id, statement in policy_statements(role_name).items():
+        if re.search(r'(?m)^\\s+Resource: "\*"
+
+require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
+        "README must not defer the implemented lifecycle and force-empty behavior")
+, statement) is not None:
+            actual_wildcards.add((role_name, statement_id))
+require(
+    actual_wildcards == expected_wildcards,
+    f"wildcard resources must match only documented exceptions; found {sorted(actual_wildcards)}",
+)
+
+for output_name, role_name in (
+    ("DevDeployRoleArn", "DevDeployRole"),
+    ("ProductionPromotionRoleArn", "ProductionPromotionRole"),
+    ("DevApplicationExecutionRoleArn", "DevApplicationExecutionRole"),
+    ("ProdApplicationExecutionRoleArn", "ProdApplicationExecutionRole"),
+    ("ObservabilityExecutionRoleArn", "ObservabilityExecutionRole"),
+    ("Ec2InstanceRoleArn", "Ec2InstanceRole"),
+):
+    output = re.search(
+        rf"(?ms)^  {output_name}:\\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\\n|\\Z)",
+        outputs_section.group("body"),
+    )
+    require(
+        output is not None
+        and f"Value: !GetAtt {role_name}.Arn" in output.group("body")
+        and f'{dollar}{{AWS::StackName}}-{output_name}' in output.group("body"),
+        f"{output_name} must expose a stable stack-qualified export for {role_name}",
+    )
+
+for role_name in (
+    "DevDeployRole",
+    "ProductionPromotionRole",
+    "DevApplicationExecutionRole",
+    "ProdApplicationExecutionRole",
+    "ObservabilityExecutionRole",
+    "Ec2InstanceRole",
+):
+    require(role_name in doc, f"README must document the purpose of {role_name}")
+for phrase in (
+    "environment:production",
+    "stack osa-dev",
+    "stack osa-prod",
+    "cloudformation.amazonaws.com",
+    "ec2.amazonaws.com",
+    "amazonsmmanagedinstancecore",
+    "resource: * exceptions are limited",
+    "exact environment osastack request tag",
+    "only for that role to cloudformation.amazonaws.com",
+    "may pass only prodapplicationexecutionrole",
+    "may pass only devapplicationexecutionrole",
+):
+    require(phrase in doc, f"README must document the IAM contract: {phrase}")
+require("sts.amazonaws.com" in doc, "README must document the OIDC audience")
+for url in (
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html",
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/control-access-with-iam.html",
+    "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html",
+    "https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-instance-permissions.html",
+):
+    require(url in readme, f"README must cite IAM guidance: {url}")
+
 print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
 
 require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
