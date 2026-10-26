@@ -9,7 +9,7 @@ muestra las ventas brutas, los pedidos, las unidades, el valor medio del pedido,
 productos principales, con un intervalo de fechas modificable. Las ventas brutas son la suma de cantidad por precio
 unitario de las líneas del periodo elegido. No incluyen devoluciones, descuentos, impuestos ni envíos.
 
-Contenido: [Ejecutar con Docker](#ejecutar-con-docker) | [Configuración](#configuración) |
+Contenido: [Ejecutar con Docker](#ejecutar-con-docker) | [Inicio local en modo de producción](#inicio-local-en-modo-de-producción-y-solución-de-problemas) | [Configuración](#configuración) |
 [Recorrido de demostración](#recorrido-de-demostración) | [Explorar los resultados](#6-explorar-los-resultados) |
 [Análisis de productos](#análisis-de-productos) | [Análisis de clientes](#análisis-de-clientes) |
 [Comparaciones](#comparaciones) | [Contrato del conjunto de datos](#contrato-del-conjunto-de-datos) |
@@ -60,6 +60,49 @@ Pase un ajuste con `-e` usando una variable de la [tabla siguiente](#configuraci
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
+
+
+## Inicio local en modo de producción y solución de problemas
+
+Este procedimiento ejecuta localmente la imagen de la aplicación con ajustes de producción. Solo se enlaza a tu propio equipo; no configura autenticación, entrada HTTPS ni otras protecciones necesarias para una publicación pública endurecida. No se necesitan credenciales. Usa los datos de ejemplo incluidos o datos sintéticos, nunca datos reales de clientes.
+
+Desde la raíz del repositorio, construye e inicia la aplicación con los siguientes comandos. La versión legible se obtiene del commit seleccionado.
+
+```sh
+export OSA_ENVIRONMENT=production
+export OSA_VERSION="local-production-$(git rev-parse --short HEAD)"
+export OSA_PORT=127.0.0.1:8000
+
+docker compose -f docker-compose.yaml config --quiet
+docker compose -f docker-compose.yaml up --build --detach
+```
+
+El Compose base construye la aplicación con el Dockerfile del repositorio. Las imágenes base de Node y Python están fijadas por digest; la aplicación se enlaza a `127.0.0.1:8000` solo en tu equipo. Para usar otro puerto libre, cambia `OSA_PORT` por `127.0.0.1:18000` u otro puerto loopback y vuelve a ejecutar los comandos. No cambies la dirección a `0.0.0.0` en este procedimiento local.
+
+Comprueba que la aplicación está lista y que la respuesta incluye el entorno de producción y la versión configurados.
+
+```sh
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/health/ready |
+  python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == os.environ["OSA_VERSION"]'
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/ -o /dev/null
+```
+
+Abre <http://127.0.0.1:8000> en el navegador. La respuesta de disponibilidad solo muestra el estado del servicio, el entorno y la versión; no revela rutas del host, credenciales ni secretos.
+
+Compose guarda los conjuntos de datos cargados en el volumen con nombre `osa-data`. `docker compose down` detiene y elimina el contenedor de la aplicación, pero conserva el volumen y los conjuntos de datos. Para borrar el contenedor, los recursos del proyecto, el volumen y los datos almacenados, ejecuta:
+
+```sh
+docker compose -f docker-compose.yaml down --volumes --remove-orphans
+```
+
+### Solución de problemas
+
+- **Falla la construcción de la imagen:** Ejecuta la construcción con salida detallada y un límite de 10 minutos: `python3 -c 'import subprocess; subprocess.run(["docker", "compose", "-f", "docker-compose.yaml", "build", "--progress=plain", "app"], check=True, timeout=600)'`. Corrige el primer error de Dockerfile/construcción y repite los comandos de inicio.
+- **El puerto ya está ocupado:** Elige otro puerto loopback libre, como `OSA_PORT=127.0.0.1:18000`, y vuelve a ejecutar los comandos Compose. Mantén la dirección `127.0.0.1`.
+- **La disponibilidad sigue en unhealthy:** Comprueba la salida de `docker compose -f docker-compose.yaml ps --all` y después los últimos registros de la aplicación con `docker compose -f docker-compose.yaml logs --no-color --tail=100 app`. Resuelve el problema de inicio o almacenamiento indicado y reinicia con `docker compose -f docker-compose.yaml up --build --detach`.
+- **La configuración de ejecución no es válida:** Comprueba que `OSA_ENVIRONMENT` sea exactamente `development` o `production` y que `OSA_VERSION` no esté vacío. `docker compose -f docker-compose.yaml logs --no-color --tail=100 app` indica la variable que impidió el inicio; corrígela y recrea la aplicación con `docker compose -f docker-compose.yaml up --build --force-recreate --detach`.
+
+Para detener la aplicación y conservar los datos, usa `docker compose -f docker-compose.yaml down`. Para eliminar el volumen y los conjuntos de datos, ejecuta el comando `down --volumes --remove-orphans` anterior.
 
 ## Recorrido de demostración
 
