@@ -81,7 +81,7 @@ Check readiness and verify the configured environment and version:
 
 ```sh
 curl --fail --silent --show-error http://127.0.0.1:8000/health/ready |
-  python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == "local-production-$(git rev-parse --short HEAD)"'
+  python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == os.environ["OSA_VERSION"]'
 curl --fail --silent --show-error http://127.0.0.1:8000/ -o /dev/null
 ```
 
@@ -106,7 +106,7 @@ docker compose -f docker-compose.yaml down --volumes --remove-orphans
   diagnostics with `docker compose -f docker-compose.yaml logs --no-color --tail=100 app`. Fix the reported startup
   or storage problem, then restart with `docker compose -f docker-compose.yaml up --build --detach`.
 - **Runtime configuration is invalid:** Confirm `OSA_ENVIRONMENT` is exactly `development` or `production`, and
-  `OSA_VERSION` is non-empty. `docker compose ... logs --no-color --tail=100 app` reports the variable that prevented
+  `OSA_VERSION` is non-empty. `docker compose -f docker-compose.yaml logs --no-color --tail=100 app` reports the variable that prevented
   startup; correct that value and recreate the app with `docker compose -f docker-compose.yaml up --build --force-recreate --detach`.
 
 To stop the app but keep its data, use `docker compose -f docker-compose.yaml down`. To remove its volume and datasets,
