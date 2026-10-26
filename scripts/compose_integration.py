@@ -652,10 +652,22 @@ def dataset_state_for_demo() -> list[dict[str, str | int | bool]]:
 
 def run_project(*, public_demo: bool) -> None:
     global ACTIVE_COMPOSE, ACTIVE_ENV
-    project = f"osa-it-{'demo' if public_demo else 'selfhost'}-{uuid.uuid4().hex[:8]}"
+    prefix = os.environ.get("OSA_COMPOSE_TEST_PREFIX", "osa-it")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,47}", prefix):
+        raise IntegrationFailure("OSA_COMPOSE_TEST_PREFIX must contain only safe Compose project characters")
+    run_id = os.environ.get("OSA_COMPOSE_TEST_RUN_ID")
+    if run_id:
+        if not re.fullmatch(r"[0-9a-f]{8}", run_id) or not prefix.endswith(f"-integration-{run_id}"):
+            raise IntegrationFailure("OSA_COMPOSE_TEST_RUN_ID must match the scoped integration project prefix")
+        project = f"{prefix}-{'demo' if public_demo else 'selfhost'}"
+    else:
+        project = f"{prefix}-{'demo' if public_demo else 'selfhost'}-{uuid.uuid4().hex[:8]}"
     port = free_port()
     base_url = f"http://127.0.0.1:{port}"
-    with tempfile.TemporaryDirectory(prefix="osa-it-sink-") as sink_dir:
+    temp_root = os.environ.get("OSA_COMPOSE_TEST_TEMP_ROOT")
+    if temp_root:
+        Path(temp_root).mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"{prefix}-sink-", dir=temp_root) as sink_dir:
         os.chmod(sink_dir, 0o777)
         compose = compose_command(project)
         ACTIVE_COMPOSE = compose

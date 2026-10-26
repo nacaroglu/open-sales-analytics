@@ -115,7 +115,7 @@ jobs:
             docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml \
             -f docker-compose.test-telemetry.yaml config --quiet
       - name: Run Compose integration cases
-        run: python3 scripts/compose_integration.py
+        run: make integration
 
   telemetry-resource-identity:
     name: Telemetry resource identity (OTLP test Collector)
@@ -755,11 +755,8 @@ jobs:
       - name: Install Chromium system libraries
         run: npx playwright install-deps chromium
         working-directory: frontend
-      - name: Run browser tests against the container
-        run: npm run e2e
-        working-directory: frontend
-        env:
-          E2E_BASE_URL: http://localhost:8000
+      - name: Run browser tests against the Compose app
+        run: make e2e
       # Screenshots only. Traces hold every network response, so with CI set Playwright records none
       # (playwright.config.ts). Nothing from the container's /data directory is ever uploaded.
       - name: Upload failure screenshots
