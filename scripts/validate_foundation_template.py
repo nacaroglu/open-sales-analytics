@@ -631,7 +631,7 @@ for role_name in (
 for phrase in (
     "environment:production",
     "stack osa-dev",
-    "stack osa-prod",
+    "targets only osa-prod",
     "cloudformation.amazonaws.com",
     "ec2.amazonaws.com",
     "amazonsmmanagedinstancecore",
