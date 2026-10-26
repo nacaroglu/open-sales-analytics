@@ -73,14 +73,14 @@ docker compose -f docker-compose.yaml config --quiet
 docker compose -f docker-compose.yaml up --build --detach
 ```
 
-The base Compose file builds the pinned Dockerfile and binds the app to `127.0.0.1:8000`. To use another available
+The base Compose file builds the app from the repository Dockerfile, whose Node and Python base images are pinned by digest, and binds the app to `127.0.0.1:8000`. To use another available
 loopback port, set `OSA_PORT` to `127.0.0.1:18000` (or another port) before running the commands. Do not change the
 address to `0.0.0.0` for this local procedure.
 
 Check readiness and verify the configured environment and version:
 
 ```sh
-curl --fail --silent --show-error http://127.0.0.1:8000/health/ready |
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/health/ready |
   python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == os.environ["OSA_VERSION"]'
 curl --fail --silent --show-error http://127.0.0.1:8000/ -o /dev/null
 ```
@@ -98,8 +98,9 @@ docker compose -f docker-compose.yaml down --volumes --remove-orphans
 
 ### Troubleshooting
 
-- **Image build fails:** Run `timeout 10m docker compose -f docker-compose.yaml build --progress=plain app`. Resolve
-  the first Dockerfile/build error, then repeat the startup commands.
+- **Image build fails:** Run the build with a 10-minute limit and detailed output:
+  `python3 -c 'import subprocess; subprocess.run(["docker", "compose", "-f", "docker-compose.yaml", "build", "--progress=plain", "app"], check=True, timeout=600)'`.
+  Resolve the first Dockerfile/build error, then repeat the startup commands.
 - **Port is already in use:** Choose another available loopback port, such as `OSA_PORT=127.0.0.1:18000`, and rerun
   the Compose commands. Keep the address on `127.0.0.1`.
 - **Readiness stays unhealthy:** Check `docker compose -f docker-compose.yaml ps --all`, then inspect the bounded app
