@@ -358,11 +358,16 @@ Resources:
                   - ec2:CreateInternetGateway
                   - ec2:DeleteInternetGateway
                 Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:internet-gateway/*"
+              - Sid: CreateRouteTableInVpc
+                Effect: Allow
+                Action: ec2:CreateRouteTable
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:route-table/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
               - Sid: ManageRouteTablesAndRoutes
                 Effect: Allow
                 Action:
                   - ec2:CreateRoute
-                  - ec2:CreateRouteTable
                   - ec2:DeleteRoute
                   - ec2:DeleteRouteTable
                 Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:route-table/*"
