@@ -340,6 +340,8 @@ for phrase, message in (
     ("do not manually empty or delete that repository", "README must prohibit manual foundation repository cleanup"),
     ("any foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for all foundation repository deletion"),
     ("force-deletes all remaining images", "README must explain guarded teardown force-empty behavior"),
+    ("foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for foundation repository deletion"),
+    ("do not manually empty the ecr repository or delete the foundation stack as a repository cleanup shortcut", "README must prohibit manual foundation ECR cleanup"),
 ):
     require(phrase in doc, message)
 for url in (
@@ -350,3 +352,6 @@ for url in (
     require(url in readme, f"README must cite the applicable AWS source: {url}")
 
 print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
+
+require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
+        "README must not defer the implemented lifecycle and force-empty behavior")
