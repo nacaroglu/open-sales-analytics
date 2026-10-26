@@ -660,6 +660,348 @@ for url in (
 ):
     require(url in readme, f"README must cite IAM guidance: {url}")
 
+
+# Close the trust and policy contracts: all statements, keys, actions, and resources
+# must match the reviewed policy sets, not just contain required fragments.
+def role_policy_text(role_name: str) -> str:
+    policy = re.search(
+        r"(?ms)^      Policies:\\n(?P<body>.*?)(?=^      Tags:|\\Z)",
+        role_body(role_name),
+    )
+    return "" if policy is None else policy.group("body")
+
+
+def statement_resources(statement: str) -> list[str]:
+    lines = statement.splitlines()
+    resources: list[str] = []
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if not stripped.startswith("Resource:"):
+            continue
+        inline = stripped[len("Resource:"):].strip()
+        if inline:
+            resources.append(inline)
+            continue
+        for candidate in lines[index + 1:]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            value = candidate.strip()
+            if value.startswith("- "):
+                resources.append(value[2:].strip())
+    return resources
+
+
+def statement_conditions(statement: str) -> list[str]:
+    lines = statement.splitlines()
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        if line.strip() != "Condition:":
+            continue
+        conditions: list[str] = []
+        for candidate in lines[index + 1:]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            if candidate.strip():
+                conditions.append(candidate.strip())
+        return conditions
+    return []
+
+
+def assert_exact_policy(
+    role_name: str,
+    expected: dict[str, tuple[set[str], list[str], list[str]]],
+) -> None:
+    policy = role_policy_text(role_name)
+    statements = policy_statements(role_name)
+    statement_count = len(re.findall(r"(?m)^              - ", policy))
+    require(
+        policy.count("PolicyName:") == 1
+        and statement_count == len(statements)
+        and set(statements) == set(expected),
+        f"{role_name} inline policy must contain exactly the reviewed statements",
+    )
+    for sid, (actions, resource_list, conditions) in expected.items():
+        statement = statements[sid]
+        require(
+            statement_actions(statement) == actions
+            and len(re.findall(r"(?m)^\\s+Action:", statement)) == 1,
+            f"{role_name}.{sid} action set must be exact",
+        )
+        require(
+            statement_resources(statement) == resource_list,
+            f"{role_name}.{sid} resource set must be exact",
+        )
+        require(
+            statement_conditions(statement) == conditions,
+            f"{role_name}.{sid} condition keys and values must be exact",
+        )
+
+
+def exact_assume_role_statement(
+    role_name: str,
+    sid: str,
+    principal_lines: list[str],
+    actions: set[str],
+    conditions: list[str],
+) -> None:
+    role = role_body(role_name)
+    assume = re.search(
+        r"(?ms)^      AssumeRolePolicyDocument:\\n(?P<body>.*?)(?=^      (?:ManagedPolicyArns|Policies|Tags):|\\Z)",
+        role,
+    )
+    require(assume is not None, f"{role_name} must have one explicit AssumeRolePolicyDocument")
+    statement_lines = len(re.findall(r"(?m)^          - ", assume.group("body")))
+    parsed = re.findall(
+        r"(?ms)^          - Sid: ([A-Za-z0-9]+)\\n(?P<body>.*?)(?=^          - |\\Z)",
+        assume.group("body"),
+    )
+    require(
+        statement_lines == 1 and len(parsed) == 1 and parsed[0][0] == sid,
+        f"{role_name} must have exactly one {sid} trust statement",
+    )
+    statement = parsed[0][1]
+    principal = re.search(
+        r"(?ms)^            Principal:\\n(?P<body>.*?)(?=^            Action:|^            Condition:|\\Z)",
+        statement,
+    )
+    principal_values = [] if principal is None else [
+        line.strip() for line in principal.group("body").splitlines() if line.strip()
+    ]
+    require(
+        principal_values == principal_lines
+        and statement_actions(statement) == actions
+        and len(re.findall(r"(?m)^\\s+Action:", statement)) == 1
+        and statement_conditions(statement) == conditions
+        and len(re.findall(r"(?m)^\\s+Effect:", statement)) == 1
+        and "Effect: Allow" in statement,
+        f"{role_name}.{sid} principal, action, effect, and conditions must be exact",
+    )
+
+
+ecr_repo_arn = (
+    f'!Sub "arn:{dollar}{{AWS::Partition}}:ecr:{dollar}{{AWS::Region}}:'
+    f'{dollar}{{AWS::AccountId}}:repository/{dollar}{{RepositoryName}}"'
+)
+def ec2_arn(resource: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:ec2:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:{resource}"'
+    )
+
+
+def iam_arn(resource: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::{dollar}{{AWS::AccountId}}:{resource}"'
+    )
+
+
+def cfn_stack_arn(name: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:cloudformation:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:stack/{name}/*"'
+    )
+
+
+def ssm_parameter_arn(path: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:parameter/{path}"'
+    )
+
+
+def equals(*values: str) -> list[str]:
+    return ["StringEquals:", *values]
+
+
+def role_policy_arns(stack_name: str) -> list[str]:
+    return [iam_arn(f"role/{dollar}{{AWS::StackName}}/*")]
+
+
+# An AssumeRole trust policy has exactly one statement and exactly one principal.
+for role_name, sid in (
+    ("BuildRole", "GitHubMainBranchOnly"),
+    ("DevDeployRole", "GitHubMainBranchOnly"),
+):
+    exact_assume_role_statement(
+        role_name,
+        sid,
+        ["Federated: !Ref GitHubOidcProvider"],
+        {"sts:AssumeRoleWithWebIdentity"},
+        equals(
+            "token.actions.githubusercontent.com:aud: sts.amazonaws.com",
+            f"token.actions.githubusercontent.com:sub: !Sub \"{branch_subject}\"",
+        ),
+    )
+exact_assume_role_statement(
+    "ProductionPromotionRole",
+    "ProductionEnvironmentOnly",
+    ["Federated: !Ref GitHubOidcProvider"],
+    {"sts:AssumeRoleWithWebIdentity"},
+    equals(
+        "token.actions.githubusercontent.com:aud: sts.amazonaws.com",
+        f"token.actions.githubusercontent.com:sub: !Sub \"{production_subject}\"",
+    ),
+)
+for role_name, sid, service in (
+    ("FoundationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("DevApplicationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("ProdApplicationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("ObservabilityExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("Ec2InstanceRole", "Ec2ServiceOnly", "ec2.amazonaws.com"),
+):
+    exact_assume_role_statement(
+        role_name,
+        sid,
+        [f"Service: {service}"],
+        {"sts:AssumeRole"},
+        [],
+    )
+
+# Build and foundation roles have complete action/resource contracts, including #236.
+assert_exact_policy(
+    "BuildRole",
+    {
+        "EcrAuthorizationToken": ({"ecr:GetAuthorizationToken"}, ['"*"'], []),
+        "PushImagesToFoundationRepository": (
+            {
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:CompleteLayerUpload",
+                "ecr:InitiateLayerUpload",
+                "ecr:PutImage",
+                "ecr:UploadLayerPart",
+            },
+            ["!GetAtt Repository.Arn"],
+            [],
+        ),
+    },
+)
+assert_exact_policy(
+    "FoundationExecutionRole",
+    {
+        "DescribeVpcState": (
+            {
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeInternetGateways",
+                "ec2:DescribeRouteTables",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeTags",
+                "ec2:DescribeVpcAttribute",
+                "ec2:DescribeVpcs",
+            },
+            ['"*"'],
+            [],
+        ),
+        "ManageVpc": (
+            {"ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute"},
+            [ec2_arn("vpc/*")],
+            [],
+        ),
+        "ManageSubnets": (
+            {"ec2:CreateSubnet", "ec2:DeleteSubnet"},
+            [ec2_arn("subnet/*"), ec2_arn("vpc/*")],
+            [],
+        ),
+        "ManageInternetGateway": (
+            {"ec2:CreateInternetGateway", "ec2:DeleteInternetGateway"},
+            [ec2_arn("internet-gateway/*")],
+            [],
+        ),
+        "CreateRouteTableInVpc": (
+            {"ec2:CreateRouteTable"},
+            [ec2_arn("route-table/*"), ec2_arn("vpc/*")],
+            [],
+        ),
+        "ManageRouteTablesAndRoutes": (
+            {"ec2:CreateRoute", "ec2:DeleteRoute", "ec2:DeleteRouteTable"},
+            [ec2_arn("route-table/*")],
+            [],
+        ),
+        "AttachInternetGateway": (
+            {
+                "ec2:AttachInternetGateway",
+                "ec2:CreateVpcGatewayAttachment",
+                "ec2:DeleteVpcGatewayAttachment",
+                "ec2:DetachInternetGateway",
+            },
+            [ec2_arn("internet-gateway/*"), ec2_arn("vpc/*")],
+            [],
+        ),
+        "AssociateSubnetRouteTables": (
+            {"ec2:AssociateRouteTable", "ec2:DisassociateRouteTable"},
+            [ec2_arn("route-table/*"), ec2_arn("subnet/*")],
+            [],
+        ),
+        "ManageFoundationTags": (
+            {"ec2:CreateTags", "ec2:DeleteTags"},
+            [
+                ec2_arn("vpc/*"),
+                ec2_arn("subnet/*"),
+                ec2_arn("internet-gateway/*"),
+                ec2_arn("route-table/*"),
+            ],
+            [
+                "ForAnyValue:StringEquals:",
+                "aws:TagKeys:",
+                "- Project",
+                "- Name",
+                "- OSAStack",
+            ],
+        ),
+        "ManageRepository": (
+            {
+                "ecr:CreateRepository",
+                "ecr:DeleteLifecyclePolicy",
+                "ecr:DeleteRepository",
+                "ecr:DescribeRepositories",
+                "ecr:GetLifecyclePolicy",
+                "ecr:PutImageScanningConfiguration",
+                "ecr:PutLifecyclePolicy",
+                "ecr:TagResource",
+                "ecr:UntagResource",
+            },
+            [ecr_repo_arn],
+            [],
+        ),
+        "ManageFoundationRoles": (
+            {
+                "iam:AttachRolePolicy",
+                "iam:CreateRole",
+                "iam:DeleteRole",
+                "iam:DeleteRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:GetRole",
+                "iam:PutRolePolicy",
+                "iam:TagRole",
+                "iam:UntagRole",
+                "iam:UpdateAssumeRolePolicy",
+            },
+            role_policy_arns("osa-foundation"),
+            [],
+        ),
+        "ManageGitHubOidcProvider": (
+            {
+                "iam:AddClientIDToOpenIDConnectProvider",
+                "iam:CreateOpenIDConnectProvider",
+                "iam:DeleteOpenIDConnectProvider",
+                "iam:GetOpenIDConnectProvider",
+                "iam:RemoveClientIDFromOpenIDConnectProvider",
+                "iam:TagOpenIDConnectProvider",
+                "iam:UntagOpenIDConnectProvider",
+            },
+            [iam_arn("oidc-provider/token.actions.githubusercontent.com")],
+            [],
+        ),
+        "ListFoundationProviders": (
+            {"iam:ListOpenIDConnectProviders", "iam:ListRoles"},
+            ['"*"'],
+            [],
+        ),
+    },
+)
+
 print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
 
 require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
