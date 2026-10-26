@@ -621,6 +621,8 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:RequestTag/OSAStack: osa-dev
+                  ArnEqualsIfExists:
+                    ec2:Vpc: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${Vpc}"
               - Sid: ManageTaggedOsaDevInstances
                 Effect: Allow
                 Action:
@@ -635,10 +637,55 @@ Resources:
                 Action: ec2:CreateSecurityGroup
                 Resource:
                   - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${Vpc}"
                 Condition:
                   StringEquals:
                     aws:RequestTag/OSAStack: osa-dev
+              - Sid: TagCreatedOsaDevSecurityGroups
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: CreateSecurityGroup
+                    aws:RequestTag/OSAStack: osa-dev
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: AllocateTaggedOsaDevAddresses
+                Effect: Allow
+                Action: ec2:AllocateAddress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-dev
+              - Sid: TagCreatedOsaDevAddresses
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: AllocateAddress
+                    aws:RequestTag/OSAStack: osa-dev
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: ManageTaggedOsaDevAddresses
+                Effect: Allow
+                Action:
+                  - ec2:AssociateAddress
+                  - ec2:DisassociateAddress
+                  - ec2:ReleaseAddress
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-dev
               - Sid: ManageTaggedOsaDevSecurityGroups
                 Effect: Allow
                 Action:
@@ -671,6 +718,10 @@ Resources:
                 Condition:
                   StringEquals:
                     ec2:ResourceTag/OSAStack: osa-dev
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - Project
               - Sid: PassOnlyOsaEc2InstanceRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -727,6 +778,8 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:RequestTag/OSAStack: osa-prod
+                  ArnEqualsIfExists:
+                    ec2:Vpc: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${Vpc}"
               - Sid: ManageTaggedOsaProdInstances
                 Effect: Allow
                 Action:
@@ -741,10 +794,55 @@ Resources:
                 Action: ec2:CreateSecurityGroup
                 Resource:
                   - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${Vpc}"
                 Condition:
                   StringEquals:
                     aws:RequestTag/OSAStack: osa-prod
+              - Sid: TagCreatedOsaProdSecurityGroups
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: CreateSecurityGroup
+                    aws:RequestTag/OSAStack: osa-prod
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: AllocateTaggedOsaProdAddresses
+                Effect: Allow
+                Action: ec2:AllocateAddress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-prod
+              - Sid: TagCreatedOsaProdAddresses
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: AllocateAddress
+                    aws:RequestTag/OSAStack: osa-prod
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: ManageTaggedOsaProdAddresses
+                Effect: Allow
+                Action:
+                  - ec2:AssociateAddress
+                  - ec2:DisassociateAddress
+                  - ec2:ReleaseAddress
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-prod
               - Sid: ManageTaggedOsaProdSecurityGroups
                 Effect: Allow
                 Action:
@@ -777,6 +875,10 @@ Resources:
                 Condition:
                   StringEquals:
                     ec2:ResourceTag/OSAStack: osa-prod
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - Project
               - Sid: PassOnlyOsaEc2InstanceRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -833,6 +935,40 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:RequestTag/OSAStack: osa-observability
+                  ArnEqualsIfExists:
+                    ec2:Vpc: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${Vpc}"
+              - Sid: CreateTaggedOsaObservabilityVolumes
+                Effect: Allow
+                Action: ec2:CreateVolume
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-observability
+              - Sid: TagCreatedOsaObservabilityVolumes
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: CreateVolume
+                    aws:RequestTag/OSAStack: osa-observability
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: ManageTaggedOsaObservabilityVolumes
+                Effect: Allow
+                Action:
+                  - ec2:AttachVolume
+                  - ec2:DeleteVolume
+                  - ec2:DetachVolume
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
               - Sid: ManageTaggedOsaObservabilityInstances
                 Effect: Allow
                 Action:
@@ -847,10 +983,55 @@ Resources:
                 Action: ec2:CreateSecurityGroup
                 Resource:
                   - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
-                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${Vpc}"
                 Condition:
                   StringEquals:
                     aws:RequestTag/OSAStack: osa-observability
+              - Sid: TagCreatedOsaObservabilitySecurityGroups
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: CreateSecurityGroup
+                    aws:RequestTag/OSAStack: osa-observability
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: AllocateTaggedOsaObservabilityAddresses
+                Effect: Allow
+                Action: ec2:AllocateAddress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-observability
+              - Sid: TagCreatedOsaObservabilityAddresses
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: AllocateAddress
+                    aws:RequestTag/OSAStack: osa-observability
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - OSAStack
+                      - Project
+              - Sid: ManageTaggedOsaObservabilityAddresses
+                Effect: Allow
+                Action:
+                  - ec2:AssociateAddress
+                  - ec2:DisassociateAddress
+                  - ec2:ReleaseAddress
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:elastic-ip/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
               - Sid: ManageTaggedOsaObservabilitySecurityGroups
                 Effect: Allow
                 Action:
@@ -883,6 +1064,10 @@ Resources:
                 Condition:
                   StringEquals:
                     ec2:ResourceTag/OSAStack: osa-observability
+                  ForAllValues:StringEquals:
+                    aws:TagKeys:
+                      - Name
+                      - Project
               - Sid: PassOnlyOsaEc2InstanceRole
                 Effect: Allow
                 Action: iam:PassRole
