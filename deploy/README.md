@@ -70,7 +70,7 @@ The GitHub trust requires the exact owner/repository/branch subject and `sts.ama
 
 ### Create and validate
 
-Creating named IAM roles requires `CAPABILITY_NAMED_IAM`. The caller needs permission to create the declared resources and pass the foundation execution role to CloudFormation.
+Creating named IAM roles requires `CAPABILITY_NAMED_IAM`. The first stack creation must use the caller's credentials: the stack creates `FoundationExecutionRoleArn` itself, so it cannot be passed as `--role-arn` before it exists. On a later update to this same stack, retrieve `FoundationExecutionRoleArn` and pass it with `--role-arn`; the caller must have `iam:PassRole` permission. CloudFormation then associates that role for future stack operations. See the [AWS CreateStack documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_CreateStack.html) and [UpdateStack documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html).
 
 ```sh
 REGION=eu-central-1; STACK=osa-foundation
@@ -78,6 +78,18 @@ aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
   --template-file deploy/cloudformation/osa-foundation.yaml \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
+```
+
+The initial deployment omits `--role-arn` because the role does not exist yet. For a later update of the foundation stack, retrieve `FoundationExecutionRoleArn` and pass it to the normal deployment command, together with the template or parameter change being applied:
+
+```sh
+EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \\
+  --query "Stacks[0].Outputs[?OutputKey=='FoundationExecutionRoleArn'].OutputValue" --output text)
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \\
+  --template-file deploy/cloudformation/osa-foundation.yaml \\
+  --capabilities CAPABILITY_NAMED_IAM --role-arn "$EXECUTION_ROLE_ARN" \\
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \\
     GitHubOwner=OWNER GitHubRepository=open-sales-analytics
 ```
 
