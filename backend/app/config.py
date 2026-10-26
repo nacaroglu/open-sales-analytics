@@ -16,6 +16,21 @@ class Settings(BaseSettings):
         "development", validation_alias="OSA_ENVIRONMENT"
     )
     osa_version: str = Field("local", min_length=1, validation_alias="OSA_VERSION")
+    otel_exporter_otlp_endpoint: str | None = Field(
+        None, validation_alias="OTEL_EXPORTER_OTLP_ENDPOINT"
+    )
+    otel_exporter_otlp_protocol: str | None = Field(
+        None, validation_alias="OTEL_EXPORTER_OTLP_PROTOCOL"
+    )
+    otel_exporter_otlp_traces_endpoint: str | None = Field(
+        None, validation_alias="OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    )
+    otel_exporter_otlp_metrics_endpoint: str | None = Field(
+        None, validation_alias="OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+    )
+    otel_exporter_otlp_logs_endpoint: str | None = Field(
+        None, validation_alias="OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
+    )
     dataset_dir: Path = Field(Path("./tmp_datasets"), validation_alias="DATASET_DIR")
     dataset_ttl_hours: int = Field(24, gt=0, validation_alias="DATASET_TTL_HOURS")
     # Test-only override: a lifetime in seconds that wins over DATASET_TTL_HOURS, so a browser

@@ -1,0 +1,5 @@
+services:
+  app:
+    environment:
+      DATASET_TTL_SECONDS: ${DATASET_TTL_SECONDS:-45}
+      PUBLIC_DEMO_MODE: ${PUBLIC_DEMO_MODE:-false}

@@ -18,15 +18,19 @@ from app.config import Settings, get_settings
 from app.errors import register_error_handlers
 from app.health import readiness_checks
 from app.logging_config import RequestLogMiddleware, configure_logging
+from app.telemetry import TelemetryProviders, create_telemetry
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.initialized = False
     timer: asyncio.Task | None = None
+    telemetry: TelemetryProviders | None = None
     try:
         # Fail at startup, not on the first request, if the environment is invalid.
         settings = get_settings()
+        telemetry = create_telemetry(settings)
+        application.state.telemetry = telemetry
         prepare_dataset_dir(settings)
         await run_sweep_safely(settings)
         timer = asyncio.create_task(run_cleanup_loop(settings))
@@ -38,6 +42,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
             timer.cancel()
             with suppress(asyncio.CancelledError):
                 await timer
+        if telemetry is not None:
+            telemetry.shutdown()
+        application.state.telemetry = None
 
 
 configure_logging()

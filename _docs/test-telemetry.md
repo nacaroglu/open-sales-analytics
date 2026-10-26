@@ -31,3 +31,33 @@ rm -rf ./.osa-test-telemetry
 
 The output is local and synthetic. The cleanup command removes both the mounted directory and the service.
 CI uses synthetic telemetry only and does not print credentials or production data.
+
+## Application resource identity
+
+The application builds trace, metric, and log providers from one OpenTelemetry `Resource` containing
+only these attributes:
+
+- `service.name`: `open-sales-analytics`
+- `service.namespace`: `osa`
+- `service.version`: `OSA_VERSION` (defaults to `local`)
+- `deployment.environment.name`: `OSA_ENVIRONMENT` (defaults to `development`; accepts `development`
+  or `production`)
+
+With no `OTEL_EXPORTER_OTLP_ENDPOINT` or per-signal endpoint, providers have no exporters and startup
+is independent of a Collector. Set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` when configuring an
+endpoint; this is the only supported protocol. The generic endpoint is the Collector base URL; the
+application appends `/v1/traces`, `/v1/metrics`, and `/v1/logs`. Signal-specific variables
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, and
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` override the generic endpoint for their signals.
+
+For a fixed synthetic trace, counter, and log from the running app, invoke the private module inside
+the app container:
+
+```sh
+docker compose -f docker-compose.yaml -f docker-compose.test-telemetry.yaml exec -T app \
+  env PYTHONPATH=/app/backend python -m app.telemetry_test_signal
+```
+
+It prints a fixed success message after all providers flush and always shuts them down. The payload
+contains no dataset or user data. The CI `telemetry-resource-identity` job checks the three signal
+shapes and all four resource attributes in the local Collector file sink.

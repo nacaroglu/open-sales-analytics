@@ -98,6 +98,209 @@ jobs:
     name: Dependency scan (Python, npm)
     uses: ./.github/workflows/dependency-scan.yml
 
+  compose-integration:
+    name: Compose integration (IT-01 through IT-08)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate integration Compose configuration
+        run: |
+          set -euo pipefail
+          sink_dir="/tmp/osa-compose-it-config"
+          trap 'rm -rf "$sink_dir"' EXIT
+          mkdir -p "$sink_dir"
+          chmod 0777 "$sink_dir"
+          OSA_TEST_TELEMETRY_DIR="$sink_dir" \
+            docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml \
+            -f docker-compose.test-telemetry.yaml config --quiet
+      - name: Run Compose integration cases
+        run: python3 scripts/compose_integration.py
+
+  telemetry-resource-identity:
+    name: Telemetry resource identity (OTLP test Collector)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify application resource identity through the test Collector
+        env:
+          COMPOSE_PROJECT_NAME: osa-resource-identity-${{ github.run_id }}
+          OSA_TEST_TELEMETRY_DIR: /tmp/osa-resource-identity-${{ github.run_id }}
+          OSA_ENVIRONMENT: development
+          OSA_VERSION: integration-test
+          OSA_PORT: "18080"
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f docker-compose.yaml -f docker-compose.test-telemetry.yaml)
+          sink_dir="$OSA_TEST_TELEMETRY_DIR"
+          sink_file="$sink_dir/osa-telemetry.json"
+          cleanup() {
+            status=$?
+            trap - EXIT
+            "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || status=1
+            rm -rf "$sink_dir"
+            if [ -n "$("${compose[@]}" ps --all -q 2>/dev/null)" ] || \
+              [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" 2>/dev/null)" ]; then
+              echo "Telemetry resource-identity Compose resources remain after cleanup"
+              status=1
+            fi
+            if [ -e "$sink_dir" ]; then
+              echo "Telemetry resource-identity sink remains after cleanup"
+              status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$sink_dir"
+          chmod 0777 "$sink_dir"
+          "${compose[@]}" config --quiet
+          "${compose[@]}" up --build --detach
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:${OSA_PORT}/health/ready" >/dev/null; then
+              ready=1
+              break
+            fi
+            app_id="$("${compose[@]}" ps -q app 2>/dev/null || true)"
+            if [ -n "$app_id" ]; then
+              status="$(docker inspect --format='{{.State.Status}}' "$app_id")"
+              if [ "$status" != running ]; then
+                "${compose[@]}" logs --no-color --tail=80
+                exit 1
+              fi
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development OSA_VERSION=integration-test python -m app.telemetry_test_signal
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=production OSA_VERSION=integration-test python -m app.telemetry_test_signal
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development OSA_VERSION=alternate-test python -m app.telemetry_test_signal
+          captured=0
+          for _ in $(seq 1 15); do
+            if [ -s "$sink_file" ]; then
+              captured=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$captured" -ne 1 ]; then
+            echo "OTLP Collector did not write the synthetic resource-identity signal"
+            "${compose[@]}" logs --no-color --tail=80 telemetry-collector
+          fi
+          test "$captured" -eq 1
+          python3 - "$sink_file" <<'PY'
+          import json
+          import pathlib
+          import sys
+          import time
+
+          sink = pathlib.Path(sys.argv[1])
+          identity_keys = (
+              "service.name",
+              "service.namespace",
+              "service.version",
+              "deployment.environment.name",
+          )
+          expected_identities = {
+              (
+                  "open-sales-analytics",
+                  "osa",
+                  "integration-test",
+                  "development",
+              ),
+              (
+                  "open-sales-analytics",
+                  "osa",
+                  "integration-test",
+                  "production",
+              ),
+              (
+                  "open-sales-analytics",
+                  "osa",
+                  "alternate-test",
+                  "development",
+              ),
+          }
+
+          signal_shapes = {
+              "traces": ("resourceSpans", "scopeSpans", "spans"),
+              "metrics": ("resourceMetrics", "scopeMetrics", "metrics"),
+              "logs": ("resourceLogs", "scopeLogs", "logRecords"),
+          }
+          def read_signal_identities():
+              records = [
+                  json.loads(line)
+                  for line in sink.read_text().splitlines()
+                  if line.strip()
+              ]
+              observed = {}
+              for signal, (resource_key, _, _) in signal_shapes.items():
+                  resources = [
+                      resource_signal["resource"]
+                      for record in records
+                      for resource_signal in record.get(resource_key, [])
+                  ]
+                  identities = set()
+                  for resource in resources:
+                      attributes = {
+                          item["key"]: item["value"].get("stringValue")
+                          for item in resource.get("attributes", [])
+                      }
+                      identity = tuple(attributes.get(key) for key in identity_keys)
+                      assert identity in expected_identities, attributes
+                      identities.add(identity)
+                  observed[signal] = identities
+              return records, observed
+
+          deadline = time.monotonic() + 30
+          while True:
+              records, observed_identities = read_signal_identities()
+              if all(
+                  identities == expected_identities
+                  for identities in observed_identities.values()
+              ):
+                  break
+              if time.monotonic() >= deadline:
+                  raise AssertionError(
+                      f"Collector did not capture every resource identity: {observed_identities}"
+                  )
+              time.sleep(0.5)
+
+          spans = [
+              span
+              for record in records
+              for resource_span in record.get("resourceSpans", [])
+              for scope in resource_span.get("scopeSpans", [])
+              for span in scope.get("spans", [])
+          ]
+          assert any(span.get("name") == "osa.synthetic.resource_identity" for span in spans)
+          metrics = [
+              metric
+              for record in records
+              for resource_metric in record.get("resourceMetrics", [])
+              for scope in resource_metric.get("scopeMetrics", [])
+              for metric in scope.get("metrics", [])
+          ]
+          assert any(metric.get("name") == "osa.synthetic.resource_identity" for metric in metrics)
+          logs = [
+              log
+              for record in records
+              for resource_log in record.get("resourceLogs", [])
+              for scope in resource_log.get("scopeLogs", [])
+              for log in scope.get("logRecords", [])
+          ]
+          assert any(
+              log.get("eventName") == "osa.synthetic.resource_identity"
+              and log.get("body", {}).get("stringValue") == "osa.synthetic.resource_identity"
+              for log in logs
+          )
+          print("Synthetic trace, metric, and log carry all independently configured resource identities.")
+          PY
+
   # The container from the Dockerfile is built and started once; the health check and the
   # browser suite both run against it, on port 8000.
   docker-smoke:
