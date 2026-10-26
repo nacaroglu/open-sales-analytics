@@ -336,6 +336,10 @@ for phrase, message in (
     ("ordinary pr/ci validation and deployment workflows do not delete the repository", "README must distinguish routine CI/deploy from teardown"),
     ("guarded teardown process in #271", "README must assign final teardown to issue #271"),
     ("removal verification in #272", "README must assign deletion verification to issue #272"),
+    ("former cleanup instruction to run `aws cloudformation delete-stack` and empty ecr manually does not apply", "README must supersede legacy manual cleanup guidance for the foundation repository"),
+    ("do not manually empty or delete that repository", "README must prohibit manual foundation repository cleanup"),
+    ("any foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for all foundation repository deletion"),
+    ("force-deletes all remaining images", "README must explain guarded teardown force-empty behavior"),
 ):
     require(phrase in doc, message)
 for url in (
