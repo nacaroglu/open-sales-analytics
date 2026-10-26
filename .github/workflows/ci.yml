@@ -115,7 +115,7 @@ jobs:
             docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml \
             -f docker-compose.test-telemetry.yaml config --quiet
       - name: Run Compose integration cases
-        run: python3 scripts/compose_integration.py
+        run: make integration
 
   telemetry-resource-identity:
     name: Telemetry resource identity (OTLP test Collector)
@@ -301,8 +301,8 @@ jobs:
           print("Synthetic trace, metric, and log carry all independently configured resource identities.")
           PY
 
-  # The container from the Dockerfile is built and started once; the health check and the
-  # browser suite both run against it, on port 8000.
+  # Contributor Make targets build the app, run integration checks, and exercise the browser journey
+  # against isolated Compose projects with project-scoped cleanup.
   docker-smoke:
     name: Container (build, smoke, browser tests)
     runs-on: ubuntu-latest
@@ -339,6 +339,8 @@ jobs:
           assert service["healthcheck"]["retries"] > 0
           assert set(config["volumes"]) == {"osa-data"}
           '
+      - name: Build with the contributor command
+        run: make build
       - name: Validate and exercise the test telemetry Compose override
         env:
           COMPOSE_PROJECT_NAME: osa-telemetry-ci-${{ github.run_id }}
@@ -691,29 +693,6 @@ jobs:
           for module in ("pytest", "ruff", "mypy"):
               assert find_spec(module) is None, f"development dependency {module} is installed"
           '
-      - name: Start container
-        # The one-minute lifetime lets the browser suite see a real expiry.
-        run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
-      - name: Wait for /api/health
-        run: |
-          for i in $(seq 1 30); do
-            if curl -fs http://localhost:8000/api/health; then exit 0; fi
-            sleep 1
-          done
-          exit 1
-      - name: Check health response and single-page app
-        run: |
-          curl -f http://localhost:8000/api/health
-          curl -f http://localhost:8000/d/anything | grep -qi '<div id="root"'
-      - name: Wait for Docker health status
-        run: |
-          for i in $(seq 1 30); do
-            status=$(docker inspect --format='{{.State.Health.Status}}' oca)
-            if [ "$status" = healthy ]; then exit 0; fi
-            sleep 1
-          done
-          docker inspect --format='container health status: {{.State.Health.Status}}' oca
-          exit 1
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -737,11 +716,8 @@ jobs:
       - name: Install Chromium system libraries
         run: npx playwright install-deps chromium
         working-directory: frontend
-      - name: Run browser tests against the container
-        run: npm run e2e
-        working-directory: frontend
-        env:
-          E2E_BASE_URL: http://localhost:8000
+      - name: Run browser tests against the Compose app
+        run: make e2e
       # Screenshots only. Traces hold every network response, so with CI set Playwright records none
       # (playwright.config.ts). Nothing from the container's /data directory is ever uploaded.
       - name: Upload failure screenshots
@@ -752,10 +728,4 @@ jobs:
           path: frontend/test-results/**/*.png
           retention-days: 5
           if-no-files-found: ignore
-      - name: Show container logs on failure
-        if: failure()
-        run: docker logs oca
-      - name: Remove container
-        if: always()
-        run: docker rm -f oca
 

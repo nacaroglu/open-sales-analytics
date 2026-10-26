@@ -3,8 +3,24 @@
 Run the container integration matrix locally with Docker Compose v2:
 
 ```sh
-python3 scripts/compose_integration.py
+make integration
 ```
+
+From the repository root, the contributor commands are:
+
+- `make build` validates the base Compose configuration and builds the application image.
+- `make integration` runs IT-01 through IT-08 and cleans both isolated projects on success or failure.
+- `make e2e` starts the built app through Compose, waits for readiness, and runs the Chromium journey with
+  `E2E_BASE_URL` set to that app.
+- `make clean` removes Compose resources and telemetry sink directories scoped to this checkout and user.
+
+Docker Engine with Compose v2 is required for all four commands. Integration also needs Python 3. The E2E
+command needs Node.js 22, installed frontend packages (`cd frontend && npm ci`), and the Chromium browser and
+system libraries (`npx playwright install chromium` and, on Linux, `npx playwright install-deps chromium`).
+Set `OSA_E2E_PORT` to use a specific available host port; otherwise the command selects an ephemeral port.
+Every run has a unique Compose project name and a private temporary root with a random owner token. `make clean`
+verifies each marker, derives the exact project names created for that run, and removes only those projects and sinks.
+It does not run Docker prune or remove host datasets.
 
 The runner builds and starts the real app in an isolated self-hosted project, then starts a separate
 public-demo project using the same built image. It checks readiness, the built HTML/JS/CSS and SPA
