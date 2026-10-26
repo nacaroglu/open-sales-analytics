@@ -31,7 +31,7 @@ aws cloudformation describe-stacks --region $REGION --stack-name $STACK --query 
 Optional parameters: `PublicDemoMode=true`, `DatasetTtlHours`, `CertificateArn` (enables HTTPS and redirects HTTP).
 Without a certificate the site is plain HTTP, so uploaded sales data travels unencrypted; set one for real use.
 To ship a new image, push it and run `aws ecs update-service --force-new-deployment`.
-Delete the stack with `aws cloudformation delete-stack`; empty the ECR repository first.
+The legacy stack's former cleanup instruction to run `aws cloudformation delete-stack` and empty ECR manually does not apply to the shared foundation repository. Do not manually empty or delete that repository. Any foundation repository deletion must happen only through the guarded teardown process in #271, followed by removal verification in #272. Because EmptyOnDelete is enabled, that teardown force-deletes all remaining images, including images not yet expired.
 
 ## Docker Compose deployment
 
