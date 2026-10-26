@@ -29,3 +29,22 @@ aws cloudformation describe-stacks --region $REGION --stack-name $STACK --query 
 ```
 
 可选参数：`PublicDemoMode=true`、`DatasetTtlHours`、`CertificateArn`（启用 HTTPS 并将 HTTP 重定向）。没有证书时站点使用普通 HTTP，因此上传的销售数据会以未加密方式传输；实际使用时请配置证书。发布新镜像时，请推送镜像并运行 `aws ecs update-service --force-new-deployment`。使用 `aws cloudformation delete-stack` 删除堆栈；请先清空 ECR 存储库。
+
+
+## Docker Compose 部署
+
+部署 Compose 覆盖配置会通过 Caddy 运行带有不可变 digest 的应用镜像。请在运行时提供完整镜像引用、公共主机名、环境和版本。开发环境还需要包含用户名和密码哈希的 Caddy basic-auth 块；请在运行时生成哈希并注入该块，不要将其提交到仓库。生产环境应留空该块并启用公开演示模式。
+
+```sh
+export OSA_IMAGE='registry.example/open-sales-analytics@sha256:<64-character-image-digest>'
+export OSA_HOSTNAME='sales.example.com'
+export OSA_ENVIRONMENT=development
+export OSA_VERSION=1.2.3
+export PUBLIC_DEMO_MODE=false
+read -rsp 'Password: ' password; printf '\n'
+password_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$password")"; unset password
+export CADDY_AUTH_BLOCK="$(printf 'basic_auth {\n  demo %s\n}' "$password_hash")"
+docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
+```
+
+生产环境请提供 `CADDY_AUTH_BLOCK=''` 和 `PUBLIC_DEMO_MODE=true`，并设置 `OSA_ENVIRONMENT=production`。密码哈希是运行时输入；不要将凭据或哈希写入 Compose 文件、shell 历史记录或 CI 日志。

@@ -22,9 +22,10 @@ Contenido: [Ejecutar con Docker](#ejecutar-con-docker) | [Configuración](#confi
 No hay una imagen publicada, así que debe compilarla una vez desde una copia de este repositorio y ejecutarla:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose publica el puerto del host `8000` de forma predeterminada. Defina `OSA_PORT` para cambiarlo. Antes de ejecutar `docker compose up --build`, puede definir `OSA_ENVIRONMENT`, `OSA_VERSION` o `DATASET_DIR`; sus valores predeterminados son `development`, `local` y `/data`. Compose monta el volumen con nombre `osa-data` en `DATASET_DIR`; `docker compose down -v` elimina el contenedor y el volumen, incluidos los datos guardados.
 
 Abra <http://localhost:8000>. Verá la pantalla de carga; **Probar datos de ejemplo** abre un panel con el archivo de ejemplo.
 `curl http://localhost:8000/api/health` devuelve `{"status":"ok"}`.

@@ -1,0 +1,27 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: open-sales-analytics:local
+    environment:
+      OSA_ENVIRONMENT: ${OSA_ENVIRONMENT:-development}
+      OSA_VERSION: ${OSA_VERSION:-local}
+      DATASET_DIR: ${DATASET_DIR:-/data}
+    ports:
+      - "${OSA_PORT:-8000}:8000"
+    volumes:
+      - osa-data:${DATASET_DIR:-/data}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  osa-data:

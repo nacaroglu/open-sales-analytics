@@ -13,9 +13,10 @@ Open Sales Analytics 是一款小型自托管 Web 应用。上传已完成销售
 目前没有发布的镜像，因此需要先从本存储库的检出版本构建一次，再运行：
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose 默认映射主机端口 `8000`。设置 `OSA_PORT` 可更改端口。运行 `docker compose up --build` 前，可设置 `OSA_ENVIRONMENT`、`OSA_VERSION` 或 `DATASET_DIR`；默认值分别为 `development`、`local` 和 `/data`。Compose 会将命名卷 `osa-data` 挂载到 `DATASET_DIR`；`docker compose down -v` 会删除容器和该卷，包括已保存的数据。
 
 打开 <http://localhost:8000>。您会看到上传页面；**试用示例数据**会用样例文件打开仪表板。`curl http://localhost:8000/api/health` 返回 `{"status":"ok"}`。
 

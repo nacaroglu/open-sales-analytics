@@ -21,9 +21,10 @@ miktarın birim fiyatla çarpımının toplamıdır. İadeler, indirimler, vergi
 Yayımlanmış bir imaj yoktur; bu nedenle bu deponun bir checkout'ından bir kez derler, sonra çalıştırırsınız:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose varsayılan olarak ana makinede `8000` bağlantı noktasını açar. Değiştirmek için `OSA_PORT` değerini ayarlayın. `docker compose up --build` çalıştırmadan önce `OSA_ENVIRONMENT`, `OSA_VERSION` veya `DATASET_DIR` değerlerini ayarlayabilirsiniz; varsayılanlar `development`, `local` ve `/data` şeklindedir. Compose, adlandırılmış `osa-data` birimini `DATASET_DIR` konumuna bağlar; `docker compose down -v` kapsayıcıyı ve saklanan veriler dahil bu birimi kaldırır.
 
 <http://localhost:8000> adresini açın. Yükleme ekranını görürsünüz; **Örnek veriyi dene** örnek dosyayla bir panel açar.
 `curl http://localhost:8000/api/health`, `{"status":"ok"}` döndürür.
