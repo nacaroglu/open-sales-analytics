@@ -440,8 +440,10 @@ Resources:
               - Sid: ManageFoundationRoles
                 Effect: Allow
                 Action:
+                  - iam:AttachRolePolicy
                   - iam:CreateRole
                   - iam:DeleteRole
+                  - iam:DetachRolePolicy
                   - iam:GetRole
                   - iam:PutRolePolicy
                   - iam:DeleteRolePolicy
@@ -466,6 +468,462 @@ Resources:
                   - iam:ListOpenIDConnectProviders
                   - iam:ListRoles
                 Resource: "*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  DevDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-dev-deploy"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: GitHub Actions deploy role for the osa-dev stack.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubMainBranchOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}"
+      Policies:
+        - PolicyName: OsaDevDeployment
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageOsaDevStack
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplate
+                  - cloudformation:UpdateStack
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
+                Condition:
+                  StringEquals:
+                    cloudformation:RoleArn: !GetAtt DevApplicationExecutionRole.Arn
+              - Sid: PassOnlyOsaDevExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt DevApplicationExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  ProductionPromotionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-prod-promotion"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: GitHub Actions production promotion role for the osa-prod stack.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ProductionEnvironmentOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:environment:production"
+      Policies:
+        - PolicyName: OsaProdPromotion
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageOsaProdStack
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplate
+                  - cloudformation:UpdateStack
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-prod/*"
+                Condition:
+                  StringEquals:
+                    cloudformation:RoleArn: !GetAtt ProdApplicationExecutionRole.Arn
+              - Sid: PassOnlyOsaProdExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt ProdApplicationExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  DevApplicationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-dev-application-execution"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: CloudFormation execution role for tagged osa-dev application resources.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudFormationServiceOnly
+            Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: OsaDevApplicationResources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DescribeEc2State
+                Effect: Allow
+                Action:
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeImages
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeVpcs
+                Resource: "*"
+              - Sid: RunTaggedOsaDevInstances
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-dev
+              - Sid: ManageTaggedOsaDevInstances
+                Effect: Allow
+                Action:
+                  - ec2:ModifyInstanceAttribute
+                  - ec2:TerminateInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-dev
+              - Sid: CreateTaggedOsaDevSecurityGroups
+                Effect: Allow
+                Action: ec2:CreateSecurityGroup
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-dev
+              - Sid: ManageTaggedOsaDevSecurityGroups
+                Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:DeleteSecurityGroup
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-dev
+              - Sid: CreateTagsForOsaDevInstances
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: RunInstances
+                    aws:RequestTag/OSAStack: osa-dev
+              - Sid: ManageOsaDevTags
+                Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-dev
+              - Sid: PassOnlyOsaEc2InstanceRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt Ec2InstanceRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ec2.amazonaws.com
+              - Sid: ReadOsaDevParameters
+                Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  ProdApplicationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-prod-application-execution"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: CloudFormation execution role for tagged osa-prod application resources.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudFormationServiceOnly
+            Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: OsaProdApplicationResources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DescribeEc2State
+                Effect: Allow
+                Action:
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeImages
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeVpcs
+                Resource: "*"
+              - Sid: RunTaggedOsaProdInstances
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-prod
+              - Sid: ManageTaggedOsaProdInstances
+                Effect: Allow
+                Action:
+                  - ec2:ModifyInstanceAttribute
+                  - ec2:TerminateInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-prod
+              - Sid: CreateTaggedOsaProdSecurityGroups
+                Effect: Allow
+                Action: ec2:CreateSecurityGroup
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-prod
+              - Sid: ManageTaggedOsaProdSecurityGroups
+                Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:DeleteSecurityGroup
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-prod
+              - Sid: CreateTagsForOsaProdInstances
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: RunInstances
+                    aws:RequestTag/OSAStack: osa-prod
+              - Sid: ManageOsaProdTags
+                Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-prod
+              - Sid: PassOnlyOsaEc2InstanceRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt Ec2InstanceRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ec2.amazonaws.com
+              - Sid: ReadOsaProdParameters
+                Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  ObservabilityExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-observability-execution"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: CloudFormation execution role for tagged observability resources.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudFormationServiceOnly
+            Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: OsaObservabilityResources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DescribeEc2State
+                Effect: Allow
+                Action:
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeImages
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeVpcs
+                Resource: "*"
+              - Sid: RunTaggedOsaObservabilityInstances
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-observability
+              - Sid: ManageTaggedOsaObservabilityInstances
+                Effect: Allow
+                Action:
+                  - ec2:ModifyInstanceAttribute
+                  - ec2:TerminateInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
+              - Sid: CreateTaggedOsaObservabilitySecurityGroups
+                Effect: Allow
+                Action: ec2:CreateSecurityGroup
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestTag/OSAStack: osa-observability
+              - Sid: ManageTaggedOsaObservabilitySecurityGroups
+                Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:DeleteSecurityGroup
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
+              - Sid: CreateTagsForOsaObservabilityInstances
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: RunInstances
+                    aws:RequestTag/OSAStack: osa-observability
+              - Sid: ManageOsaObservabilityTags
+                Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
+              - Sid: PassOnlyOsaEc2InstanceRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt Ec2InstanceRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ec2.amazonaws.com
+              - Sid: ReadOsaObservabilityParameters
+                Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/observability/*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  Ec2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ec2-instance"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: EC2 may pull only the foundation image and use Systems Manager core functions.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Ec2ServiceOnly
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Policies:
+        - PolicyName: PullOnlyOsaRepository
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: EcrAuthorizationToken
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: PullImagesFromFoundationRepository
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt Repository.Arn
       Tags:
         - Key: Project
           Value: open-sales-analytics
