@@ -301,12 +301,16 @@ jobs:
           print("Synthetic trace, metric, and log carry all independently configured resource identities.")
           PY
 
-  # The container from the Dockerfile is built and started once; the health check and the
-  # browser suite both run against it, on port 8000.
+  # The image is built once; Compose starts it for the health check and browser suite.
   docker-smoke:
     name: Container (build, smoke, browser tests)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: osa-browser-ci-${{ github.run_id }}
+      OSA_PORT: "8000"
+      DATASET_TTL_SECONDS: "60"
+      PUBLIC_DEMO_MODE: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate base Compose configuration
@@ -339,6 +343,7 @@ jobs:
           assert service["healthcheck"]["retries"] > 0
           assert set(config["volumes"]) == {"osa-data"}
           '
+          docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml config --quiet
       - name: Validate and exercise the test telemetry Compose override
         env:
           COMPOSE_PROJECT_NAME: osa-telemetry-ci-${{ github.run_id }}
@@ -692,14 +697,20 @@ jobs:
               assert find_spec(module) is None, f"development dependency {module} is installed"
           '
       - name: Start container
-        # The one-minute lifetime lets the browser suite see a real expiry.
-        run: docker run -d --name oca -p 8000:8000 -e DATASET_TTL_SECONDS=60 open-sales-analytics
+        run: |
+          set -euo pipefail
+          docker tag open-sales-analytics open-sales-analytics:local
+          docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml up --detach --no-build
+          container_id="$(docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml ps -q app)"
+          test -n "$container_id"
       - name: Wait for /api/health
         run: |
+          set -euo pipefail
           for i in $(seq 1 30); do
             if curl -fs http://localhost:8000/api/health; then exit 0; fi
             sleep 1
           done
+          docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml logs --no-color --tail=100 app
           exit 1
       - name: Check health response and single-page app
         run: |
@@ -707,12 +718,19 @@ jobs:
           curl -f http://localhost:8000/d/anything | grep -qi '<div id="root"'
       - name: Wait for Docker health status
         run: |
+          set -euo pipefail
+          container_id="$(docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml ps -q app)"
+          test -n "$container_id"
           for i in $(seq 1 30); do
-            status=$(docker inspect --format='{{.State.Health.Status}}' oca)
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$container_id")
             if [ "$status" = healthy ]; then exit 0; fi
+            if [ "$status" = unhealthy ]; then
+              docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml logs --no-color --tail=100 app
+              exit 1
+            fi
             sleep 1
           done
-          docker inspect --format='container health status: {{.State.Health.Status}}' oca
+          docker inspect --format='container health status: {{.State.Health.Status}}' "$container_id"
           exit 1
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -754,8 +772,23 @@ jobs:
           if-no-files-found: ignore
       - name: Show container logs on failure
         if: failure()
-        run: docker logs oca
-      - name: Remove container
+        run: docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml logs --no-color --tail=100 app
+      - name: Remove Compose app and test data
         if: always()
-        run: docker rm -f oca
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml)
+          cleanup_status=0
+          "${compose[@]}" down --volumes --remove-orphans || cleanup_status=1
+          containers="$("${compose[@]}" ps -aq 2>/dev/null || true)"
+          volumes="$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" 2>/dev/null || true)"
+          if [ -n "$containers" ]; then
+            echo "Browser Compose containers remain after cleanup"
+            cleanup_status=1
+          fi
+          if [ -n "$volumes" ]; then
+            echo "Browser Compose volumes remain after cleanup"
+            cleanup_status=1
+          fi
+          exit "$cleanup_status"
 
