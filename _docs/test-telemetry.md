@@ -54,8 +54,8 @@ For a fixed synthetic trace, counter, and log from the running app, invoke the p
 the app container:
 
 ```sh
-docker compose -f docker-compose.yaml -f docker-compose.test-telemetry.yaml exec -T app \\
-  python -m app.telemetry_test_signal
+docker compose -f docker-compose.yaml -f docker-compose.test-telemetry.yaml exec -T app \
+  env PYTHONPATH=/app/backend python -m app.telemetry_test_signal
 ```
 
 It prints a fixed success message after all providers flush and always shuts them down. The payload
