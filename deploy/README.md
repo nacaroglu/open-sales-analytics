@@ -31,7 +31,7 @@ aws cloudformation describe-stacks --region $REGION --stack-name $STACK --query 
 Optional parameters: `PublicDemoMode=true`, `DatasetTtlHours`, `CertificateArn` (enables HTTPS and redirects HTTP).
 Without a certificate the site is plain HTTP, so uploaded sales data travels unencrypted; set one for real use.
 To ship a new image, push it and run `aws ecs update-service --force-new-deployment`.
-Delete the stack with `aws cloudformation delete-stack`; empty the ECR repository first.
+The legacy stack's former cleanup instruction to run `aws cloudformation delete-stack` and empty ECR manually does not apply to the shared foundation repository. Do not manually empty or delete that repository. Any foundation repository deletion must happen only through the guarded teardown process in #271, followed by removal verification in #272. Because EmptyOnDelete is enabled, that teardown force-deletes all remaining images, including images not yet expired.
 
 ## Docker Compose deployment
 
@@ -104,7 +104,7 @@ The validator bundles schemas and rules, so the validation itself needs no AWS c
 
 ### Delete and cleanup
 
-Delete downstream stacks before `osa-foundation`; CloudFormation prevents deleting exports still imported by another stack. Then use `aws cloudformation delete-stack`. Remove ECR images explicitly before cleanup. Bounded lifecycle and empty-on-delete behavior are deferred to issue #236. Review parameters, IAM capabilities, and the AWS change set before any deployment; offline validation does not confirm regional AZ or CIDR availability. See [CloudFormation resource documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
+Delete downstream stacks before `osa-foundation`; CloudFormation prevents deleting exports still imported by another stack. Foundation repository deletion must happen only through the guarded teardown process in #271, followed by removal verification in #272. Do not manually empty the ECR repository or delete the foundation stack as a repository cleanup shortcut. The repository's EmptyOnDelete setting force-deletes all remaining images, including images not yet expired. Review parameters, IAM capabilities, and the AWS change set before any deployment; offline validation does not confirm regional AZ or CIDR availability. See [CloudFormation resource documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
 
 
 The foundation reuses the VPC, subnets, routes, and stack-qualified exports in deploy/cloudformation/osa-foundation.yaml; it adds no duplicate network resources. The public route table is associated only with PublicSubnetAz1 and PublicSubnetAz2, and its 0.0.0.0/0 route targets the attached InternetGateway. Each private subnet is associated with its own private route table. Those tables retain only the VPC-local route: they have no default, NAT, instance, peering, Internet Gateway, or other unreviewed egress route. All four subnets keep MapPublicIpOnLaunch: false. The public route defines an internet-gateway path; the route alone does not create a workload or expose a listener. AWS guidance: https://docs.aws.amazon.com/vpc/latest/userguide/subnet-route-tables.html and https://docs.aws.amazon.com/us_en/AWSEC2/latest/UserGuide/working-with-ip-addresses.html.
@@ -114,3 +114,9 @@ The foundation template declares no security groups, network ACLs, ingress rules
 Any workload egress needed for image pulls, certificate acquisition, runtime operation, or AWS management must be explicit, limited to that purpose, and implemented by the owning workload stack. App/Caddy ingress is HTTP/HTTPS only, with no SSH, and belongs to issue #240. Observability/Grafana ingress belongs to issue #263. Private authenticated Collector OTLP access on ports 4317 and 4318 is allowed only from the dev/prod application security groups and belongs to issue #264. Those workload-specific groups and rules are not created by the foundation.
 
 PR/CI validation creates no AWS resources and leaves no stack, VPC, route, security group, local generated file, or credential to clean up. The offline checks make no AWS API calls and do not deploy the template.
+
+The ECR repository uses immutable release tags, so a release tag cannot be overwritten; each build should use a new unique tag. Its single lifecycle rule applies to any image, tagged or untagged: when more than ten images remain, it expires the oldest and retains the ten most recently pushed images. ECR evaluates lifecycle rules and normally expires images that meet the criteria within 24 hours, so retention is bounded by policy but cleanup is not immediate. AWS references: https://docs.aws.amazon.com/AmazonECR/latest/userguide/lifecycle_policy_parameters.html and https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html.
+
+The repository's EmptyOnDelete setting is destructive. When CloudFormation deletes or replaces Repository, it force-deletes remaining image contents, including images not yet expired under the lifecycle policy. Ordinary PR/CI validation and deployment workflows do not delete the repository. Final deletion occurs only through the guarded teardown process in #271, followed by removal verification in #272. See https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecr-repository.html.
+
+Validation does not create AWS stacks or resources and leaves no generated repository artifact or credential in the checkout or CI artifacts.

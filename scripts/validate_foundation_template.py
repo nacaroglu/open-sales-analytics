@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Static security assertions for the offline-validated OSA foundation template."""
 from pathlib import Path
+import json
 import re
 import sys
 
@@ -26,8 +27,6 @@ require("Type: AWS::EC2::SecurityGroup" not in text and "AWS::EC2::SecurityGroup
         "foundation template must not create security groups or ingress rules")
 require("ImageTagMutability: IMMUTABLE" in text and "ScanOnPush: true" in text,
         "ECR must use immutable tags and scan on push")
-require("LifecyclePolicy" not in text and "EmptyOnDelete" not in text,
-        "ECR lifecycle and empty-on-delete belong to issue #236")
 require("Url: https://token.actions.githubusercontent.com" in text and "- sts.amazonaws.com" in text,
         "GitHub OIDC provider URL and audience must be exact")
 require("token.actions.githubusercontent.com:sub: !Sub \"repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}\"" in text,
@@ -89,6 +88,128 @@ def foundation_resources(source: str) -> dict[str, tuple[str, str]]:
 
 
 resources = foundation_resources(text)
+
+repository_type, repository_body = resources.get("Repository", ("", ""))
+require(
+    repository_type == "AWS::ECR::Repository",
+    "Repository must remain the existing AWS::ECR::Repository resource",
+)
+require(
+    re.search(r"(?m)^      RepositoryName: !Ref RepositoryName$", repository_body) is not None,
+    "Repository must keep its RepositoryName parameter identity",
+)
+require(
+    re.search(r"(?m)^      ImageTagMutability: IMMUTABLE$", repository_body) is not None,
+    "Repository image tags must remain immutable",
+)
+require(
+    re.search(r"(?m)^        ScanOnPush: true$", repository_body) is not None,
+    "Repository scan-on-push must remain enabled",
+)
+require(
+    re.search(r"(?m)^        EncryptionType: AES256$", repository_body) is not None,
+    "Repository encryption must remain AES256",
+)
+require(
+    re.search(r"(?m)^      EmptyOnDelete: true$", repository_body) is not None,
+    "Repository must force-empty image contents only when CloudFormation deletes it",
+)
+require(
+    re.search(r"(?m)^    (?:DeletionPolicy|UpdateReplacePolicy):\s*Retain$", repository_body) is None,
+    "Repository must not retain itself on deletion or replacement",
+)
+
+policy_marker = re.search(r"(?m)^        LifecyclePolicyText: \|\s*$", repository_body)
+require(policy_marker is not None, "Repository lifecycle policy text is required")
+policy_lines: list[str] = []
+for line in repository_body[policy_marker.end():].splitlines():
+    if not line.strip():
+        if policy_lines:
+            break
+        continue
+    if len(line) - len(line.lstrip()) < 10:
+        break
+    policy_lines.append(line[10:])
+try:
+    lifecycle_policy = json.loads(chr(10).join(policy_lines))
+except json.JSONDecodeError as exc:
+    require(False, f"Repository lifecycle policy must be valid JSON: {exc}")
+rules = lifecycle_policy.get("rules") if isinstance(lifecycle_policy, dict) else None
+require(isinstance(rules, list) and len(rules) == 1,
+        "Repository must have exactly one lifecycle rule covering all images")
+rule = rules[0] if rules else {}
+selection = rule.get("selection") if isinstance(rule, dict) else {}
+require(
+    isinstance(rule, dict)
+    and rule.get("rulePriority") == 1
+    and isinstance(selection, dict)
+    and selection.get("tagStatus") == "any"
+    and selection.get("countType") == "imageCountMoreThan"
+    and selection.get("countNumber") == 10
+    and "tagPatternList" not in selection
+    and "tagPrefixList" not in selection,
+    "Lifecycle rule must expire images above the ten-image limit across all tags",
+)
+require(
+    isinstance(rule.get("action"), dict) and rule["action"].get("type") == "expire",
+    "Lifecycle rule action must be expire",
+)
+
+repository_policy = next(
+    (body for sid, body in role_statements if sid == "ManageRepository"),
+    "",
+)
+lifecycle_actions = (
+    "ecr:PutLifecyclePolicy",
+    "ecr:GetLifecyclePolicy",
+    "ecr:DeleteLifecyclePolicy",
+)
+for action in lifecycle_actions:
+    require(
+        repository_policy.count(action) == 1 and text.count(action) == 1,
+        f"FoundationExecutionRole must grant {action} exactly once in ManageRepository",
+    )
+expected_repository_resource = (
+    '!Sub "arn:'
+    + chr(36)
+    + "{AWS::Partition}:ecr:"
+    + chr(36)
+    + "{AWS::Region}:"
+    + chr(36)
+    + "{AWS::AccountId}:repository/"
+    + chr(36)
+    + '{RepositoryName}"'
+)
+repository_resources = re.findall(r"(?m)^\s+Resource: (.+)$", repository_policy)
+require(
+    repository_resources == [expected_repository_resource],
+    "ECR lifecycle actions must be scoped only to the existing repository ARN, not Resource:*",
+)
+
+outputs_section = re.search(r"(?ms)^Outputs:\n(?P<body>.*)\Z", text)
+require(outputs_section is not None, "CloudFormation Outputs section is missing")
+for output_name, attribute, export_suffix in (
+    ("RepositoryArn", "Arn", "RepositoryArn"),
+    ("RepositoryUri", "RepositoryUri", "RepositoryUri"),
+):
+    output = re.search(
+        rf"(?ms)^  {output_name}:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
+        outputs_section.group("body"),
+    )
+    expected_export = (
+        'Name: !Sub "'
+        + chr(36)
+        + "{AWS::StackName}-"
+        + export_suffix
+        + '"'
+    )
+    require(
+        output is not None
+        and f"Value: !GetAtt Repository.{attribute}" in output.group("body")
+        and expected_export in output.group("body"),
+        f"{output_name} must preserve its stack-qualified Repository export",
+    )
+
 expected_subnets = {
     "PublicSubnetAz1",
     "PublicSubnetAz2",
@@ -202,4 +323,35 @@ for url in (
 ):
     require(url in readme, f"README must cite the applicable AWS source: {url}")
 
-print("Foundation static security and network-boundary assertions passed.")
+
+for phrase, message in (
+    ("ten most recently pushed images", "README must document ten-image ECR retention"),
+    ("any image, tagged or untagged", "README must document lifecycle coverage for tagged and untagged images"),
+    ("expires the oldest", "README must explain lifecycle expiration order"),
+    ("within 24 hours", "README must state lifecycle expiry timing"),
+    ("immutable release tags", "README must document immutable release tags"),
+    ("force-deletes remaining image contents", "README must warn that repository deletion force-deletes images"),
+    ("including images not yet expired", "README must warn deletion removes unexpired images too"),
+    ("emptyondelete", "README must document EmptyOnDelete destructive behavior"),
+    ("ordinary pr/ci validation and deployment workflows do not delete the repository", "README must distinguish routine CI/deploy from teardown"),
+    ("guarded teardown process in #271", "README must assign final teardown to issue #271"),
+    ("removal verification in #272", "README must assign deletion verification to issue #272"),
+    ("former cleanup instruction to run `aws cloudformation delete-stack` and empty ecr manually does not apply", "README must supersede legacy manual cleanup guidance for the foundation repository"),
+    ("do not manually empty or delete that repository", "README must prohibit manual foundation repository cleanup"),
+    ("any foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for all foundation repository deletion"),
+    ("force-deletes all remaining images", "README must explain guarded teardown force-empty behavior"),
+    ("foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for foundation repository deletion"),
+    ("do not manually empty the ecr repository or delete the foundation stack as a repository cleanup shortcut", "README must prohibit manual foundation ECR cleanup"),
+):
+    require(phrase in doc, message)
+for url in (
+    "https://docs.aws.amazon.com/AmazonECR/latest/userguide/lifecycle_policy_parameters.html",
+    "https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html",
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecr-repository.html",
+):
+    require(url in readme, f"README must cite the applicable AWS source: {url}")
+
+print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
+
+require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
+        "README must not defer the implemented lifecycle and force-empty behavior")
