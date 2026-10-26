@@ -1191,6 +1191,11 @@ for role_name, environment, prefix, parameter_env in (
     if role_name == "ObservabilityExecutionRole":
         expected.update(
             {
+                "ReadOsaObservabilityParameters": (
+                    {"ssm:GetParameters"},
+                    [ssm_parameter_arn("osa/observability/*")],
+                    [],
+                ),
                 "CreateTaggedOsaObservabilityVolumes": (
                     {"ec2:CreateVolume"},
                     [ec2_arn("volume/*")],
