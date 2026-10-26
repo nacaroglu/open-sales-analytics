@@ -2,6 +2,26 @@ import { expect, test } from "@playwright/test";
 import { SAMPLE_CUSTOMERS, SAMPLE_KPIS, keyFigures, openSample } from "./helpers";
 
 test("the Phase 3 browser journey stays coherent across all modules", async ({ page }) => {
+  const failedApiRequests: string[] = [];
+  const pageErrors: string[] = [];
+  const apiPath = (requestUrl: string): string | null => {
+    const pathname = new URL(requestUrl).pathname;
+    if (!pathname.startsWith("/api/")) return null;
+    return pathname.replace(/\/datasets\/[^/]+/g, "/datasets/:dataset");
+  };
+
+  page.on("requestfailed", (request) => {
+    const path = apiPath(request.url());
+    if (path) failedApiRequests.push(`${request.method()} ${path} failed at the network level`);
+  });
+  page.on("response", (response) => {
+    const path = apiPath(response.url());
+    if (path && !response.ok()) {
+      failedApiRequests.push(`${response.request().method()} ${path} returned HTTP ${response.status()}`);
+    }
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.name));
+
   await openSample(page);
 
   // Overview: the sample opens with the documented full dataset figures.
@@ -13,6 +33,7 @@ test("the Phase 3 browser journey stays coherent across all modules", async ({ p
   await page.getByLabel("Start date").fill("2025-01-01");
   await page.getByLabel("End date").fill("2025-12-31");
   await page.getByLabel("Compare with").selectOption("previous_year");
+  await expect(page.getByLabel("Compare with")).toHaveValue("previous_year");
   await expect(
     page
       .getByRole("region", { name: "Date range" })
@@ -73,4 +94,7 @@ test("the Phase 3 browser journey stays coherent across all modules", async ({ p
   await page.getByRole("link", { name: "Customers" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "Customers" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Customer coverage" })).toContainText(SAMPLE_CUSTOMERS.coverage);
+
+  expect(failedApiRequests, "API requests failed during the browser journey").toEqual([]);
+  expect(pageErrors, "uncaught browser exceptions during the journey").toEqual([]);
 });
