@@ -30,9 +30,34 @@ test("the Phase 3 browser journey stays coherent across all modules", async ({ p
 
   // Comparison: use the complete 2025 year so the same-period-last-year
   // comparison is available and its dates are explicit in the UI.
+  // Each filter change starts an Overview query; let it finish before changing
+  // the query key again so the browser does not abort an in-flight API request.
+  const periodOverview = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname.endsWith("/overview") &&
+      url.searchParams.get("start") === "2025-01-01" &&
+      url.searchParams.get("end") === null &&
+      url.searchParams.get("comparison") === "previous_period" &&
+      response.ok()
+    );
+  });
   await page.getByLabel("Start date").fill("2025-01-01");
+  await periodOverview;
   await page.getByLabel("End date").fill("2025-12-31");
+
+  const comparisonOverview = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname.endsWith("/overview") &&
+      url.searchParams.get("start") === "2025-01-01" &&
+      url.searchParams.get("end") === null &&
+      url.searchParams.get("comparison") === "previous_year" &&
+      response.ok()
+    );
+  });
   await page.getByLabel("Compare with").selectOption("previous_year");
+  await comparisonOverview;
   await expect(page.getByLabel("Compare with")).toHaveValue("previous_year");
   await expect(
     page
