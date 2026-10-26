@@ -4,7 +4,7 @@ version = "0.0.0"
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.5.6",
-    "fastapi>=0.143.0",
+    "fastapi>=0.161.1",
     "pydantic-settings>=2.16.0",
     "python-multipart>=0.0.32",
     "uvicorn>=0.54.0",
