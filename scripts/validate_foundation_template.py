@@ -665,7 +665,7 @@ for url in (
 # must match the reviewed policy sets, not just contain required fragments.
 def role_policy_text(role_name: str) -> str:
     policy = re.search(
-        r"(?ms)^      Policies:\\n(?P<body>.*?)(?=^      Tags:|\\Z)",
+        r"(?ms)^      Policies:\n(?P<body>.*?)(?=^      Tags:|\Z)",
         role_body(role_name),
     )
     return "" if policy is None else policy.group("body")
@@ -727,7 +727,7 @@ def assert_exact_policy(
         statement = statements[sid]
         require(
             statement_actions(statement) == actions
-            and len(re.findall(r"(?m)^\\s+Action:", statement)) == 1,
+            and len(re.findall(r"(?m)^\s+Action:", statement)) == 1,
             f"{role_name}.{sid} action set must be exact",
         )
         require(
@@ -749,13 +749,13 @@ def exact_assume_role_statement(
 ) -> None:
     role = role_body(role_name)
     assume = re.search(
-        r"(?ms)^      AssumeRolePolicyDocument:\\n(?P<body>.*?)(?=^      (?:ManagedPolicyArns|Policies|Tags):|\\Z)",
+        r"(?ms)^      AssumeRolePolicyDocument:\n(?P<body>.*?)(?=^      (?:ManagedPolicyArns|Policies|Tags):|\Z)",
         role,
     )
     require(assume is not None, f"{role_name} must have one explicit AssumeRolePolicyDocument")
     statement_lines = len(re.findall(r"(?m)^          - ", assume.group("body")))
     parsed = re.findall(
-        r"(?ms)^          - Sid: ([A-Za-z0-9]+)\\n(?P<body>.*?)(?=^          - |\\Z)",
+        r"(?ms)^          - Sid: ([A-Za-z0-9]+)\n(?P<body>.*?)(?=^          - |\Z)",
         assume.group("body"),
     )
     require(
@@ -764,7 +764,7 @@ def exact_assume_role_statement(
     )
     statement = parsed[0][1]
     principal = re.search(
-        r"(?ms)^            Principal:\\n(?P<body>.*?)(?=^            Action:|^            Condition:|\\Z)",
+        r"(?ms)^            Principal:\n(?P<body>.*?)(?=^            Action:|^            Condition:|\Z)",
         statement,
     )
     principal_values = [] if principal is None else [
@@ -773,9 +773,9 @@ def exact_assume_role_statement(
     require(
         principal_values == principal_lines
         and statement_actions(statement) == actions
-        and len(re.findall(r"(?m)^\\s+Action:", statement)) == 1
+        and len(re.findall(r"(?m)^\s+Action:", statement)) == 1
         and statement_conditions(statement) == conditions
-        and len(re.findall(r"(?m)^\\s+Effect:", statement)) == 1
+        and len(re.findall(r"(?m)^\s+Effect:", statement)) == 1
         and "Effect: Allow" in statement,
         f"{role_name}.{sid} principal, action, effect, and conditions must be exact",
     )
