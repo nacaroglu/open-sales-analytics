@@ -22,12 +22,19 @@ Inhalt: [Mit Docker ausführen](#mit-docker-ausführen) | [Konfiguration](#konfi
 Es gibt kein veröffentlichtes Image. Baue es daher einmal aus einem Checkout dieses Repositorys und führe es aus:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose veröffentlicht standardmäßig den Host-Port `8000`. Mit `OSA_PORT` lässt er sich ändern. Vor `docker compose up --build` können Sie `OSA_ENVIRONMENT`, `OSA_VERSION` oder `DATASET_DIR` setzen; die Standardwerte sind `development`, `local` und `/data`. Compose bindet das benannte Volume `osa-data` unter `DATASET_DIR` ein; `docker compose down -v` entfernt den Container und das Volume samt gespeicherten Daten.
 
 Öffne <http://localhost:8000>. Du siehst den Uploadbildschirm; **Beispieldaten ausprobieren** öffnet ein Dashboard mit der
 Beispieldatei. `curl http://localhost:8000/api/health` gibt `{"status":"ok"}` zurück.
+
+`/health/live` prüft nur, ob der Prozess antwortet. `/health/ready` liefert `200` und
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}`, wenn Initialisierung,
+temporärer Speicher, DuckDB und die mitgelieferte Beispieldatei bereit sind; andernfalls liefert es einen allgemeinen Status mit
+`503`. Die Felder `environment` und `version` stammen aus `OSA_ENVIRONMENT` und `OSA_VERSION`. Keiner der Endpunkte gibt
+einen Hostnamen, Dateisystempfad, Zugangsdaten oder ein Geheimnis zurück.
 
 Der Container läuft als Nicht-root-Benutzer (UID 10001) und speichert Datensätze in `/data` (`DATASET_DIR=/data`).
 Ohne Volume gehen sie beim Entfernen des Containers verloren. Binde zum Beibehalten ein benanntes Volume unter

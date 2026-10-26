@@ -60,7 +60,9 @@ routes. The live OpenAPI schema is the authority; this table is checked against 
 
 | Method | Path | Auth | Purpose and main options |
 | --- | --- | --- | --- |
-| GET | `/api/health` | No | Liveness check |
+| GET | `/api/health` | No | Legacy health response |
+| GET | `/health/live` | No | Process liveness only; no dependency checks |
+| GET | `/health/ready` | No | Readiness and safe service identity |
 | GET | `/api/config` | No | Public demo flag and upload limits; never secrets or paths |
 | POST | `/api/datasets` | No | Multipart upload; `currency` form field |
 | POST | `/api/datasets/sample` | No | Import the bundled sample in USD |

@@ -48,7 +48,9 @@ Open Sales Analytics は、FastAPI が配信する同一オリジンの React/Vi
 
 | メソッド | パス | 認証 | 目的と主なオプション |
 | --- | --- | --- | --- |
-| GET | `/api/health` | 不要 | 稼働確認 |
+| GET | `/api/health` | 不要 | 旧ヘルス応答 |
+| GET | `/health/live` | 不要 | プロセスの稼働のみ確認。依存関係は確認しない |
+| GET | `/health/ready` | 不要 | 準備状態と安全なサービス識別情報 |
 | GET | `/api/config` | 不要 | 公開デモフラグとアップロード制限。秘密やパスは含まない |
 | POST | `/api/datasets` | 不要 | Multipart アップロード。`currency` フォームフィールド |
 | POST | `/api/datasets/sample` | 不要 | 組み込みサンプルを USD でインポート |

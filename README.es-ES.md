@@ -22,12 +22,19 @@ Contenido: [Ejecutar con Docker](#ejecutar-con-docker) | [Configuración](#confi
 No hay una imagen publicada, así que debe compilarla una vez desde una copia de este repositorio y ejecutarla:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose publica el puerto del host `8000` de forma predeterminada. Defina `OSA_PORT` para cambiarlo. Antes de ejecutar `docker compose up --build`, puede definir `OSA_ENVIRONMENT`, `OSA_VERSION` o `DATASET_DIR`; sus valores predeterminados son `development`, `local` y `/data`. Compose monta el volumen con nombre `osa-data` en `DATASET_DIR`; `docker compose down -v` elimina el contenedor y el volumen, incluidos los datos guardados.
 
 Abra <http://localhost:8000>. Verá la pantalla de carga; **Probar datos de ejemplo** abre un panel con el archivo de ejemplo.
 `curl http://localhost:8000/api/health` devuelve `{"status":"ok"}`.
+
+`/health/live` solo comprueba que responde el proceso. `/health/ready` devuelve `200` y
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}` cuando la inicialización,
+el almacenamiento temporal, DuckDB y la muestra incluida están disponibles; de lo contrario devuelve un estado genérico con
+`503`. Los campos `environment` y `version` proceden de `OSA_ENVIRONMENT` y `OSA_VERSION`. Ningún endpoint devuelve el nombre
+del host, una ruta del sistema de archivos, credenciales ni secretos.
 
 El contenedor se ejecuta con un usuario sin privilegios (UID 10001) y guarda los conjuntos de datos en `/data`
 (`DATASET_DIR=/data`). Sin un volumen, se pierden al eliminar el contenedor. Para conservarlos, monte un volumen con

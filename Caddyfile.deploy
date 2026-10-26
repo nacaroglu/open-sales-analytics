@@ -1,0 +1,4 @@
+{$OSA_HOSTNAME} {
+	{$CADDY_AUTH_BLOCK}
+	reverse_proxy app:8000
+}

@@ -21,12 +21,18 @@ miktarın birim fiyatla çarpımının toplamıdır. İadeler, indirimler, vergi
 Yayımlanmış bir imaj yoktur; bu nedenle bu deponun bir checkout'ından bir kez derler, sonra çalıştırırsınız:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose varsayılan olarak ana makinede `8000` bağlantı noktasını açar. Değiştirmek için `OSA_PORT` değerini ayarlayın. `docker compose up --build` çalıştırmadan önce `OSA_ENVIRONMENT`, `OSA_VERSION` veya `DATASET_DIR` değerlerini ayarlayabilirsiniz; varsayılanlar `development`, `local` ve `/data` şeklindedir. Compose, adlandırılmış `osa-data` birimini `DATASET_DIR` konumuna bağlar; `docker compose down -v` kapsayıcıyı ve saklanan veriler dahil bu birimi kaldırır.
 
 <http://localhost:8000> adresini açın. Yükleme ekranını görürsünüz; **Örnek veriyi dene** örnek dosyayla bir panel açar.
 `curl http://localhost:8000/api/health`, `{"status":"ok"}` döndürür.
+
+`/health/live` yalnızca sürecin yanıt verdiğini kontrol eder. `/health/ready`, başlatma, geçici depolama, DuckDB ve
+paketle gelen örnek hazır olduğunda `200` ve `{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}`
+döndürür; aksi durumda genel bir durumla `503` döndürür. `environment` ve `version` alanları `OSA_ENVIRONMENT` ve
+`OSA_VERSION` değerlerinden gelir. Hiçbir uç nokta ana makine adı, dosya sistemi yolu, kimlik bilgisi veya sır döndürmez.
 
 Kapsayıcı root olmayan bir kullanıcıyla (UID 10001) çalışır ve veri kümelerini `/data` içinde tutar
 (`DATASET_DIR=/data`). Birim olmadan kapsayıcı kaldırıldığında bunlar kaybolur. Saklamak için `/data` noktasına adlandırılmış

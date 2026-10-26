@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.routing import Match, Route
 from starlette.staticfiles import StaticFiles
@@ -16,26 +16,33 @@ from app.api.products import router as products_router
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely
 from app.config import Settings, get_settings
 from app.errors import register_error_handlers
+from app.health import readiness_checks
 from app.logging_config import RequestLogMiddleware, configure_logging
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    # Fail at startup, not on the first request, if the environment is invalid.
-    settings = get_settings()
-    prepare_dataset_dir(settings)
-    await run_sweep_safely(settings)
-    timer = asyncio.create_task(run_cleanup_loop(settings))
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    application.state.initialized = False
+    timer: asyncio.Task | None = None
     try:
+        # Fail at startup, not on the first request, if the environment is invalid.
+        settings = get_settings()
+        prepare_dataset_dir(settings)
+        await run_sweep_safely(settings)
+        timer = asyncio.create_task(run_cleanup_loop(settings))
+        application.state.initialized = True
         yield
     finally:
-        timer.cancel()
-        with suppress(asyncio.CancelledError):
-            await timer
+        application.state.initialized = False
+        if timer is not None:
+            timer.cancel()
+            with suppress(asyncio.CancelledError):
+                await timer
 
 
 configure_logging()
 app = FastAPI(title="Open Sales Analytics", lifespan=lifespan)
+app.state.initialized = False
 app.add_middleware(RequestLogMiddleware)
 register_error_handlers(app)
 app.include_router(datasets_router)
@@ -47,6 +54,37 @@ app.include_router(products_router)
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health/live")
+def health_live() -> dict[str, str]:
+    """Report process responsiveness without checking downstream dependencies."""
+    return {"status": "live"}
+
+
+@app.get("/health/ready")
+def health_ready(request: Request) -> JSONResponse:
+    """Report readiness using only safe service identity and a generic failure body."""
+    if not getattr(request.app.state, "initialized", False):
+        return JSONResponse({"status": "not_ready"}, status_code=503)
+
+    try:
+        settings = get_settings()
+        ready = readiness_checks(settings)
+    except Exception:
+        ready = False
+    if not ready:
+        return JSONResponse({"status": "not_ready"}, status_code=503)
+
+    return JSONResponse(
+        {
+            "status": "ready",
+            "service": "open-sales-analytics",
+            "environment": settings.osa_environment,
+            "version": settings.osa_version,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/config")

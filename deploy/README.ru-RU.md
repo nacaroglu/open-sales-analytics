@@ -37,3 +37,22 @@ HTTP). Без сертификата сайт работает по обычно
 для реального использования настройте сертификат. Чтобы развернуть новый образ, отправьте его в репозиторий и выполните
 `aws ecs update-service --force-new-deployment`. Удалите стек командой `aws cloudformation delete-stack`; перед этим
 очистите репозиторий ECR.
+
+
+## Развертывание Docker Compose
+
+Файл переопределения Compose запускает образ приложения с неизменяемым digest за Caddy. Передайте полный адрес образа, публичное имя хоста, среду и версию во время запуска. Для разработки также требуется блок Caddy basic-auth с именем пользователя и хешем пароля; создайте хеш во время запуска и передайте блок, не добавляя его в репозиторий. В production этот блок оставляют пустым и включают публичный демонстрационный режим.
+
+```sh
+export OSA_IMAGE='registry.example/open-sales-analytics@sha256:<64-character-image-digest>'
+export OSA_HOSTNAME='sales.example.com'
+export OSA_ENVIRONMENT=development
+export OSA_VERSION=1.2.3
+export PUBLIC_DEMO_MODE=false
+read -rsp 'Password: ' password; printf '\n'
+password_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$password")"; unset password
+export CADDY_AUTH_BLOCK="$(printf 'basic_auth {\n  demo %s\n}' "$password_hash")"
+docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
+```
+
+Для настроек production задайте `CADDY_AUTH_BLOCK=''`, `PUBLIC_DEMO_MODE=true` и `OSA_ENVIRONMENT=production`. Хеш пароля передается во время запуска; не помещайте учетные данные или хеши в файлы Compose, историю команд или журналы CI.

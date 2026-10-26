@@ -19,12 +19,19 @@ Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configura
 There is no published image, so you build it once from a checkout of this repository, then run it:
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
+
+Compose maps host port `8000` by default. Set `OSA_PORT` to override it. Before running `docker compose up --build`, set `OSA_ENVIRONMENT`, `OSA_VERSION`, or `DATASET_DIR` as needed; defaults are `development`, `local`, and `/data`. Compose mounts the named volume `osa-data` at `DATASET_DIR`; `docker compose down -v` removes the container and volume, including stored datasets.
 
 Open <http://localhost:8000>. You see the upload screen; **Try sample data** opens a dashboard with the sample file.
 `curl http://localhost:8000/api/health` returns `{"status":"ok"}`.
+
+`/health/live` checks only that the process responds. `/health/ready` returns `200` and
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}` only when initialization,
+temporary storage, DuckDB and the bundled sample are ready; otherwise it returns `503` with a generic status. The `environment`
+and `version` fields come from `OSA_ENVIRONMENT` and `OSA_VERSION`. Neither endpoint returns a hostname, filesystem path,
+credential or secret.
 
 The container runs as a non-root user (UID 10001) and keeps its datasets in `/data` (`DATASET_DIR=/data`). Without a
 volume they are lost when the container is removed. To keep them, mount a named volume at `/data`:

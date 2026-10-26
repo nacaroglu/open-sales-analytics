@@ -1,0 +1,31 @@
+services:
+  app:
+    image: ${OSA_IMAGE:?Set OSA_IMAGE to a repository image pinned by SHA-256 digest}
+    build: !reset null
+    ports: !reset []
+    environment:
+      OSA_ENVIRONMENT: ${OSA_ENVIRONMENT:?Set OSA_ENVIRONMENT to development or production}
+      OSA_VERSION: ${OSA_VERSION:?Set OSA_VERSION to the release version}
+      PUBLIC_DEMO_MODE: ${PUBLIC_DEMO_MODE:-false}
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
+    environment:
+      OSA_HOSTNAME: ${OSA_HOSTNAME:?Set OSA_HOSTNAME to the public hostname}
+      CADDY_AUTH_BLOCK: ${CADDY_AUTH_BLOCK?Set CADDY_AUTH_BLOCK to a Caddy basic-auth block or an empty string}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.deploy:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

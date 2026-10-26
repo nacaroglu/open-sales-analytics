@@ -13,11 +13,16 @@ Open Sales Analytics は小規模なセルフホスト型 Web アプリケーシ
 公開済みイメージはないため、このリポジトリをチェックアウトして一度ビルドしてから実行します。
 
 ```sh
-docker build -t open-sales-analytics .
-docker run -p 8000:8000 open-sales-analytics
+docker compose up --build
 ```
 
+Compose はホストのポート `8000` を既定で公開します。変更するには `OSA_PORT` を設定します。`docker compose up --build` の実行前に `OSA_ENVIRONMENT`、`OSA_VERSION`、`DATASET_DIR` を設定できます。既定値は `development`、`local`、`/data` です。Compose は名前付きボリューム `osa-data` を `DATASET_DIR` にマウントします。保存したデータを含めてコンテナとボリュームを削除するには `docker compose down -v` を実行します。
+
 <http://localhost:8000> を開きます。アップロード画面が表示され、**サンプルデータを試す**でサンプルファイルのダッシュボードが開きます。`curl http://localhost:8000/api/health` は `{"status":"ok"}` を返します。
+
+`/health/live` はプロセスの応答だけを確認します。初期化、一時ストレージ、DuckDB、同梱サンプルが利用可能な場合、`/health/ready` は `200` と
+`{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}` を返します。それ以外は一般的な状態と `503` を返します。
+`environment` と `version` は `OSA_ENVIRONMENT` と `OSA_VERSION` の値です。どちらのエンドポイントもホスト名、ファイルパス、認証情報、秘密情報を返しません。
 
 コンテナは非 root ユーザー（UID 10001）で動き、データセットを `/data`（`DATASET_DIR=/data`）に保存します。ボリュームがなければ、コンテナ削除時に失われます。保持するには名前付きボリュームを `/data` にマウントします。
 
