@@ -247,6 +247,25 @@ Resources:
         ScanOnPush: true
       EncryptionConfiguration:
         EncryptionType: AES256
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Retain the ten most recently pushed images across tags.",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
       Tags:
         - Key: Project
           Value: open-sales-analytics
@@ -409,9 +428,12 @@ Resources:
                 Effect: Allow
                 Action:
                   - ecr:CreateRepository
+                  - ecr:DeleteLifecyclePolicy
                   - ecr:DeleteRepository
                   - ecr:DescribeRepositories
+                  - ecr:GetLifecyclePolicy
                   - ecr:PutImageScanningConfiguration
+                  - ecr:PutLifecyclePolicy
                   - ecr:TagResource
                   - ecr:UntagResource
                 Resource: !Sub "arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${RepositoryName}"
