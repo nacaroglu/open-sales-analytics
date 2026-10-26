@@ -61,9 +61,17 @@ def http(
     request = Request(base_url + path, data=body, headers=headers or {}, method=method)
     try:
         with urlopen(request, timeout=timeout) as response:
-            return response.status, dict(response.headers.items()), response.read()
+            return (
+                response.status,
+                {key.lower(): value for key, value in response.headers.items()},
+                response.read(),
+            )
     except HTTPError as response:
-        return response.code, dict(response.headers.items()), response.read()
+        return (
+            response.code,
+            {key.lower(): value for key, value in response.headers.items()},
+            response.read(),
+        )
 
 
 def json_body(response: tuple[int, dict[str, str], bytes], case: str) -> dict:
@@ -73,7 +81,7 @@ def json_body(response: tuple[int, dict[str, str], bytes], case: str) -> dict:
         case,
         f"expected successful JSON response, got HTTP {status}",
     )
-    check("json" in headers.get("Content-Type", "").lower(), case, "response was not JSON")
+    check("json" in headers.get("content-type", "").lower(), case, "response was not JSON")
     try:
         result = json.loads(body)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -87,7 +95,7 @@ def wait_ready(base_url: str, compose: list[str], timeout: float = 120) -> None:
     while time.monotonic() < deadline:
         try:
             status, headers, body = http(base_url, "GET", "/health/ready", timeout=2)
-            if status == 200 and "json" in headers.get("Content-Type", "").lower():
+            if status == 200 and "json" in headers.get("content-type", "").lower():
                 payload = json.loads(body)
                 if payload.get("status") == "ready":
                     mark("IT-01", "application became ready within the bounded startup timeout")
@@ -447,7 +455,7 @@ def frontend_and_sample(base_url: str) -> dict:
     status, headers, body = http(base_url, "GET", "/")
     check(status == 200, "IT-02", f"frontend HTML returned HTTP {status}")
     check(
-        "text/html" in headers.get("Content-Type", "").lower(),
+        "text/html" in headers.get("content-type", "").lower(),
         "IT-02",
         "HTML content type was missing",
     )
@@ -463,7 +471,7 @@ def frontend_and_sample(base_url: str) -> dict:
         asset_status, asset_headers, asset_body = http(base_url, "GET", asset_path)
         check(asset_status == 200, "IT-02", f"built {label} returned HTTP {asset_status}")
         check(
-            content_type in asset_headers.get("Content-Type", "").lower(),
+            content_type in asset_headers.get("content-type", "").lower(),
             "IT-02",
             f"built {label} content type was incorrect",
         )
@@ -492,7 +500,7 @@ def frontend_and_sample(base_url: str) -> dict:
     route_status, route_headers, route_body = http(base_url, "GET", f"/d/{dataset_id}")
     check(route_status == 200, "IT-02", f"SPA route returned HTTP {route_status}")
     check(
-        "text/html" in route_headers.get("Content-Type", "").lower(),
+        "text/html" in route_headers.get("content-type", "").lower(),
         "IT-02",
         "SPA route did not return HTML",
     )
