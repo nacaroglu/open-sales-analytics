@@ -157,7 +157,9 @@ jobs:
           done
           test "$ready" -eq 1
 
-          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend python -m app.telemetry_test_signal
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development OSA_VERSION=integration-test python -m app.telemetry_test_signal
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=production OSA_VERSION=integration-test python -m app.telemetry_test_signal
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development OSA_VERSION=alternate-test python -m app.telemetry_test_signal
           captured=0
           for _ in $(seq 1 15); do
             if [ -s "$sink_file" ]; then
@@ -181,11 +183,31 @@ jobs:
               for line in pathlib.Path(sys.argv[1]).read_text().splitlines()
               if line.strip()
           ]
-          expected = {
-              "service.name": "open-sales-analytics",
-              "service.namespace": "osa",
-              "service.version": "integration-test",
-              "deployment.environment.name": "development",
+          identity_keys = (
+              "service.name",
+              "service.namespace",
+              "service.version",
+              "deployment.environment.name",
+          )
+          expected_identities = {
+              (
+                  "open-sales-analytics",
+                  "osa",
+                  "integration-test",
+                  "development",
+              ),
+              (
+                  "open-sales-analytics",
+                  "osa",
+                  "integration-test",
+                  "production",
+              ),
+              (
+                  "open-sales-analytics",
+                  "osa",
+                  "alternate-test",
+                  "development",
+              ),
           }
 
           signal_shapes = {
@@ -200,12 +222,16 @@ jobs:
                   for resource_signal in record.get(resource_key, [])
               ]
               assert resources, f"no {signal} were captured"
+              actual_identities = set()
               for resource in resources:
-                  actual = {
+                  attributes = {
                       item["key"]: item["value"].get("stringValue")
                       for item in resource.get("attributes", [])
                   }
-                  assert all(actual.get(key) == value for key, value in expected.items()), actual
+                  identity = tuple(attributes.get(key) for key in identity_keys)
+                  assert identity in expected_identities, attributes
+                  actual_identities.add(identity)
+              assert actual_identities == expected_identities, actual_identities
 
           spans = [
               span
@@ -235,7 +261,7 @@ jobs:
               and log.get("body", {}).get("stringValue") == "osa.synthetic.resource_identity"
               for log in logs
           )
-          print("Synthetic trace, metric, and log carry the configured resource identity.")
+          print("Synthetic trace, metric, and log carry all independently configured resource identities.")
           PY
 
   # The container from the Dockerfile is built and started once; the health check and the
