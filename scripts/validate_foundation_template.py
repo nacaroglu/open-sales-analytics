@@ -35,10 +35,10 @@ require("token.actions.githubusercontent.com:sub: !Sub \"repo:${GitHubOwner}/${G
 require("Resource: !GetAtt Repository.Arn" in text, "build/push ECR actions must be repository scoped")
 require("FoundationExecutionRole:" in text and "BuildRole:" in text, "separate baseline roles are required")
 
-role_match = re.search(r"(?ms)^  FoundationExecutionRole:\\n(?P<body>.*?)(?=^Outputs:)", text)
+role_match = re.search(r"(?ms)^  FoundationExecutionRole:\n(?P<body>.*?)(?=^Outputs:)", text)
 require(role_match is not None, "foundation execution role policy is required")
 role_statements = re.findall(
-    r"(?ms)^\\s+- Sid: ([A-Za-z0-9]+)\\n(?P<body>.*?)(?=^\\s+- Sid:|\\Z)",
+    r"(?ms)^\s+- Sid: ([A-Za-z0-9]+)\n(?P<body>.*?)(?=^\s+- Sid:|\\Z)",
     role_match.group("body"),
 )
 create_route_table = next(
@@ -51,10 +51,10 @@ require(
     and "vpc/*" in create_route_table,
     "ec2:CreateRouteTable must be scoped to both route-table and VPC resources",
 )
-resources_match = re.search(r"(?ms)^Resources:\\n(?P<body>.*?)(?=^Outputs:)", text)
+resources_match = re.search(r"(?ms)^Resources:\n(?P<body>.*?)(?=^Outputs:)", text)
 require(resources_match is not None, "CloudFormation Resources section is required")
 resource_blocks = re.findall(
-    r"(?ms)^  ([A-Za-z][A-Za-z0-9]*):\\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\\n|\\Z)",
+    r"(?ms)^  ([A-Za-z][A-Za-z0-9]*):\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\\Z)",
     resources_match.group("body"),
 )
 for resource_name, resource_body in resource_blocks:
