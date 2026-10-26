@@ -36,6 +36,15 @@ version = version_match.group("body")
 require("MinLength: 1" in version and 'AllowedPattern: "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$"' in version,
         "ReleaseVersion must be non-empty and readable")
 
+parameters = re.search(r"(?ms)^Parameters:\n(?P<body>.*?)(?=^Conditions:|^Resources:|\Z)", text)
+require(parameters is not None, "Parameters section is required")
+parameter_names = re.findall(r"(?m)^  ([A-Za-z][A-Za-z0-9]*):\n", parameters.group("body"))
+require(
+    set(parameter_names) == {"Environment", "ImageDigest", "ReleaseVersion"}
+    and len(parameter_names) == 3,
+    "the exact parameter set must be Environment, ImageDigest, and ReleaseVersion",
+)
+
 resources = re.search(r"(?ms)^Resources:\n(?P<body>.*?)(?=^Outputs:|\Z)", text)
 require(resources is not None, "Resources section is required")
 resource_body = resources.group("body")
@@ -65,9 +74,56 @@ output_body = outputs.group("body")
 output_names = re.findall(r"(?m)^  ([A-Za-z][A-Za-z0-9]*):\n", output_body)
 require(output_names == ["Environment", "ImageReference", "ReleaseVersion", "ReleaseParameterName"],
         "only stable non-secret environment, image, version, and parameter-name outputs are allowed")
-require("Fn::ImportValue: osa-foundation-RepositoryUri" in output_body
-        and '"${RepositoryUri}@sha256:${Digest}"' in output_body,
-        "ImageReference output must resolve the foundation repository URI and digest")
+output_blocks = dict(
+    re.findall(
+        r"(?ms)^  ([A-Za-z][A-Za-z0-9]*):\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
+        output_body,
+    )
+)
+require(
+    set(output_blocks) == {"Environment", "ImageReference", "ReleaseVersion", "ReleaseParameterName"}
+    and len(output_blocks) == 4,
+    "exactly the four approved stable outputs must be declared",
+)
+
+
+def output_value(output_name: str, block: str) -> str:
+    lines = block.splitlines()
+    value_indexes = [index for index, line in enumerate(lines) if line.startswith("    Value:")]
+    require(len(value_indexes) == 1, f"{output_name} must have exactly one Value")
+    index = value_indexes[0]
+    line = lines[index]
+    inline = line[len("    Value:"):].strip()
+    if inline:
+        return f"Value: {inline}"
+    value_lines = ["Value:"]
+    for nested_line in lines[index + 1:]:
+        if nested_line.strip() and len(nested_line) - len(nested_line.lstrip()) <= 4:
+            break
+        if nested_line.strip():
+            require(nested_line.startswith("      "), f"{output_name} Value must be a valid nested intrinsic")
+            value_lines.append(nested_line[4:])
+    return "\n".join(value_lines)
+
+
+expected_output_values = {
+    "Environment": "Value: !Ref Environment",
+    "ImageReference": (
+        'Value:\n'
+        '  Fn::Sub:\n'
+        '    - "${RepositoryUri}@sha256:${Digest}"\n'
+        '    - RepositoryUri:\n'
+        '        Fn::ImportValue: osa-foundation-RepositoryUri\n'
+        '      Digest: !Ref ImageDigest'
+    ),
+    "ReleaseVersion": "Value: !Ref ReleaseVersion",
+    "ReleaseParameterName": "Value: !Ref ReleaseImageMetadataParameter",
+}
+for output_name, expected_value in expected_output_values.items():
+    require(
+        output_value(output_name, output_blocks[output_name]) == expected_value,
+        f"{output_name} output must retain its exact approved value contract",
+    )
 for forbidden in ("Password", "Hash", "Token", "Credential", "Secret"):
     require(forbidden not in output_body, f"outputs must not expose {forbidden.lower()} values")
 
