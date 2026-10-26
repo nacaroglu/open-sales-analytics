@@ -56,3 +56,52 @@ docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
 ```
 
 Geben Sie für Produktionseinstellungen `CADDY_AUTH_BLOCK=''` und `PUBLIC_DEMO_MODE=true` an und setzen Sie `OSA_ENVIRONMENT=production`. Der Passwort-Hash ist eine Laufzeiteingabe; speichern Sie keine Zugangsdaten oder Hashes in Compose-Dateien, im Shell-Verlauf oder in CI-Protokollen.
+
+
+## Gemeinsamer Foundation-Stack
+
+Die separate Vorlage `deploy/cloudformation/osa-foundation.yaml` erstellt das gemeinsame VPC und die Subnetze, ein ECR-Repository mit unveränderlichen Tags und Scan beim Push, den GitHub-Actions-OIDC-Provider, eine Image-Push-Rolle und die Ausführungsrolle für den Foundation-Stack. Sie erstellt keine Security Groups oder Ingress-Regeln. Private Routingtabellen haben keine direkte Route zum Internet Gateway.
+
+### Parameter und Exporte
+
+Wähle unterschiedliche AZs für `AvailabilityZone1` und `AvailabilityZone2`. `VpcCidr`, die beiden `PublicSubnet*Cidr`- und die beiden `PrivateSubnet*Cidr`-Werte legen nicht überlappende Netzwerkbereiche fest; Standardwerte sind `10.40.0.0/16` und vier `/20`-Subnetze. Setze `GitHubOwner` und `GitHubRepository`; `GitHubMainBranch` ist standardmäßig `main`, und der OIDC-Subject gilt genau für diesen Branch. `RepositoryName` ist standardmäßig `open-sales-analytics`.
+
+Beim Deployment als `osa-foundation` entstehen stabile, durch den Stacknamen qualifizierte Exporte: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, `osa-foundation-StackName` und `osa-foundation-Region`. Verwende in späteren Templates `Fn::ImportValue`; für kommaseparierte Subnet-Listen nutze `Fn::Split`.
+
+Die GitHub-Vertrauensregel verlangt exakt Repository-Eigentümer, Repository und Branch sowie die Audience `sts.amazonaws.com`; langlebige Zugangsdaten werden nicht ausgegeben. Siehe [GitHubs AWS-OIDC-Anleitung](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
+
+### Erstellen und validieren
+
+Für benannte IAM-Rollen ist `CAPABILITY_NAMED_IAM` erforderlich. Da das Template die Rolle `FoundationExecutionRoleArn` selbst erstellt, muss der erste Stack-Aufruf mit den Anmeldedaten des Aufrufers erfolgen; vor ihrer Erstellung kann sie nicht mit `--role-arn` übergeben werden. Bei einem späteren Update desselben Stacks kannst du die Ausgabe `FoundationExecutionRoleArn` abrufen und mit `--role-arn` angeben; dafür benötigt der Aufrufer `iam:PassRole` für diese Rolle. CloudFormation ordnet die Rolle künftigen Stack-Operationen zu. Siehe die AWS-Dokumentation zu [CreateStack](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_CreateStack.html) und [UpdateStack](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html).
+
+Beim ersten Deployment wird `--role-arn` ausgelassen, weil die Rolle noch nicht existiert. Bei einer späteren Änderung dieses Foundation-Stacks rufst du `FoundationExecutionRoleArn` ab und gibst es zusammen mit der Template- oder Parameteränderung an den üblichen Deployment-Befehl weiter:
+```sh
+REGION=eu-central-1; STACK=osa-foundation
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
+  --template-file deploy/cloudformation/osa-foundation.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
+```
+
+Prüfe lokal mit dem signierten, gepinnten AWS-Binary `cfn-validate` und den statischen Prüfungen des Repositorys:
+```sh
+EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \\
+  --query "Stacks[0].Outputs[?OutputKey=='FoundationExecutionRoleArn'].OutputValue" --output text)
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \\
+  --template-file deploy/cloudformation/osa-foundation.yaml \\
+  --capabilities CAPABILITY_NAMED_IAM --role-arn "$EXECUTION_ROLE_ARN" \\
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \\
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
+```
+
+```sh
+cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
+python3 scripts/validate_foundation_template.py
+```
+
+Der Validator enthält Schemas und Regeln; die Validierung selbst benötigt weder AWS-Zugangsdaten noch Netzwerkzugriff. CI prüft SHA-256 und detached Signatur des Binaries und führt kein Deployment aus. Siehe den [AWS-CloudFormation-Validierungsleitfaden](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cloudformation-validate.html) und die [AWS-Anleitung zur Signaturprüfung](https://github.com/aws-cloudformation/cloudformation-validate/blob/main/INSTALLATION.md).
+
+### Löschen und bereinigen
+
+Lösche alle nachgelagerten Stacks vor `osa-foundation`, die dessen Exporte importieren; CloudFormation verhindert das Entfernen eines noch importierten Exports. Führe danach `aws cloudformation delete-stack` aus. Entferne ECR-Images vor der Bereinigung explizit. Begrenzte Lifecycle-Regeln und Empty-on-Delete gehören zu Issue #236. Prüfe Parameter, IAM-Capabilities und den AWS-Änderungssatz vor einem Deployment; die Offline-Validierung bestätigt nicht, dass AZs oder CIDRs in der Region verfügbar sind. Siehe die [CloudFormation-Ressourcendokumentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
