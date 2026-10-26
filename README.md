@@ -11,6 +11,7 @@ Contents: [Run it with Docker](#run-it-with-docker) | [Configuration](#configura
 [Explore the results](#6-explore-the-results) |
 [Product analytics](#product-analytics) | [Customer analytics](#customer-analytics) | [Comparisons](#comparisons) |
 [Dataset contract](#dataset-contract) | [Currencies](#currencies) | [Privacy](#privacy) |
+[Telemetry](#telemetry) |
 [Demo mode](#demo-mode) | [Limitations](#limitations) | [Roadmap](#roadmap) | [Architecture](#architecture) |
 [Development](#development) | [Contributing](#contributing) | [License](#license)
 
@@ -257,6 +258,27 @@ Booleans accept `true`/`false`, `1`/`0` and `yes`/`no` in any letter case (`on`/
 An invalid value makes the server refuse to start, with an error that names the variable. Invalid means not a number,
 zero or negative, a decimal such as `1.5`, an empty string, or a boolean that is none of the spellings above. For
 example, `MAX_ROWS=0 uv run uvicorn app.main:app --app-dir backend` exits with `MAX_ROWS  Input should be greater than 0`.
+
+## Telemetry
+
+The application creates OpenTelemetry trace, metric, and log providers at startup. They share one
+resource with four bounded identity attributes: `service.name=open-sales-analytics`,
+`service.namespace=osa`, `service.version` from `OSA_VERSION` (default `local`), and
+`deployment.environment.name` from `OSA_ENVIRONMENT` (default `development`). The environment accepts
+`development` or `production`. No host, filesystem, dataset, request, or user values are added to this
+resource.
+
+Without an OTLP endpoint, providers run with no exporter and startup does not contact a telemetry
+service. To export using OTLP/HTTP protobuf, set `OTEL_EXPORTER_OTLP_ENDPOINT` to the Collector base
+URL (for example `http://collector:4318`). The application appends `/v1/traces`, `/v1/metrics`, and
+`/v1/logs`. Per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` values override that
+base for their signal. `OTEL_EXPORTER_OTLP_PROTOCOL` may be unset or `http/protobuf`; other protocols
+are rejected when an endpoint is configured.
+
+The test-only Collector setup and the private synthetic signal command are documented in
+[`_docs/test-telemetry.md`](_docs/test-telemetry.md). The command emits fixed trace, counter, and log
+values and flushes the providers without exposing a public route.
 
 ## Dataset contract
 
