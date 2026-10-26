@@ -34,6 +34,36 @@ require("token.actions.githubusercontent.com:sub: !Sub \"repo:${GitHubOwner}/${G
         "OIDC subject must be exact owner/repository/branch without wildcard")
 require("Resource: !GetAtt Repository.Arn" in text, "build/push ECR actions must be repository scoped")
 require("FoundationExecutionRole:" in text and "BuildRole:" in text, "separate baseline roles are required")
+
+role_match = re.search(r"(?ms)^  FoundationExecutionRole:\\n(?P<body>.*?)(?=^Outputs:)", text)
+require(role_match is not None, "foundation execution role policy is required")
+role_statements = re.findall(
+    r"(?ms)^\\s+- Sid: ([A-Za-z0-9]+)\\n(?P<body>.*?)(?=^\\s+- Sid:|\\Z)",
+    role_match.group("body"),
+)
+create_route_table = next(
+    (body for sid, body in role_statements if sid == "CreateRouteTableInVpc"),
+    "",
+)
+require(
+    "ec2:CreateRouteTable" in create_route_table
+    and "route-table/*" in create_route_table
+    and "vpc/*" in create_route_table,
+    "ec2:CreateRouteTable must be scoped to both route-table and VPC resources",
+)
+resources_match = re.search(r"(?ms)^Resources:\\n(?P<body>.*?)(?=^Outputs:)", text)
+require(resources_match is not None, "CloudFormation Resources section is required")
+resource_blocks = re.findall(
+    r"(?ms)^  ([A-Za-z][A-Za-z0-9]*):\\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\\n|\\Z)",
+    resources_match.group("body"),
+)
+for resource_name, resource_body in resource_blocks:
+    if "Type: AWS::EC2::Route" in resource_body:
+        require(
+            "PrivateRouteTableAz1" not in resource_body
+            and "PrivateRouteTableAz2" not in resource_body,
+            f"{resource_name} must not target a private route table",
+        )
 require("${AWS::StackName}-VpcId" in text and "${AWS::StackName}-PrivateSubnetIds" in text
         and "${AWS::StackName}-PublicSubnetIds" in text and "${AWS::StackName}-RepositoryUri" in text,
         "shared outputs must have stack-qualified exports")
