@@ -177,12 +177,9 @@ jobs:
           import json
           import pathlib
           import sys
+          import time
 
-          records = [
-              json.loads(line)
-              for line in pathlib.Path(sys.argv[1]).read_text().splitlines()
-              if line.strip()
-          ]
+          sink = pathlib.Path(sys.argv[1])
           identity_keys = (
               "service.name",
               "service.namespace",
@@ -215,23 +212,44 @@ jobs:
               "metrics": ("resourceMetrics", "scopeMetrics", "metrics"),
               "logs": ("resourceLogs", "scopeLogs", "logRecords"),
           }
-          for signal, (resource_key, scope_key, data_key) in signal_shapes.items():
-              resources = [
-                  resource_signal["resource"]
-                  for record in records
-                  for resource_signal in record.get(resource_key, [])
+          def read_signal_identities():
+              records = [
+                  json.loads(line)
+                  for line in sink.read_text().splitlines()
+                  if line.strip()
               ]
-              assert resources, f"no {signal} were captured"
-              actual_identities = set()
-              for resource in resources:
-                  attributes = {
-                      item["key"]: item["value"].get("stringValue")
-                      for item in resource.get("attributes", [])
-                  }
-                  identity = tuple(attributes.get(key) for key in identity_keys)
-                  assert identity in expected_identities, attributes
-                  actual_identities.add(identity)
-              assert actual_identities == expected_identities, actual_identities
+              observed = {}
+              for signal, (resource_key, _, _) in signal_shapes.items():
+                  resources = [
+                      resource_signal["resource"]
+                      for record in records
+                      for resource_signal in record.get(resource_key, [])
+                  ]
+                  identities = set()
+                  for resource in resources:
+                      attributes = {
+                          item["key"]: item["value"].get("stringValue")
+                          for item in resource.get("attributes", [])
+                      }
+                      identity = tuple(attributes.get(key) for key in identity_keys)
+                      assert identity in expected_identities, attributes
+                      identities.add(identity)
+                  observed[signal] = identities
+              return records, observed
+
+          deadline = time.monotonic() + 30
+          while True:
+              records, observed_identities = read_signal_identities()
+              if all(
+                  identities == expected_identities
+                  for identities in observed_identities.values()
+              ):
+                  break
+              if time.monotonic() >= deadline:
+                  raise AssertionError(
+                      f"Collector did not capture every resource identity: {observed_identities}"
+                  )
+              time.sleep(0.5)
 
           spans = [
               span

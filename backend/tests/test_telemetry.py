@@ -56,6 +56,40 @@ def test_resource_uses_test_version_with_supported_development_environment():
     assert resource.attributes["deployment.environment.name"] == "development"
 
 
+def test_environment_and_version_change_only_their_own_resource_attributes():
+    development = create_resource(
+        Settings(osa_environment="development", osa_version="integration-test")
+    )
+    production = create_resource(
+        Settings(osa_environment="production", osa_version="integration-test")
+    )
+    alternate_version = create_resource(
+        Settings(osa_environment="development", osa_version="alternate-test")
+    )
+
+    development_attributes = dict(development.attributes)
+    production_attributes = dict(production.attributes)
+    alternate_version_attributes = dict(alternate_version.attributes)
+    assert {
+        key: value
+        for key, value in development_attributes.items()
+        if key != "deployment.environment.name"
+    } == {
+        key: value
+        for key, value in production_attributes.items()
+        if key != "deployment.environment.name"
+    }
+    assert production_attributes["deployment.environment.name"] == "production"
+    assert {
+        key: value for key, value in development_attributes.items() if key != "service.version"
+    } == {
+        key: value
+        for key, value in alternate_version_attributes.items()
+        if key != "service.version"
+    }
+    assert alternate_version_attributes["service.version"] == "alternate-test"
+
+
 def test_all_signal_providers_share_the_same_resource_without_an_endpoint():
     telemetry = create_telemetry(Settings(), environ={})
     try:
