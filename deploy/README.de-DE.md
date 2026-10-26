@@ -58,22 +58,23 @@ docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
 Geben Sie für Produktionseinstellungen `CADDY_AUTH_BLOCK=''` und `PUBLIC_DEMO_MODE=true` an und setzen Sie `OSA_ENVIRONMENT=production`. Der Passwort-Hash ist eine Laufzeiteingabe; speichern Sie keine Zugangsdaten oder Hashes in Compose-Dateien, im Shell-Verlauf oder in CI-Protokollen.
 
 
-## Shared foundation stack
+## Gemeinsamer Foundation-Stack
 
-The separate `deploy/cloudformation/osa-foundation.yaml` template creates the shared VPC and subnets, immutable scan-on-push ECR repository, GitHub Actions OIDC provider, image build/push role, and foundation execution role. It creates no security groups or ingress rules. Private route tables have no direct internet-gateway route.
+Die separate Vorlage `deploy/cloudformation/osa-foundation.yaml` erstellt das gemeinsame VPC und die Subnetze, ein ECR-Repository mit unveränderlichen Tags und Scan beim Push, den GitHub-Actions-OIDC-Provider, eine Image-Push-Rolle und die Ausführungsrolle für den Foundation-Stack. Sie erstellt keine Security Groups oder Ingress-Regeln. Private Routingtabellen haben keine direkte Route zum Internet Gateway.
 
-### Parameters and exports
+### Parameter und Exporte
 
-Set `AvailabilityZone1` and `AvailabilityZone2` to distinct AZs. `VpcCidr`, the two `PublicSubnet*Cidr` values, and the two `PrivateSubnet*Cidr` values define non-overlapping network ranges; defaults are `10.40.0.0/16` and four `/20` subnets. Set `GitHubOwner` and `GitHubRepository`; `GitHubMainBranch` defaults to `main` and the OIDC subject matches that exact branch. `RepositoryName` defaults to `open-sales-analytics`.
+Wähle unterschiedliche AZs für `AvailabilityZone1` und `AvailabilityZone2`. `VpcCidr`, die beiden `PublicSubnet*Cidr`- und die beiden `PrivateSubnet*Cidr`-Werte legen nicht überlappende Netzwerkbereiche fest; Standardwerte sind `10.40.0.0/16` und vier `/20`-Subnetze. Setze `GitHubOwner` und `GitHubRepository`; `GitHubMainBranch` ist standardmäßig `main`, und der OIDC-Subject gilt genau für diesen Branch. `RepositoryName` ist standardmäßig `open-sales-analytics`.
 
-Deploy as `osa-foundation` to use stable stack-qualified exports: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, `osa-foundation-StackName`, and `osa-foundation-Region`. Import values in later templates with `Fn::ImportValue`; use `Fn::Split` for the comma-separated subnet lists.
+Beim Deployment als `osa-foundation` entstehen stabile, durch den Stacknamen qualifizierte Exporte: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, `osa-foundation-StackName` und `osa-foundation-Region`. Verwende in späteren Templates `Fn::ImportValue`; für kommaseparierte Subnet-Listen nutze `Fn::Split`.
 
-The GitHub trust requires the exact owner/repository/branch subject and `sts.amazonaws.com` audience; it grants no long-lived credentials. See [GitHub's AWS OIDC guide](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
+Die GitHub-Vertrauensregel verlangt exakt Repository-Eigentümer, Repository und Branch sowie die Audience `sts.amazonaws.com`; langlebige Zugangsdaten werden nicht ausgegeben. Siehe [GitHubs AWS-OIDC-Anleitung](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
 
-### Create and validate
+### Erstellen und validieren
 
-Creating named IAM roles requires `CAPABILITY_NAMED_IAM`. The caller needs permission to create the declared resources and pass the foundation execution role to CloudFormation.
+Für benannte IAM-Rollen ist `CAPABILITY_NAMED_IAM` erforderlich. Da das Template die Rolle `FoundationExecutionRoleArn` selbst erstellt, muss der erste Stack-Aufruf mit den Anmeldedaten des Aufrufers erfolgen; vor ihrer Erstellung kann sie nicht mit `--role-arn` übergeben werden. Bei einem späteren Update desselben Stacks kannst du die Ausgabe `FoundationExecutionRoleArn` abrufen und mit `--role-arn` angeben; dafür benötigt der Aufrufer `iam:PassRole` für diese Rolle. CloudFormation ordnet die Rolle künftigen Stack-Operationen zu. Siehe die AWS-Dokumentation zu [CreateStack](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_CreateStack.html) und [UpdateStack](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html).
 
+Beim ersten Deployment wird `--role-arn` ausgelassen, weil die Rolle noch nicht existiert. Bei einer späteren Änderung dieses Foundation-Stacks rufst du `FoundationExecutionRoleArn` ab und gibst es zusammen mit der Template- oder Parameteränderung an den üblichen Deployment-Befehl weiter:
 ```sh
 REGION=eu-central-1; STACK=osa-foundation
 aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
@@ -83,15 +84,19 @@ aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
     GitHubOwner=OWNER GitHubRepository=open-sales-analytics
 ```
 
-Validate locally with the signed, pinned AWS `cfn-validate` binary and the repository's static assertions:
-
+Prüfe lokal mit dem signierten, gepinnten AWS-Binary `cfn-validate` und den statischen Prüfungen des Repositorys:
 ```sh
-cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
-python3 scripts/validate_foundation_template.py
+EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \\
+  --query "Stacks[0].Outputs[?OutputKey=='FoundationExecutionRoleArn'].OutputValue" --output text)
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \\
+  --template-file deploy/cloudformation/osa-foundation.yaml \\
+  --capabilities CAPABILITY_NAMED_IAM --role-arn "$EXECUTION_ROLE_ARN" \\
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \\
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
 ```
 
-The validator bundles schemas and rules, so the validation itself needs no AWS credentials or network. CI verifies the binary's SHA-256 and detached signature before running it; CI never deploys this template. See the [AWS CloudFormation validation guide](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cloudformation-validate.html) and [AWS validator signature instructions](https://github.com/aws-cloudformation/cloudformation-validate/blob/main/INSTALLATION.md).
+Der Validator enthält Schemas und Regeln; die Validierung selbst benötigt weder AWS-Zugangsdaten noch Netzwerkzugriff. CI prüft SHA-256 und detached Signatur des Binaries und führt kein Deployment aus. Siehe den [AWS-CloudFormation-Validierungsleitfaden](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cloudformation-validate.html) und die [AWS-Anleitung zur Signaturprüfung](https://github.com/aws-cloudformation/cloudformation-validate/blob/main/INSTALLATION.md).
 
-### Delete and cleanup
+### Löschen und bereinigen
 
-Delete downstream stacks before `osa-foundation`; CloudFormation prevents deleting exports still imported by another stack. Then use `aws cloudformation delete-stack`. Remove ECR images explicitly before cleanup. Bounded lifecycle and empty-on-delete behavior are deferred to issue #236. Review parameters, IAM capabilities, and the AWS change set before any deployment; offline validation does not confirm regional AZ or CIDR availability. See [CloudFormation resource documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
+Lösche alle nachgelagerten Stacks vor `osa-foundation`, die dessen Exporte importieren; CloudFormation verhindert das Entfernen eines noch importierten Exports. Führe danach `aws cloudformation delete-stack` aus. Entferne ECR-Images vor der Bereinigung explizit. Begrenzte Lifecycle-Regeln und Empty-on-Delete gehören zu Issue #236. Prüfe Parameter, IAM-Capabilities und den AWS-Änderungssatz vor einem Deployment; die Offline-Validierung bestätigt nicht, dass AZs oder CIDRs in der Region verfügbar sind. Siehe die [CloudFormation-Ressourcendokumentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
