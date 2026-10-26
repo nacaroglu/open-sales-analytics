@@ -1160,11 +1160,6 @@ def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[st
             ["!GetAtt Ec2InstanceRole.Arn"],
             equals("iam:PassedToService: ec2.amazonaws.com"),
         ),
-        f"ReadOsa{parameter_env.title()}Parameters": (
-            {"ssm:GetParameters"},
-            [ssm_parameter_arn(f"osa/{parameter_env}/*")],
-            [],
-        ),
     }
 
 
