@@ -1007,3 +1007,33 @@ Outputs:
     Value: !GetAtt FoundationExecutionRole.Arn
     Export:
       Name: !Sub "${AWS::StackName}-FoundationExecutionRoleArn"
+  DevDeployRoleArn:
+    Description: GitHub OIDC role for osa-dev deployment from the configured main branch.
+    Value: !GetAtt DevDeployRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-DevDeployRoleArn"
+  ProductionPromotionRoleArn:
+    Description: GitHub OIDC role for osa-prod promotion from the protected production environment.
+    Value: !GetAtt ProductionPromotionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ProductionPromotionRoleArn"
+  DevApplicationExecutionRoleArn:
+    Description: CloudFormation service role limited to osa-dev tagged resources.
+    Value: !GetAtt DevApplicationExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-DevApplicationExecutionRoleArn"
+  ProdApplicationExecutionRoleArn:
+    Description: CloudFormation service role limited to osa-prod tagged resources.
+    Value: !GetAtt ProdApplicationExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ProdApplicationExecutionRoleArn"
+  ObservabilityExecutionRoleArn:
+    Description: CloudFormation service role limited to observability tagged resources.
+    Value: !GetAtt ObservabilityExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ObservabilityExecutionRoleArn"
+  Ec2InstanceRoleArn:
+    Description: EC2 instance role limited to ECR image pulls and Systems Manager core.
+    Value: !GetAtt Ec2InstanceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-Ec2InstanceRoleArn"
