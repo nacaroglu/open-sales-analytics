@@ -6,7 +6,7 @@
 
 Open Sales Analytics 是一款小型自托管 Web 应用。上传已完成销售明细的 CSV 后，它会显示总销售额、订单数、件数、平均订单价值、销售趋势和畅销产品，并可更改日期范围。总销售额是所选期间内各行的数量乘以单价之和，不包含退款、折扣、税费或运费。
 
-目录：[使用 Docker 运行](#使用-docker-运行) | [配置](#配置) | [演示导览](#演示导览) | [查看结果](#6-查看结果) | [产品分析](#产品分析) | [客户分析](#客户分析) | [比较](#比较) | [数据集契约](#数据集契约) | [货币](#货币) | [隐私](#隐私) | [演示模式](#演示模式) | [限制](#限制) | [路线图](#路线图) | [架构](#架构) | [开发](#开发) | [贡献](#贡献) | [许可证](#许可证)
+目录：[使用 Docker 运行](#使用-docker-运行) | [本地生产模式启动](#本地生产模式启动与故障排除) | [配置](#配置) | [演示导览](#演示导览) | [查看结果](#6-查看结果) | [产品分析](#产品分析) | [客户分析](#客户分析) | [比较](#比较) | [数据集契约](#数据集契约) | [货币](#货币) | [隐私](#隐私) | [演示模式](#演示模式) | [限制](#限制) | [路线图](#路线图) | [架构](#架构) | [开发](#开发) | [贡献](#贡献) | [许可证](#许可证)
 
 ## 使用 Docker 运行
 
@@ -39,6 +39,49 @@ docker run -p 8000:8000 -v osa-data:/data open-sales-analytics
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
+
+
+## 本地生产模式启动与故障排除
+
+本指南使用生产运行设置在本机运行应用镜像。应用只绑定到你自己的计算机；此流程不会配置身份验证、HTTPS 入口或安全公开部署所需的其他防护。此流程无需凭据。请使用内置样例或合成数据，不要使用真实客户数据。
+
+在仓库根目录运行以下命令来构建并启动应用。可读版本号取自当前检出的提交。
+
+```sh
+export OSA_ENVIRONMENT=production
+export OSA_VERSION="local-production-$(git rev-parse --short HEAD)"
+export OSA_PORT=127.0.0.1:8000
+
+docker compose -f docker-compose.yaml config --quiet
+docker compose -f docker-compose.yaml up --build --detach
+```
+
+基础 Compose 文件使用仓库中的 Dockerfile 构建应用。Node 和 Python 基础镜像均按 digest 固定；应用仅绑定到本机的 `127.0.0.1:8000`。若要使用其他空闲端口，请将 `OSA_PORT` 设为 `127.0.0.1:18000` 或其他 loopback 端口，然后重新运行命令。此本地流程不要将地址改为 `0.0.0.0`。
+
+检查就绪状态，并确认响应中报告了所配置的生产环境和版本。
+
+```sh
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/health/ready |
+  python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == os.environ["OSA_VERSION"]'
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/ -o /dev/null
+```
+
+在浏览器中打开 <http://127.0.0.1:8000>。就绪响应只包含服务状态、环境和版本，不会暴露主机路径、凭据或机密。
+
+Compose 将上传的数据集保存在名为 `osa-data` 的卷中。`docker compose down` 会停止并移除应用容器，但会保留该卷和其中的数据集。若要删除容器、项目资源、卷和已存储的数据集，请运行：
+
+```sh
+docker compose -f docker-compose.yaml down --volumes --remove-orphans
+```
+
+### 故障排除
+
+- **镜像构建失败：**使用详细输出并设置 10 分钟时限运行构建：`python3 -c 'import subprocess; subprocess.run(["docker", "compose", "-f", "docker-compose.yaml", "build", "--progress=plain", "app"], check=True, timeout=600)'`。修复第一个 Dockerfile/构建错误，然后重试启动命令。
+- **端口已被占用：**选择其他空闲的 loopback 端口，例如 `OSA_PORT=127.0.0.1:18000`，然后重新运行 Compose 命令。地址保持为 `127.0.0.1`。
+- **就绪状态持续为 unhealthy：**检查 `docker compose -f docker-compose.yaml ps --all` 的输出，然后使用 `docker compose -f docker-compose.yaml logs --no-color --tail=100 app` 查看应用最近的日志。修复报告的启动或存储问题，再用 `docker compose -f docker-compose.yaml up --build --detach` 重启。
+- **运行时配置无效：**确认 `OSA_ENVIRONMENT` 的值恰好是 `development` 或 `production`，并且 `OSA_VERSION` 非空。`docker compose -f docker-compose.yaml logs --no-color --tail=100 app` 会指出阻止启动的变量；修正该值后使用 `docker compose -f docker-compose.yaml up --build --force-recreate --detach` 重建应用。
+
+要停止应用并保留数据，请使用 `docker compose -f docker-compose.yaml down`。要删除卷和数据集，请运行上面的 `down --volumes --remove-orphans` 命令。
 
 ## 演示导览
 

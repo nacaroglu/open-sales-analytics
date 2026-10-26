@@ -6,7 +6,7 @@
 
 Open Sales Analytics は小規模なセルフホスト型 Web アプリケーションです。完了した販売明細の CSV をアップロードすると、総売上、注文数、販売個数、平均注文額、販売トレンド、上位商品が表示され、日付範囲も変更できます。総売上は、選択期間内の各明細について数量と単価を掛けた値の合計で、返金、値引き、税、送料は含みません。
 
-目次：[Docker で実行](#docker-で実行) | [設定](#設定) | [デモ手順](#デモ手順) | [結果を確認](#6-結果を確認) | [商品分析](#商品分析) | [顧客分析](#顧客分析) | [比較](#比較) | [データセット契約](#データセット契約) | [通貨](#通貨) | [プライバシー](#プライバシー) | [デモモード](#デモモード) | [制限](#制限) | [ロードマップ](#ロードマップ) | [アーキテクチャ](#アーキテクチャ) | [開発](#開発) | [コントリビューション](#コントリビューション) | [ライセンス](#ライセンス)
+目次：[Docker で実行](#docker-で実行) | [ローカル本番モードの起動](#ローカル本番モードの起動とトラブルシューティング) | [設定](#設定) | [デモ手順](#デモ手順) | [結果を確認](#6-結果を確認) | [商品分析](#商品分析) | [顧客分析](#顧客分析) | [比較](#比較) | [データセット契約](#データセット契約) | [通貨](#通貨) | [プライバシー](#プライバシー) | [デモモード](#デモモード) | [制限](#制限) | [ロードマップ](#ロードマップ) | [アーキテクチャ](#アーキテクチャ) | [開発](#開発) | [コントリビューション](#コントリビューション) | [ライセンス](#ライセンス)
 
 ## Docker で実行
 
@@ -39,6 +39,49 @@ docker run -p 8000:8000 -v osa-data:/data open-sales-analytics
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
+
+
+## ローカル本番モードの起動とトラブルシューティング
+
+この手順では、本番実行設定を使ってアプリケーションイメージをローカルで起動します。接続先は自分のマシンだけです。認証、HTTPS の入口、一般公開に必要なその他の保護策は設定しません。この手順に認証情報は不要です。組み込みのサンプルまたは合成データを使い、実際の顧客データは使わないでください。
+
+リポジトリのルートから次のコマンドを実行してアプリをビルドし、起動します。読みやすいバージョンにはチェックアウトしたコミットを使います。
+
+```sh
+export OSA_ENVIRONMENT=production
+export OSA_VERSION="local-production-$(git rev-parse --short HEAD)"
+export OSA_PORT=127.0.0.1:8000
+
+docker compose -f docker-compose.yaml config --quiet
+docker compose -f docker-compose.yaml up --build --detach
+```
+
+ベース Compose ファイルはリポジトリの Dockerfile からアプリをビルドします。Node と Python のベースイメージは digest で固定され、アプリは自分のマシンの `127.0.0.1:8000` だけにバインドされます。別の空きポートを使う場合は `OSA_PORT` を `127.0.0.1:18000` などの loopback ポートに変更して、コマンドを再実行します。このローカル手順ではアドレスを `0.0.0.0` に変更しないでください。
+
+readiness を確認し、応答に設定した本番環境とバージョンが含まれていることを確かめます。
+
+```sh
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/health/ready |
+  python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == os.environ["OSA_VERSION"]'
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/ -o /dev/null
+```
+
+ブラウザーで <http://127.0.0.1:8000> を開きます。readiness の応答にはサービスの状態、環境、バージョンだけが含まれ、ホストパス、認証情報、シークレットは公開されません。
+
+Compose はアップロードしたデータセットを名前付きボリューム `osa-data` に保存します。`docker compose down` はアプリコンテナーを停止して削除しますが、ボリュームとそのデータセットは保持します。コンテナー、プロジェクトのリソース、ボリューム、保存済みデータセットを削除するには次を実行します。
+
+```sh
+docker compose -f docker-compose.yaml down --volumes --remove-orphans
+```
+
+### トラブルシューティング
+
+- **イメージのビルドに失敗する場合：**詳細な出力を有効にし、10 分で打ち切ってビルドします：`python3 -c 'import subprocess; subprocess.run(["docker", "compose", "-f", "docker-compose.yaml", "build", "--progress=plain", "app"], check=True, timeout=600)'`。最初に表示される Dockerfile/ビルドエラーを修正して、起動コマンドを再実行します。
+- **ポートが使用中の場合：**`OSA_PORT=127.0.0.1:18000` など、空いている別の loopback ポートを選び、Compose コマンドを再実行します。アドレスは `127.0.0.1` のままにします。
+- **readiness が unhealthy のままの場合：**`docker compose -f docker-compose.yaml ps --all` の出力を確認し、続いて `docker compose -f docker-compose.yaml logs --no-color --tail=100 app` でアプリの直近のログを確認します。報告された起動またはストレージの問題を解決して `docker compose -f docker-compose.yaml up --build --detach` で再起動します。
+- **実行時設定が無効な場合：**`OSA_ENVIRONMENT` が `development` または `production` と完全一致し、`OSA_VERSION` が空でないことを確認します。`docker compose -f docker-compose.yaml logs --no-color --tail=100 app` に起動を妨げた変数が表示されます。値を直して `docker compose -f docker-compose.yaml up --build --force-recreate --detach` でアプリを作り直します。
+
+データを残してアプリを停止するには `docker compose -f docker-compose.yaml down` を使います。ボリュームとデータセットを削除するには、上記の `down --volumes --remove-orphans` コマンドを使います。
 
 ## デモ手順
 

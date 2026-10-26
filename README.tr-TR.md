@@ -9,7 +9,7 @@ oluşan bir CSV yüklersiniz; uygulama değiştirilebilir bir tarih aralığınd
 ortalama sipariş değerini, satış eğilimini ve en iyi ürünleri gösterir. Brüt satış, seçilen dönemdeki satırlarda
 miktarın birim fiyatla çarpımının toplamıdır. İadeler, indirimler, vergiler ve kargo buna dahil değildir.
 
-İçindekiler: [Docker ile çalıştırma](#docker-ile-çalıştırma) | [Yapılandırma](#yapılandırma) |
+İçindekiler: [Docker ile çalıştırma](#docker-ile-çalıştırma) | [Yerel üretim modu](#yerel-üretim-modunda-başlatma-ve-sorun-giderme) | [Yapılandırma](#yapılandırma) |
 [Demo adımları](#demo-adımları) | [Sonuçları inceleme](#6-sonuçları-inceleyin) |
 [Ürün analitiği](#ürün-analitiği) | [Müşteri analitiği](#müşteri-analitiği) | [Karşılaştırmalar](#karşılaştırmalar) |
 [Veri kümesi sözleşmesi](#veri-kümesi-sözleşmesi) | [Para birimleri](#para-birimleri) | [Gizlilik](#gizlilik) |
@@ -58,6 +58,49 @@ istemci vazgeçtiğinde sona erer.
 ```sh
 docker run -p 8000:8000 -e PUBLIC_DEMO_MODE=true -e OSA_ENVIRONMENT=production -e OSA_VERSION=20261024-123456-abc1234 open-sales-analytics
 ```
+
+
+## Yerel üretim modunda başlatma ve sorun giderme
+
+Bu yönerge, üretim çalışma ayarlarıyla uygulama imajını yerel olarak çalıştırır. Uygulama yalnızca kendi makinenize bağlanır; kimlik doğrulaması, HTTPS giriş noktası veya güvenli bir herkese açık dağıtım için gereken diğer korumaları yapılandırmaz. Kimlik bilgisi gerekmez. Paketlenmiş örnek veriyi veya sentetik veriyi kullanın; gerçek müşteri verisi kullanmayın.
+
+Depo kök dizininde aşağıdaki komutlarla uygulamayı derleyip başlatın; sürüm, checkout yaptığınız commit'ten türetilir.
+
+```sh
+export OSA_ENVIRONMENT=production
+export OSA_VERSION="local-production-$(git rev-parse --short HEAD)"
+export OSA_PORT=127.0.0.1:8000
+
+docker compose -f docker-compose.yaml config --quiet
+docker compose -f docker-compose.yaml up --build --detach
+```
+
+Temel Compose dosyası uygulamayı depo Dockerfile'ından derler. Node ve Python temel imajları digest ile sabitlenmiştir; uygulama yalnızca kendi makinenizdeki `127.0.0.1:8000` adresine bağlanır. Başka bir boş port kullanmak için `OSA_PORT` değerini `127.0.0.1:18000` gibi değiştirip komutları yeniden çalıştırın. Bu yerel yönergede adresi `0.0.0.0` olarak değiştirmeyin.
+
+Hazır olma durumunu kontrol edin ve yanıtın ayarladığınız production ortamını ve sürümü içerdiğini doğrulayın.
+
+```sh
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/health/ready |
+  python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(json.dumps(d)); assert d["status"] == "ready"; assert d["environment"] == "production"; assert d["version"] == os.environ["OSA_VERSION"]'
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/ -o /dev/null
+```
+
+Tarayıcıda <http://127.0.0.1:8000> adresini açın. Hazır olma yanıtı yalnızca hizmet durumunu, ortamı ve sürümü döndürür; ana makine yollarını, kimlik bilgilerini veya sırları açığa çıkarmaz.
+
+Compose, yüklenen veri kümelerini `osa-data` adlı birimde saklar. `docker compose down` uygulama kapsayıcısını durdurup kaldırır, ancak birimi ve içindeki veri kümelerini korur. Kapsayıcıyı, proje kaynaklarını, birimi ve saklanan veri kümelerini silmek için şu komutu çalıştırın:
+
+```sh
+docker compose -f docker-compose.yaml down --volumes --remove-orphans
+```
+
+### Sorun giderme
+
+- **İmaj derlemesi başarısız olursa:** Ayrıntılı çıktı ve 10 dakikalık süre sınırıyla derlemeyi çalıştırın: `python3 -c 'import subprocess; subprocess.run(["docker", "compose", "-f", "docker-compose.yaml", "build", "--progress=plain", "app"], check=True, timeout=600)'`. İlk Dockerfile/derleme hatasını giderin ve başlatma komutlarını yeniden çalıştırın.
+- **Port zaten kullanılıyorsa:** `OSA_PORT=127.0.0.1:18000` gibi başka bir boş loopback portu seçip Compose komutlarını yeniden çalıştırın. Adresi `127.0.0.1` üzerinde tutun.
+- **Hazır olma durumu sağlıksız kalırsa:** `docker compose -f docker-compose.yaml ps --all` komutunun çıktısını kontrol edin, ardından uygulamanın son günlüklerini `docker compose -f docker-compose.yaml logs --no-color --tail=100 app` ile inceleyin. Bildirilen başlatma veya depolama sorununu giderin ve `docker compose -f docker-compose.yaml up --build --detach` komutuyla yeniden başlatın.
+- **Çalışma zamanı yapılandırması geçersizse:** `OSA_ENVIRONMENT` değerinin tam olarak `development` veya `production` olduğunu ve `OSA_VERSION` değerinin boş olmadığını doğrulayın. `docker compose -f docker-compose.yaml logs --no-color --tail=100 app` uygulamanın başlamasını engelleyen değişkeni gösterir; değeri düzeltip `docker compose -f docker-compose.yaml up --build --force-recreate --detach` komutuyla uygulamayı yeniden oluşturun.
+
+Uygulamayı durdurup verileri korumak için `docker compose -f docker-compose.yaml down` komutunu kullanın. Birimi ve veri kümelerini silmek için yukarıdaki `down --volumes --remove-orphans` komutunu çalıştırın.
 
 ## Demo adımları
 
