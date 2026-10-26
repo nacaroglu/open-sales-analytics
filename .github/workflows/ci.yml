@@ -84,8 +84,8 @@ jobs:
           curl --fail --silent --show-error --location "$base/$asset" --output "$asset"
           curl --fail --silent --show-error --location "$base/$asset.sig" --output "$asset.sig"
           curl --fail --silent --show-error --location "$base/signing-key.pem" --output signing-key.pem
-          printf '%s  %s\\n' 'e63674a37a2431a85d637326e959c1717af01b4768734a5cb0bf79ef8652ece2' "$asset" | sha256sum --check --strict
-          printf '%s  %s\\n' 'f0a7827e53764081deda3d363126e7c67dfb4844bd4db5f2d3fe42c713e064d0' signing-key.pem | sha256sum --check --strict
+          printf '%s  %s\n' 'e63674a37a2431a85d637326e959c1717af01b4768734a5cb0bf79ef8652ece2' "$asset" | sha256sum --check --strict
+          printf '%s  %s\n' 'f0a7827e53764081deda3d363126e7c67dfb4844bd4db5f2d3fe42c713e064d0' signing-key.pem | sha256sum --check --strict
           openssl dgst -sha256 -verify signing-key.pem -signature "$asset.sig" "$asset"
           chmod +x "$asset"
           sudo install -m 0755 "$asset" /usr/local/bin/cfn-validate
