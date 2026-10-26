@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -144,7 +143,21 @@ def create_telemetry(
     With no generic or per-signal OTLP endpoint, providers retain the same resource but
     have no exporter. This keeps local startup independent of an observability backend.
     """
-    environment = os.environ if environ is None else environ
+    environment = (
+        environ
+        if environ is not None
+        else {
+            name: value
+            for name, value in {
+                _GENERIC_ENDPOINT: settings.otel_exporter_otlp_endpoint,
+                "OTEL_EXPORTER_OTLP_PROTOCOL": settings.otel_exporter_otlp_protocol,
+                _SIGNAL_ENDPOINTS["traces"]: settings.otel_exporter_otlp_traces_endpoint,
+                _SIGNAL_ENDPOINTS["metrics"]: settings.otel_exporter_otlp_metrics_endpoint,
+                _SIGNAL_ENDPOINTS["logs"]: settings.otel_exporter_otlp_logs_endpoint,
+            }.items()
+            if value is not None
+        }
+    )
     endpoints = _endpoint_configuration(environment)
     resource = create_resource(settings)
 
