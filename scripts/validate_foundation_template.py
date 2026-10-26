@@ -351,6 +351,899 @@ for url in (
 ):
     require(url in readme, f"README must cite the applicable AWS source: {url}")
 
+
+# Phase 4B role separation contracts.
+required_roles = {
+    "BuildRole",
+    "FoundationExecutionRole",
+    "DevDeployRole",
+    "ProductionPromotionRole",
+    "DevApplicationExecutionRole",
+    "ProdApplicationExecutionRole",
+    "ObservabilityExecutionRole",
+    "Ec2InstanceRole",
+}
+for role_name in required_roles:
+    require(
+        role_name in resources and resources[role_name][0] == "AWS::IAM::Role",
+        f"{role_name} must remain an IAM role resource",
+    )
+
+
+def role_body(role_name: str) -> str:
+    return resources[role_name][1]
+
+
+def policy_statements(role_name: str) -> dict[str, str]:
+    role = role_body(role_name)
+    policy = re.search(r"(?ms)^      Policies:\n(?P<body>.*?)(?=^      Tags:|\Z)", role)
+    if policy is None:
+        return {}
+    return dict(
+        re.findall(
+            r"(?ms)^              - Sid: ([A-Za-z0-9]+)\n(?P<body>.*?)(?=^              - Sid:|\Z)",
+            policy.group("body"),
+        )
+    )
+
+
+def statement_actions(statement: str) -> set[str]:
+    lines = statement.splitlines()
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if not stripped.startswith("Action:"):
+            continue
+        inline = stripped[len("Action:"):].strip()
+        if inline:
+            return {inline}
+        actions: set[str] = set()
+        for candidate in lines[index + 1:]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            value = candidate.strip()
+            if value.startswith("- "):
+                actions.add(value[2:].strip())
+        return actions
+    return set()
+
+
+def exact_trust(role_name: str, principal: str, subject: str | None = None) -> None:
+    body = role_body(role_name)
+    require(
+        f"Principal:\n              Service: {principal}" in body
+        if subject is None
+        else (
+            "Principal:\n              Federated: !Ref GitHubOidcProvider" in body
+            and f"token.actions.githubusercontent.com:aud: sts.amazonaws.com" in body
+            and f"token.actions.githubusercontent.com:sub: !Sub \"{subject}\"" in body
+            and "StringLike:" not in body
+        ),
+        f"{role_name} trust must be limited to {principal if subject is None else subject}",
+    )
+
+
+dollar = chr(36)
+branch_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref:refs/heads/{dollar}{{GitHubMainBranch}}"
+production_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"
+exact_trust("BuildRole", "github", branch_subject)
+exact_trust("DevDeployRole", "github", branch_subject)
+exact_trust("ProductionPromotionRole", "github", production_subject)
+for role_name in (
+    "FoundationExecutionRole",
+    "DevApplicationExecutionRole",
+    "ProdApplicationExecutionRole",
+    "ObservabilityExecutionRole",
+):
+    exact_trust(role_name, "cloudformation.amazonaws.com")
+exact_trust("Ec2InstanceRole", "ec2.amazonaws.com")
+
+build_statements = policy_statements("BuildRole")
+require(
+    set(build_statements) == {"EcrAuthorizationToken", "PushImagesToFoundationRepository"}
+    and statement_actions(build_statements["EcrAuthorizationToken"]) == {"ecr:GetAuthorizationToken"}
+    and statement_actions(build_statements["PushImagesToFoundationRepository"])
+    == {
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+    }
+    and "Resource: !GetAtt Repository.Arn" in build_statements["PushImagesToFoundationRepository"]
+    and "cloudformation:" not in role_body("BuildRole")
+    and "iam:PassRole" not in role_body("BuildRole"),
+    "BuildRole must be limited to repository pushes with no deployment or PassRole permissions",
+)
+
+for deploy_role, stack_name, exec_role, prefix in (
+    ("DevDeployRole", "osa-dev", "DevApplicationExecutionRole", "OsaDev"),
+    ("ProductionPromotionRole", "osa-prod", "ProdApplicationExecutionRole", "OsaProd"),
+):
+    statements = policy_statements(deploy_role)
+    manage = statements.get(f"Manage{prefix}Stack", "")
+    read = statements.get(f"Read{prefix}Stack", "")
+    passed = statements.get(f"PassOnly{prefix}ExecutionRole", "")
+    expected_stack_arn = (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:cloudformation:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:stack/{stack_name}/*"'
+    )
+    require(
+        statement_actions(manage)
+        == {"cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"}
+        and expected_stack_arn in manage
+        and f"cloudformation:RoleArn: !GetAtt {exec_role}.Arn" in manage,
+        f"{deploy_role} must mutate only {stack_name} when using its one execution role",
+    )
+    require(
+        statement_actions(read)
+        == {
+            "cloudformation:DescribeStackEvents",
+            "cloudformation:DescribeStackResources",
+            "cloudformation:DescribeStacks",
+            "cloudformation:GetTemplate",
+        }
+        and expected_stack_arn in read
+        and "Resource: \"*\"" not in read,
+        f"{deploy_role} read permissions must stay limited to {stack_name}",
+    )
+    require(
+        statement_actions(passed) == {"iam:PassRole"}
+        and f"Resource: !GetAtt {exec_role}.Arn" in passed
+        and "iam:PassedToService: cloudformation.amazonaws.com" in passed
+        and sum("iam:PassRole" in item for item in statements.values()) == 1,
+        f"{deploy_role} may pass only {exec_role} to CloudFormation",
+    )
+    require(
+        not any("Resource: \"*\"" in item for item in statements.values()),
+        f"{deploy_role} must not have wildcard-resource permissions",
+    )
+
+environment_roles = (
+    ("DevApplicationExecutionRole", "osa-dev", "OsaDev"),
+    ("ProdApplicationExecutionRole", "osa-prod", "OsaProd"),
+    ("ObservabilityExecutionRole", "osa-observability", "OsaObservability"),
+)
+for role_name, environment, sid_prefix in environment_roles:
+    statements = policy_statements(role_name)
+    require(
+        f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"RunTagged{sid_prefix}Instances", "")
+        and "ArnEqualsIfExists:" in statements.get(f"RunTagged{sid_prefix}Instances", "")
+        and f"vpc/{dollar}{{Vpc}}" in statements.get(f"RunTagged{sid_prefix}Instances", ""),
+        f"{role_name} instance creation must require its environment tag and foundation VPC",
+    )
+    require(
+        f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Instances", ""),
+        f"{role_name} instance management must require its environment resource tag",
+    )
+    require(
+        f"vpc/{dollar}{{Vpc}}" in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", "")
+        and f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", ""),
+        f"{role_name} security groups must be created only in the foundation VPC with the environment tag",
+    )
+    require(
+        f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}SecurityGroups", ""),
+        f"{role_name} security-group changes must require its environment resource tag",
+    )
+    require(
+        f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"AllocateTagged{sid_prefix}Addresses", "")
+        and f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Addresses", ""),
+        f"{role_name} address operations must be environment tagged",
+    )
+    require(
+        f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod' if environment == 'osa-prod' else 'observability'}/*"
+        in statements.get(f"ReadOsa{'Dev' if environment == 'osa-dev' else 'Prod' if environment == 'osa-prod' else 'Observability'}Parameters", ""),
+        f"{role_name} parameter reads must stay in their environment path",
+    )
+    require(
+        "iam:PassRole" in role_body(role_name)
+        and "Resource: !GetAtt Ec2InstanceRole.Arn" in role_body(role_name)
+        and "iam:PassedToService: ec2.amazonaws.com" in role_body(role_name)
+        and role_body(role_name).count("iam:PassRole") == 1,
+        f"{role_name} may pass only Ec2InstanceRole to EC2",
+    )
+    require(
+        not any(other in role_body(role_name) for other in {"osa-prod", "osa-dev", "osa-observability"} - {environment}),
+        f"{role_name} must not include another environment's resource scope",
+    )
+    tag_statement = statements.get(f"Manage{sid_prefix}Tags", "")
+    require(
+        "ForAllValues:StringEquals:" in tag_statement
+        and "- OSAStack" not in tag_statement,
+        f"{role_name} must not be able to change or remove its OSAStack boundary tag",
+    )
+
+obs_statements = policy_statements("ObservabilityExecutionRole")
+require(
+    "aws:RequestTag/OSAStack: osa-observability" in obs_statements.get("CreateTaggedOsaObservabilityVolumes", "")
+    and "ec2:ResourceTag/OSAStack: osa-observability" in obs_statements.get("ManageTaggedOsaObservabilityVolumes", ""),
+    "observability EBS volume operations must stay tagged to osa-observability",
+)
+
+ec2_role_body = role_body("Ec2InstanceRole")
+ec2_statements = policy_statements("Ec2InstanceRole")
+require(
+    "Service: ec2.amazonaws.com" in ec2_role_body
+    and f"arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore" in ec2_role_body
+    and set(ec2_statements) == {"EcrAuthorizationToken", "PullImagesFromFoundationRepository"}
+    and "Resource: !GetAtt Repository.Arn" in ec2_statements.get("PullImagesFromFoundationRepository", "")
+    and "cloudformation:" not in ec2_role_body
+    and "iam:PassRole" not in ec2_role_body,
+    "Ec2InstanceRole must trust only EC2, attach the SSM core policy, and pull only from Repository",
+)
+
+expected_wildcards = {
+    ("BuildRole", "EcrAuthorizationToken"),
+    ("FoundationExecutionRole", "DescribeVpcState"),
+    ("FoundationExecutionRole", "ListFoundationProviders"),
+    ("DevApplicationExecutionRole", "DescribeEc2State"),
+    ("DevApplicationExecutionRole", "RunTaggedOsaDevInstances"),
+    ("DevApplicationExecutionRole", "CreateTagsForOsaDevInstances"),
+    ("ProdApplicationExecutionRole", "DescribeEc2State"),
+    ("ProdApplicationExecutionRole", "RunTaggedOsaProdInstances"),
+    ("ProdApplicationExecutionRole", "CreateTagsForOsaProdInstances"),
+    ("ObservabilityExecutionRole", "DescribeEc2State"),
+    ("ObservabilityExecutionRole", "RunTaggedOsaObservabilityInstances"),
+    ("ObservabilityExecutionRole", "CreateTagsForOsaObservabilityInstances"),
+    ("Ec2InstanceRole", "EcrAuthorizationToken"),
+}
+actual_wildcards: set[tuple[str, str]] = set()
+for role_name, (resource_type, _) in resources.items():
+    if resource_type != "AWS::IAM::Role":
+        continue
+    for statement_id, statement in policy_statements(role_name).items():
+        if 'Resource: "*"' in statement:
+            actual_wildcards.add((role_name, statement_id))
+require(
+    actual_wildcards == expected_wildcards,
+    f"wildcard resources must match only documented exceptions; found {sorted(actual_wildcards)}",
+)
+
+for output_name, role_name in (
+    ("DevDeployRoleArn", "DevDeployRole"),
+    ("ProductionPromotionRoleArn", "ProductionPromotionRole"),
+    ("DevApplicationExecutionRoleArn", "DevApplicationExecutionRole"),
+    ("ProdApplicationExecutionRoleArn", "ProdApplicationExecutionRole"),
+    ("ObservabilityExecutionRoleArn", "ObservabilityExecutionRole"),
+    ("Ec2InstanceRoleArn", "Ec2InstanceRole"),
+):
+    output = re.search(
+        rf"(?ms)^  {output_name}:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
+        outputs_section.group("body"),
+    )
+    require(
+        output is not None
+        and f"Value: !GetAtt {role_name}.Arn" in output.group("body")
+        and f'{dollar}{{AWS::StackName}}-{output_name}' in output.group("body"),
+        f"{output_name} must expose a stable stack-qualified export for {role_name}",
+    )
+
+for role_name in (
+    "DevDeployRole",
+    "ProductionPromotionRole",
+    "DevApplicationExecutionRole",
+    "ProdApplicationExecutionRole",
+    "ObservabilityExecutionRole",
+    "Ec2InstanceRole",
+):
+    require(role_name.lower() in doc, f"README must document the purpose of {role_name}")
+for phrase in (
+    "environment:production",
+    "stack osa-dev",
+    "targets only osa-prod",
+    "cloudformation.amazonaws.com",
+    "ec2.amazonaws.com",
+    "amazonssmmanagedinstancecore",
+    "resource: * exceptions are limited",
+    "exact environment osastack request tag",
+    "describevpcstate and listfoundationproviders in foundationexecutionrole",
+    "runtaggedosadevinstances",
+    "createtagsforosadevinstances",
+    "runtaggedosaprodinstances",
+    "createtagsforosaprodinstances",
+    "runtaggedosaobservabilityinstances",
+    "createtagsforosaobservabilityinstances",
+    "may pass only devapplicationexecutionrole to cloudformation through iam:passrole",
+    "may pass only prodapplicationexecutionrole to cloudformation through iam:passrole",
+    "may pass only devapplicationexecutionrole",
+):
+    require(phrase in doc, f"README must document the IAM contract: {phrase}")
+require("sts.amazonaws.com" in doc, "README must document the OIDC audience")
+for url in (
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html",
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/control-access-with-iam.html",
+    "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html",
+    "https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-instance-permissions.html",
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ExamplePolicies_EC2.html",
+    "https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html",
+):
+    require(url in readme, f"README must cite IAM guidance: {url}")
+
+
+# Close the trust and policy contracts: all statements, keys, actions, and resources
+# must match the reviewed policy sets, not just contain required fragments.
+def role_policy_text(role_name: str) -> str:
+    policy = re.search(
+        r"(?ms)^      Policies:\n(?P<body>.*?)(?=^      Tags:|\Z)",
+        role_body(role_name),
+    )
+    return "" if policy is None else policy.group("body")
+
+
+def statement_resources(statement: str) -> list[str]:
+    lines = statement.splitlines()
+    resources: list[str] = []
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if not stripped.startswith("Resource:"):
+            continue
+        inline = stripped[len("Resource:"):].strip()
+        if inline:
+            resources.append(inline)
+            continue
+        for candidate in lines[index + 1:]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            value = candidate.strip()
+            if value.startswith("- "):
+                resources.append(value[2:].strip())
+    return resources
+
+
+def statement_conditions(statement: str) -> list[str]:
+    lines = statement.splitlines()
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        if line.strip() != "Condition:":
+            continue
+        conditions: list[str] = []
+        for candidate in lines[index + 1:]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            if candidate.strip():
+                conditions.append(candidate.strip())
+        return conditions
+    return []
+
+
+def assert_exact_policy(
+    role_name: str,
+    expected: dict[str, tuple[set[str], list[str], list[str]]],
+) -> None:
+    policy = role_policy_text(role_name)
+    statements = policy_statements(role_name)
+    statement_count = len(re.findall(r"(?m)^              - ", policy))
+    require(
+        policy.count("PolicyName:") == 1
+        and statement_count == len(statements)
+        and set(statements) == set(expected),
+        f"{role_name} inline policy must contain exactly the reviewed statements",
+    )
+    for sid, (actions, resource_list, conditions) in expected.items():
+        statement = statements[sid]
+        require(
+            statement_actions(statement) == actions
+            and re.findall(r"(?m)^\s+Effect: (.+)$", statement) == ["Allow"]
+            and re.search(r"(?m)^\s+Not(?:Action|Resource):", statement) is None
+            and len(re.findall(r"(?m)^\s+Action:", statement)) == 1,
+            f"{role_name}.{sid} action set must be exact",
+        )
+        require(
+            statement_resources(statement) == resource_list,
+            f"{role_name}.{sid} resource set must be exact",
+        )
+        require(
+            statement_conditions(statement) == conditions,
+            f"{role_name}.{sid} condition keys and values must be exact",
+        )
+
+
+def exact_assume_role_statement(
+    role_name: str,
+    sid: str,
+    principal_lines: list[str],
+    actions: set[str],
+    conditions: list[str],
+) -> None:
+    role = role_body(role_name)
+    assume = re.search(
+        r"(?ms)^      AssumeRolePolicyDocument:\n(?P<body>.*?)(?=^      (?:ManagedPolicyArns|Policies|Tags):|\Z)",
+        role,
+    )
+    require(assume is not None, f"{role_name} must have one explicit AssumeRolePolicyDocument")
+    statement_lines = len(re.findall(r"(?m)^          - ", assume.group("body")))
+    parsed = re.findall(
+        r"(?ms)^          - Sid: ([A-Za-z0-9]+)\n(?P<body>.*?)(?=^          - |\Z)",
+        assume.group("body"),
+    )
+    require(
+        statement_lines == 1 and len(parsed) == 1 and parsed[0][0] == sid,
+        f"{role_name} must have exactly one {sid} trust statement",
+    )
+    statement = parsed[0][1]
+    principal = re.search(
+        r"(?ms)^            Principal:\n(?P<body>.*?)(?=^            Action:|^            Condition:|\Z)",
+        statement,
+    )
+    principal_values = [] if principal is None else [
+        line.strip() for line in principal.group("body").splitlines() if line.strip()
+    ]
+    require(
+        principal_values == principal_lines
+        and statement_actions(statement) == actions
+        and len(re.findall(r"(?m)^\s+Action:", statement)) == 1
+        and statement_conditions(statement) == conditions
+        and len(re.findall(r"(?m)^\s+Effect:", statement)) == 1
+        and "Effect: Allow" in statement,
+        f"{role_name}.{sid} principal, action, effect, and conditions must be exact",
+    )
+
+
+ecr_repo_arn = (
+    f'!Sub "arn:{dollar}{{AWS::Partition}}:ecr:{dollar}{{AWS::Region}}:'
+    f'{dollar}{{AWS::AccountId}}:repository/{dollar}{{RepositoryName}}"'
+)
+def ec2_arn(resource: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:ec2:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:{resource}"'
+    )
+
+
+def iam_arn(resource: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::{dollar}{{AWS::AccountId}}:{resource}"'
+    )
+
+
+def cfn_stack_arn(name: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:cloudformation:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:stack/{name}/*"'
+    )
+
+
+def ssm_parameter_arn(path: str) -> str:
+    return (
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:'
+        f'{dollar}{{AWS::AccountId}}:parameter/{path}"'
+    )
+
+
+def equals(*values: str) -> list[str]:
+    return ["StringEquals:", *values]
+
+
+def role_policy_arns(stack_name: str) -> list[str]:
+    return [iam_arn(f"role/{dollar}{{AWS::StackName}}/*")]
+
+
+# An AssumeRole trust policy has exactly one statement and exactly one principal.
+for role_name, sid in (
+    ("BuildRole", "GitHubMainBranchOnly"),
+    ("DevDeployRole", "GitHubMainBranchOnly"),
+):
+    exact_assume_role_statement(
+        role_name,
+        sid,
+        ["Federated: !Ref GitHubOidcProvider"],
+        {"sts:AssumeRoleWithWebIdentity"},
+        equals(
+            "token.actions.githubusercontent.com:aud: sts.amazonaws.com",
+            f"token.actions.githubusercontent.com:sub: !Sub \"{branch_subject}\"",
+        ),
+    )
+exact_assume_role_statement(
+    "ProductionPromotionRole",
+    "ProductionEnvironmentOnly",
+    ["Federated: !Ref GitHubOidcProvider"],
+    {"sts:AssumeRoleWithWebIdentity"},
+    equals(
+        "token.actions.githubusercontent.com:aud: sts.amazonaws.com",
+        f"token.actions.githubusercontent.com:sub: !Sub \"{production_subject}\"",
+    ),
+)
+for role_name, sid, service in (
+    ("FoundationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("DevApplicationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("ProdApplicationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("ObservabilityExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
+    ("Ec2InstanceRole", "Ec2ServiceOnly", "ec2.amazonaws.com"),
+):
+    exact_assume_role_statement(
+        role_name,
+        sid,
+        [f"Service: {service}"],
+        {"sts:AssumeRole"},
+        [],
+    )
+
+# Build and foundation roles have complete action/resource contracts, including #236.
+assert_exact_policy(
+    "BuildRole",
+    {
+        "EcrAuthorizationToken": ({"ecr:GetAuthorizationToken"}, ['"*"'], []),
+        "PushImagesToFoundationRepository": (
+            {
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:CompleteLayerUpload",
+                "ecr:InitiateLayerUpload",
+                "ecr:PutImage",
+                "ecr:UploadLayerPart",
+            },
+            ["!GetAtt Repository.Arn"],
+            [],
+        ),
+    },
+)
+assert_exact_policy(
+    "FoundationExecutionRole",
+    {
+        "DescribeVpcState": (
+            {
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeInternetGateways",
+                "ec2:DescribeRouteTables",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeTags",
+                "ec2:DescribeVpcAttribute",
+                "ec2:DescribeVpcs",
+            },
+            ['"*"'],
+            [],
+        ),
+        "ManageVpc": (
+            {"ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute"},
+            [ec2_arn("vpc/*")],
+            [],
+        ),
+        "ManageSubnets": (
+            {"ec2:CreateSubnet", "ec2:DeleteSubnet"},
+            [ec2_arn("subnet/*"), ec2_arn("vpc/*")],
+            [],
+        ),
+        "ManageInternetGateway": (
+            {"ec2:CreateInternetGateway", "ec2:DeleteInternetGateway"},
+            [ec2_arn("internet-gateway/*")],
+            [],
+        ),
+        "CreateRouteTableInVpc": (
+            {"ec2:CreateRouteTable"},
+            [ec2_arn("route-table/*"), ec2_arn("vpc/*")],
+            [],
+        ),
+        "ManageRouteTablesAndRoutes": (
+            {"ec2:CreateRoute", "ec2:DeleteRoute", "ec2:DeleteRouteTable"},
+            [ec2_arn("route-table/*")],
+            [],
+        ),
+        "AttachInternetGateway": (
+            {
+                "ec2:AttachInternetGateway",
+                "ec2:CreateVpcGatewayAttachment",
+                "ec2:DeleteVpcGatewayAttachment",
+                "ec2:DetachInternetGateway",
+            },
+            [ec2_arn("internet-gateway/*"), ec2_arn("vpc/*")],
+            [],
+        ),
+        "AssociateSubnetRouteTables": (
+            {"ec2:AssociateRouteTable", "ec2:DisassociateRouteTable"},
+            [ec2_arn("route-table/*"), ec2_arn("subnet/*")],
+            [],
+        ),
+        "ManageFoundationTags": (
+            {"ec2:CreateTags", "ec2:DeleteTags"},
+            [
+                ec2_arn("vpc/*"),
+                ec2_arn("subnet/*"),
+                ec2_arn("internet-gateway/*"),
+                ec2_arn("route-table/*"),
+            ],
+            [
+                "ForAnyValue:StringEquals:",
+                "aws:TagKeys:",
+                "- Project",
+                "- Name",
+                "- OSAStack",
+            ],
+        ),
+        "ManageRepository": (
+            {
+                "ecr:CreateRepository",
+                "ecr:DeleteLifecyclePolicy",
+                "ecr:DeleteRepository",
+                "ecr:DescribeRepositories",
+                "ecr:GetLifecyclePolicy",
+                "ecr:PutImageScanningConfiguration",
+                "ecr:PutLifecyclePolicy",
+                "ecr:TagResource",
+                "ecr:UntagResource",
+            },
+            [ecr_repo_arn],
+            [],
+        ),
+        "ManageFoundationRoles": (
+            {
+                "iam:AttachRolePolicy",
+                "iam:CreateRole",
+                "iam:DeleteRole",
+                "iam:DeleteRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:GetRole",
+                "iam:PutRolePolicy",
+                "iam:TagRole",
+                "iam:UntagRole",
+                "iam:UpdateAssumeRolePolicy",
+            },
+            role_policy_arns("osa-foundation"),
+            [],
+        ),
+        "ManageGitHubOidcProvider": (
+            {
+                "iam:AddClientIDToOpenIDConnectProvider",
+                "iam:CreateOpenIDConnectProvider",
+                "iam:DeleteOpenIDConnectProvider",
+                "iam:GetOpenIDConnectProvider",
+                "iam:RemoveClientIDFromOpenIDConnectProvider",
+                "iam:TagOpenIDConnectProvider",
+                "iam:UntagOpenIDConnectProvider",
+            },
+            [iam_arn("oidc-provider/token.actions.githubusercontent.com")],
+            [],
+        ),
+        "ListFoundationProviders": (
+            {"iam:ListOpenIDConnectProviders", "iam:ListRoles"},
+            ['"*"'],
+            [],
+        ),
+    },
+)
+
+
+# Deploy roles: exact statement sets and exact stack/role ARNs.
+for deploy_role, stack_name, exec_role, prefix in (
+    ("DevDeployRole", "osa-dev", "DevApplicationExecutionRole", "OsaDev"),
+    ("ProductionPromotionRole", "osa-prod", "ProdApplicationExecutionRole", "OsaProd"),
+):
+    assert_exact_policy(
+        deploy_role,
+        {
+            f"Manage{prefix}Stack": (
+                {
+                    "cloudformation:CreateStack",
+                    "cloudformation:DeleteStack",
+                    "cloudformation:UpdateStack",
+                },
+                [cfn_stack_arn(stack_name)],
+                equals(f"cloudformation:RoleArn: !GetAtt {exec_role}.Arn"),
+            ),
+            f"Read{prefix}Stack": (
+                {
+                    "cloudformation:DescribeStackEvents",
+                    "cloudformation:DescribeStackResources",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:GetTemplate",
+                },
+                [cfn_stack_arn(stack_name)],
+                [],
+            ),
+            f"PassOnly{prefix}ExecutionRole": (
+                {"iam:PassRole"},
+                [f"!GetAtt {exec_role}.Arn"],
+                equals("iam:PassedToService: cloudformation.amazonaws.com"),
+            ),
+        },
+    )
+
+
+def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[str, tuple[set[str], list[str], list[str]]]:
+    sg_arn = ec2_arn("security-group/*")
+    instance_arn = ec2_arn("instance/*")
+    volume_arn = ec2_arn("volume/*")
+    eip_arn = ec2_arn("elastic-ip/*")
+    foundation_vpc = ec2_arn(f"vpc/{dollar}{{Vpc}}")
+    boundary_tag = f"ec2:ResourceTag/OSAStack: {environment}"
+    request_tag = f"aws:RequestTag/OSAStack: {environment}"
+    return {
+        "DescribeEc2State": (
+            {
+                "ec2:DescribeAddresses",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeVpcs",
+            },
+            ['"*"'],
+            [],
+        ),
+        f"RunTagged{sid_prefix}Instances": (
+            {"ec2:RunInstances"},
+            ['"*"'],
+            [
+                "StringEquals:",
+                request_tag,
+                "ArnEqualsIfExists:",
+                f"ec2:Vpc: {foundation_vpc}",
+            ],
+        ),
+        f"ManageTagged{sid_prefix}Instances": (
+            {"ec2:ModifyInstanceAttribute", "ec2:TerminateInstances"},
+            [instance_arn],
+            equals(boundary_tag),
+        ),
+        f"CreateTagged{sid_prefix}SecurityGroups": (
+            {"ec2:CreateSecurityGroup"},
+            [sg_arn, foundation_vpc],
+            equals(request_tag),
+        ),
+        f"TagCreated{sid_prefix}SecurityGroups": (
+            {"ec2:CreateTags"},
+            [sg_arn],
+            [
+                "StringEquals:",
+                "ec2:CreateAction: CreateSecurityGroup",
+                request_tag,
+                "ForAllValues:StringEquals:",
+                "aws:TagKeys:",
+                "- Name",
+                "- OSAStack",
+                "- Project",
+            ],
+        ),
+        f"AllocateTagged{sid_prefix}Addresses": (
+            {"ec2:AllocateAddress"},
+            [eip_arn],
+            equals(request_tag),
+        ),
+        f"TagCreated{sid_prefix}Addresses": (
+            {"ec2:CreateTags"},
+            [eip_arn],
+            [
+                "StringEquals:",
+                "ec2:CreateAction: AllocateAddress",
+                request_tag,
+                "ForAllValues:StringEquals:",
+                "aws:TagKeys:",
+                "- Name",
+                "- OSAStack",
+                "- Project",
+            ],
+        ),
+        f"ManageTagged{sid_prefix}Addresses": (
+            {"ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:ReleaseAddress"},
+            [eip_arn, instance_arn],
+            equals(boundary_tag),
+        ),
+        f"ManageTagged{sid_prefix}SecurityGroups": (
+            {
+                "ec2:AuthorizeSecurityGroupEgress",
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:DeleteSecurityGroup",
+                "ec2:RevokeSecurityGroupEgress",
+                "ec2:RevokeSecurityGroupIngress",
+            },
+            [sg_arn],
+            equals(boundary_tag),
+        ),
+        f"CreateTagsFor{sid_prefix}Instances": (
+            {"ec2:CreateTags"},
+            ['"*"'],
+            [
+                "StringEquals:",
+                "ec2:CreateAction: RunInstances",
+                request_tag,
+            ],
+        ),
+        f"Manage{sid_prefix}Tags": (
+            {"ec2:CreateTags", "ec2:DeleteTags"},
+            [instance_arn, sg_arn, volume_arn],
+            [
+                "StringEquals:",
+                boundary_tag,
+                "ForAllValues:StringEquals:",
+                "aws:TagKeys:",
+                "- Name",
+                "- Project",
+            ],
+        ),
+        "PassOnlyOsaEc2InstanceRole": (
+            {"iam:PassRole"},
+            ["!GetAtt Ec2InstanceRole.Arn"],
+            equals("iam:PassedToService: ec2.amazonaws.com"),
+        ),
+        f"ReadOsa{parameter_env.title()}Parameters": (
+            {"ssm:GetParameters"},
+            [ssm_parameter_arn(f"osa/{parameter_env}/*")],
+            [],
+        ),
+    }
+
+
+for role_name, environment, prefix, parameter_env in (
+    ("DevApplicationExecutionRole", "osa-dev", "OsaDev", "dev"),
+    ("ProdApplicationExecutionRole", "osa-prod", "OsaProd", "prod"),
+    ("ObservabilityExecutionRole", "osa-observability", "OsaObservability", "observability"),
+):
+    expected = env_policy(environment, prefix, parameter_env)
+    if role_name == "ObservabilityExecutionRole":
+        expected.update(
+            {
+                "CreateTaggedOsaObservabilityVolumes": (
+                    {"ec2:CreateVolume"},
+                    [ec2_arn("volume/*")],
+                    equals("aws:RequestTag/OSAStack: osa-observability"),
+                ),
+                "TagCreatedOsaObservabilityVolumes": (
+                    {"ec2:CreateTags"},
+                    [ec2_arn("volume/*")],
+                    [
+                        "StringEquals:",
+                        "ec2:CreateAction: CreateVolume",
+                        "aws:RequestTag/OSAStack: osa-observability",
+                        "ForAllValues:StringEquals:",
+                        "aws:TagKeys:",
+                        "- Name",
+                        "- OSAStack",
+                        "- Project",
+                    ],
+                ),
+                "ManageTaggedOsaObservabilityVolumes": (
+                    {"ec2:AttachVolume", "ec2:DeleteVolume", "ec2:DetachVolume"},
+                    [ec2_arn("volume/*"), ec2_arn("instance/*")],
+                    equals("ec2:ResourceTag/OSAStack: osa-observability"),
+                ),
+            }
+        )
+    assert_exact_policy(role_name, expected)
+
+for role_name in required_roles - {"Ec2InstanceRole"}:
+    require(
+        re.search(r"(?m)^      ManagedPolicyArns:", role_body(role_name)) is None,
+        f"{role_name} must not attach unreviewed managed policies",
+    )
+
+# The EC2 role has exactly the approved AWS SSM managed policy and no others.
+managed = re.search(
+    r"(?ms)^      ManagedPolicyArns:\n(?P<body>.*?)(?=^      Policies:|^      Tags:|\Z)",
+    role_body("Ec2InstanceRole"),
+)
+managed_arns = (
+    re.findall(r"(?m)^        - (.+)$", managed.group("body"))
+    if managed is not None
+    else []
+)
+require(
+    managed_arns
+    == [
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore"'
+    ],
+    "Ec2InstanceRole must attach exactly AmazonSSMManagedInstanceCore",
+)
+assert_exact_policy(
+    "Ec2InstanceRole",
+    {
+        "EcrAuthorizationToken": ({"ecr:GetAuthorizationToken"}, ['"*"'], []),
+        "PullImagesFromFoundationRepository": (
+            {
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+            },
+            ["!GetAtt Repository.Arn"],
+            [],
+        ),
+    },
+)
+
 print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
 
 require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
