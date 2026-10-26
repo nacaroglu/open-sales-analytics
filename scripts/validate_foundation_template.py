@@ -637,6 +637,13 @@ for phrase in (
     "amazonssmmanagedinstancecore",
     "resource: * exceptions are limited",
     "exact environment osastack request tag",
+    "describevpcstate and listfoundationproviders in foundationexecutionrole",
+    "runtaggedosadevinstances",
+    "createtagsforosadevinstances",
+    "runtaggedosaprodinstances",
+    "createtagsforosaprodinstances",
+    "runtaggedosaobservabilityinstances",
+    "createtagsforosaobservabilityinstances",
     "may pass only devapplicationexecutionrole to cloudformation through iam:passrole",
     "may pass only prodapplicationexecutionrole to cloudformation through iam:passrole",
     "may pass only devapplicationexecutionrole",
@@ -648,6 +655,8 @@ for url in (
     "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/control-access-with-iam.html",
     "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html",
     "https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-instance-permissions.html",
+    "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ExamplePolicies_EC2.html",
+    "https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html",
 ):
     require(url in readme, f"README must cite IAM guidance: {url}")
 
