@@ -581,11 +581,7 @@ for role_name, (resource_type, _) in resources.items():
     if resource_type != "AWS::IAM::Role":
         continue
     for statement_id, statement in policy_statements(role_name).items():
-        if re.search(r'(?m)^\s+Resource: "\*"
-
-require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
-        "README must not defer the implemented lifecycle and force-empty behavior")
-, statement) is not None:
+        if 'Resource: "*"' in statement:
             actual_wildcards.add((role_name, statement_id))
 require(
     actual_wildcards == expected_wildcards,
