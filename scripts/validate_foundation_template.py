@@ -531,11 +531,18 @@ for role_name, environment, sid_prefix in environment_roles:
         and f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Addresses", ""),
         f"{role_name} address operations must be environment tagged",
     )
-    require(
-        f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod' if environment == 'osa-prod' else 'observability'}/*"
-        in statements.get(f"ReadOsa{'Dev' if environment == 'osa-dev' else 'Prod' if environment == 'osa-prod' else 'Observability'}Parameters", ""),
-        f"{role_name} parameter reads must stay in their environment path",
-    )
+    if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        parameter_path = f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod'}/release/image"
+        parameter_statement = statements.get(
+            f"ManageOsa{'Dev' if environment == 'osa-dev' else 'Prod'}ReleaseImageParameter", ""
+        )
+        require(
+            parameter_path in parameter_statement
+            and "parameter/osa/*" not in parameter_statement
+            and "parameter/osa/dev/*" not in parameter_statement
+            and "parameter/osa/prod/*" not in parameter_statement,
+            f"{role_name} SSM access must be limited to its exact release metadata parameter ARN",
+        )
     require(
         "iam:PassRole" in role_body(role_name)
         and "Resource: !GetAtt Ec2InstanceRole.Arn" in role_body(role_name)
