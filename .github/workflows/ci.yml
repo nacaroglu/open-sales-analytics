@@ -493,6 +493,82 @@ jobs:
           assert str(service["ports"][0]["published"]) == "18080"
           assert service["volumes"][0]["target"] == "/custom-data"
           '
+      - name: Verify failed Collector startup cleanup
+        env:
+          COMPOSE_PROJECT_NAME: osa-telemetry-failure-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          sink_dir="/tmp/osa-telemetry-failure-${GITHUB_RUN_ID}"
+          invalid_config="/tmp/osa-invalid-collector-${GITHUB_RUN_ID}.yaml"
+          override="/tmp/osa-invalid-collector-override-${GITHUB_RUN_ID}.yaml"
+          export OSA_TEST_TELEMETRY_DIR="$sink_dir"
+          compose=(docker compose --project-name "$COMPOSE_PROJECT_NAME" \
+            -f docker-compose.yaml -f docker-compose.test-telemetry.yaml -f "$override")
+          cleanup() {
+            status=$?
+            trap - EXIT
+            "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || status=1
+            rm -rf "$sink_dir" "$invalid_config" "$override"
+            if [ -n "$("${compose[@]}" ps -aq 2>/dev/null)" ] || \
+              [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" 2>/dev/null)" ]; then
+              echo "Failed-startup telemetry Compose resources remain after cleanup"
+              status=1
+            fi
+            if [ -e "$sink_dir" ] || [ -e "$invalid_config" ] || [ -e "$override" ]; then
+              echo "Failed-startup telemetry output or temporary configuration remains after cleanup"
+              status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$sink_dir"
+          chmod 0777 "$sink_dir"
+          printf '%s\n' '{"synthetic":"cleanup-probe"}' > "$sink_dir/osa-telemetry.json"
+          printf 'receivers: [\n' > "$invalid_config"
+          cat > "$override" <<EOF
+          services:
+            telemetry-collector:
+              command: ["--config=/tmp/osa-invalid-collector.yaml"]
+              volumes:
+                - $invalid_config:/tmp/osa-invalid-collector.yaml:ro
+          EOF
+
+          "${compose[@]}" config --quiet
+          if "${compose[@]}" up --detach telemetry-collector; then
+            echo "Compose accepted the intentionally invalid Collector configuration"
+          else
+            echo "Compose reported the expected Collector startup failure"
+          fi
+          collector_id="$("${compose[@]}" ps -aq telemetry-collector)"
+          test -n "$collector_id"
+          failed_start=0
+          for _ in $(seq 1 30); do
+            state="$(docker inspect --format='{{.State.Status}}' "$collector_id")"
+            if [ "$state" = exited ] || [ "$state" = dead ]; then
+              failed_start=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$failed_start" -ne 1 ]; then
+            echo "Invalid Collector configuration did not make the service fail within 30 seconds"
+            "${compose[@]}" logs --no-color --tail=80 telemetry-collector
+            exit 1
+          fi
+
+          "${compose[@]}" down --volumes --remove-orphans
+          test -z "$("${compose[@]}" ps -aq)"
+          if docker inspect "$collector_id" >/dev/null 2>&1; then
+            echo "Failed-startup telemetry Collector still exists after cleanup"
+            exit 1
+          fi
+          test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME")"
+          rm -rf "$sink_dir" "$invalid_config" "$override"
+          test ! -e "$sink_dir"
+          test ! -e "$invalid_config"
+          test ! -e "$override"
+          trap - EXIT
       - name: Validate deployment Compose configuration
         shell: bash
         run: |
