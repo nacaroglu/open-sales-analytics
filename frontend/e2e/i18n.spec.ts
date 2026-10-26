@@ -70,8 +70,15 @@ test("each additional language completes a translated dashboard, product and cus
   ] as const;
 
   await page.goto("/");
+  const initialOverview = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith("/overview") && response.ok();
+  });
   await page.getByRole("button", { name: "Örnek veriyi dene" }).click();
   await expect(page).toHaveURL(/\/d\/[^/]+$/);
+  await initialOverview;
+  await expect(page.getByRole("heading", { level: 2, name: "Genel bakış", exact: true })).toBeVisible();
+  await expect(page.locator('input[type="date"]').nth(1)).toHaveValue("2025-12-31");
 
   const apiRequests: string[] = [];
   let filterApplied = false;
