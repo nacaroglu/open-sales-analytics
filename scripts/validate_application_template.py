@@ -95,8 +95,8 @@ for phrase, message in (
     ("/osa/prod/release/image", "README must document the production metadata parameter path"),
     ("non-secret", "README must distinguish release metadata from secrets"),
     ("securestring", "README must distinguish release metadata from SecureString credentials"),
-    ("issue #240", "README must assign runtime resources to issue #240"),
-    ("issue #242", "README must assign secret injection to issue #242"),
+    ("#240", "README must assign runtime resources to issue #240"),
+    ("#242", "README must assign secret injection to issue #242"),
 ):
     require(phrase in doc, message)
 for url in (
