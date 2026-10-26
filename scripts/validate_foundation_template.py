@@ -388,13 +388,25 @@ def policy_statements(role_name: str) -> dict[str, str]:
 
 
 def statement_actions(statement: str) -> set[str]:
-    action = re.search(r"(?m)^\s+Action: (.+)$", statement)
-    if action is not None:
-        return {action.group(1)}
-    action_list = re.search(r"(?ms)^\s+Action:\n(?P<body>(?:^\s+- .+\n?)+)", statement)
-    if action_list is None:
-        return set()
-    return {re.sub(r"^\s+- ", "", item) for item in action_list.group("body").splitlines() if item.strip()}
+    lines = statement.splitlines()
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if not stripped.startswith("Action:"):
+            continue
+        inline = stripped[len("Action:"):].strip()
+        if inline:
+            return {inline}
+        actions: set[str] = set()
+        for candidate in lines[index + 1:]:
+            candidate_indent = len(candidate) - len(candidate.lstrip())
+            if candidate.strip() and candidate_indent <= indent:
+                break
+            value = candidate.strip()
+            if value.startswith("- "):
+                actions.add(value[2:].strip())
+        return actions
+    return set()
 
 
 def exact_trust(role_name: str, principal: str, subject: str | None = None) -> None:
