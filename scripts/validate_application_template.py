@@ -86,4 +86,23 @@ for value in ("", " leading", "contains space", "x" * 129):
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}", value) is None,
             f"invalid release version accepted: {value}")
 
-print("Application template import, parameter, resource, output, and offline parameter assertions passed.")
+readme = Path("deploy/README.md").read_text(encoding="utf-8")
+doc = readme.lower()
+for phrase, message in (
+    ("osa-application.yaml", "README must document the one shared application template"),
+    ("osa-foundation-repositoryuri", "README must document the foundation repository export"),
+    ("/osa/dev/release/image", "README must document the development metadata parameter path"),
+    ("/osa/prod/release/image", "README must document the production metadata parameter path"),
+    ("non-secret", "README must distinguish release metadata from secrets"),
+    ("securestring", "README must distinguish release metadata from SecureString credentials"),
+    ("issue #240", "README must assign runtime resources to issue #240"),
+    ("issue #242", "README must assign secret injection to issue #242"),
+):
+    require(phrase in doc, message)
+for url in (
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html",
+    "https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html",
+):
+    require(url in readme, f"README must cite the AWS pattern source: {url}")
+
+print("Application template import, parameter, resource, output, documentation, and offline parameter assertions passed.")
