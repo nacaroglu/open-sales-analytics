@@ -56,3 +56,52 @@ docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
 ```
 
 Üretim ayarları için `CADDY_AUTH_BLOCK=''` değerini ve `PUBLIC_DEMO_MODE=true` değerini sağlayıp `OSA_ENVIRONMENT=production` ayarlayın. Parola özeti çalışma zamanı girdisidir; kimlik bilgilerini veya özetleri Compose dosyalarına, kabuk geçmişine ya da CI günlüklerine koymayın.
+
+
+## Paylaşılan foundation yığını
+
+Ayrı `deploy/cloudformation/osa-foundation.yaml` şablonu ortak VPC ve alt ağları, değiştirilemez ve gönderimde taranan ECR deposunu, GitHub Actions OIDC sağlayıcısını, görüntü oluşturma/gönderme rolünü ve foundation yürütme rolünü oluşturur. Güvenlik grubu veya giriş kuralı oluşturmaz. Özel yönlendirme tablolarında internet ağ geçidine doğrudan rota bulunmaz.
+
+### Parametreler ve dışa aktarımlar
+
+`AvailabilityZone1` ve `AvailabilityZone2` için farklı AZ değerleri seçin. `VpcCidr`, iki `PublicSubnet*Cidr` ve iki `PrivateSubnet*Cidr` çakışmayan ağ aralıklarını tanımlar; varsayılanlar `10.40.0.0/16` ve dört `/20` alt ağıdır. `GitHubOwner` ile `GitHubRepository` değerlerini ayarlayın; `GitHubMainBranch` varsayılan olarak `main` olur ve OIDC konusu tam bu dala bağlıdır. `RepositoryName` varsayılanı `open-sales-analytics` değeridir.
+
+`osa-foundation` adıyla dağıtım, aşağıdaki kararlı ve yığın adıyla nitelenmiş dışa aktarımları sağlar: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, `osa-foundation-StackName` ve `osa-foundation-Region`. Sonraki şablonlarda `Fn::ImportValue` kullanın; virgülle ayrılmış alt ağ listeleri için `Fn::Split` uygulayın.
+
+GitHub güveni tam depo sahibi/depo/dal konusunu ve `sts.amazonaws.com` kitlesini gerektirir; uzun ömürlü kimlik bilgisi verilmez. [GitHub AWS OIDC kılavuzuna](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws) bakın.
+
+### Oluşturma ve doğrulama
+
+Adlandırılmış IAM rolleri oluşturmak için `CAPABILITY_NAMED_IAM` gerekir. Şablon `FoundationExecutionRoleArn` rolünü kendisi oluşturduğu için ilk yığın oluşturma çağıranın kimlik bilgileriyle yapılır; rol mevcut olmadan `--role-arn` ile verilemez. Aynı yığının sonraki bir güncellemesinde `FoundationExecutionRoleArn` çıktısını alın ve `--role-arn` ile belirtin; çağıranın bu rol için `iam:PassRole` izni olmalıdır. CloudFormation bu rolü sonraki yığın işlemleri için ilişkilendirir. [AWS CreateStack belgelerine](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_CreateStack.html) ve [UpdateStack belgelerine](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html) bakın.
+
+İlk dağıtımda rol henüz mevcut olmadığından `--role-arn` kullanmayın. Aynı foundation yığınında daha sonraki bir değişiklik için `FoundationExecutionRoleArn` çıktısını alıp uygulanacak şablon veya parametre değişikliğiyle birlikte normal dağıtım komutuna verin:
+```sh
+REGION=eu-central-1; STACK=osa-foundation
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
+  --template-file deploy/cloudformation/osa-foundation.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
+```
+
+İmzalı ve sürümü sabitlenmiş AWS `cfn-validate` ikilisiyle ve depodaki statik kontrollerle yerel doğrulama yapın:
+```sh
+EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \\
+  --query "Stacks[0].Outputs[?OutputKey=='FoundationExecutionRoleArn'].OutputValue" --output text)
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \\
+  --template-file deploy/cloudformation/osa-foundation.yaml \\
+  --capabilities CAPABILITY_NAMED_IAM --role-arn "$EXECUTION_ROLE_ARN" \\
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \\
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
+```
+
+```sh
+cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
+python3 scripts/validate_foundation_template.py
+```
+
+Doğrulayıcı şema ve kuralları içerir; doğrulama sırasında AWS kimlik bilgisi veya ağ bağlantısı gerekmez. CI ikilinin SHA-256 değerini ve ayrık imzasını doğrular; bu şablonu dağıtmaz. [AWS CloudFormation doğrulama kılavuzuna](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cloudformation-validate.html) ve [AWS doğrulayıcı imza yönergelerine](https://github.com/aws-cloudformation/cloudformation-validate/blob/main/INSTALLATION.md) bakın.
+
+### Silme ve temizleme
+
+Dışa aktarımlarını kullanan tüm alt yığınları `osa-foundation` yığınından önce silin; başka bir yığın dışa aktarımı içe aktarırken CloudFormation bunun silinmesine izin vermez. Ardından `aws cloudformation delete-stack` çalıştırın. Temizlemeden önce ECR görüntülerini açıkça kaldırın. Sınırlandırılmış yaşam döngüsü ve silmede boşaltma #236 kapsamındadır. Dağıtım öncesinde parametreleri, IAM yeteneklerini ve AWS değişiklik kümesini inceleyin; çevrimdışı doğrulama bölgedeki AZ veya CIDR kullanılabilirliğini teyit etmez. [CloudFormation kaynak belgelerine](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html) bakın.
