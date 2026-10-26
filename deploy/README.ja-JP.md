@@ -50,22 +50,23 @@ docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
 本番設定では `CADDY_AUTH_BLOCK=''` と `PUBLIC_DEMO_MODE=true` を指定し、`OSA_ENVIRONMENT=production` に設定します。パスワードハッシュは実行時入力です。認証情報やハッシュを Compose ファイル、シェル履歴、CI ログに含めないでください。
 
 
-## Shared foundation stack
+## 共有 foundation スタック
 
-The separate `deploy/cloudformation/osa-foundation.yaml` template creates the shared VPC and subnets, immutable scan-on-push ECR repository, GitHub Actions OIDC provider, image build/push role, and foundation execution role. It creates no security groups or ingress rules. Private route tables have no direct internet-gateway route.
+独立した `deploy/cloudformation/osa-foundation.yaml` テンプレートは、共有 VPC とサブネット、タグが不変でプッシュ時にスキャンする ECR リポジトリ、GitHub Actions OIDC プロバイダー、イメージのビルド/プッシュ用ロール、foundation スタック実行ロールを作成します。セキュリティグループやインバウンドルールは作成しません。プライベートのルートテーブルにはインターネットゲートウェイへの直接ルートがありません。
 
-### Parameters and exports
+### パラメーターとエクスポート
 
-Set `AvailabilityZone1` and `AvailabilityZone2` to distinct AZs. `VpcCidr`, the two `PublicSubnet*Cidr` values, and the two `PrivateSubnet*Cidr` values define non-overlapping network ranges; defaults are `10.40.0.0/16` and four `/20` subnets. Set `GitHubOwner` and `GitHubRepository`; `GitHubMainBranch` defaults to `main` and the OIDC subject matches that exact branch. `RepositoryName` defaults to `open-sales-analytics`.
+`AvailabilityZone1` と `AvailabilityZone2` には異なる AZ を指定します。`VpcCidr`、2 つの `PublicSubnet*Cidr` と 2 つの `PrivateSubnet*Cidr` で重複しないネットワーク範囲を指定します。デフォルトは `10.40.0.0/16` と 4 つの `/20` サブネットです。`GitHubOwner` と `GitHubRepository` を設定します。`GitHubMainBranch` のデフォルトは `main` で、OIDC subject はそのブランチだけに一致します。`RepositoryName` のデフォルトは `open-sales-analytics` です。
 
-Deploy as `osa-foundation` to use stable stack-qualified exports: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, `osa-foundation-StackName`, and `osa-foundation-Region`. Import values in later templates with `Fn::ImportValue`; use `Fn::Split` for the comma-separated subnet lists.
+スタック名を `osa-foundation` にしてデプロイすると、スタック名を含む安定したエクスポートが作成されます: `osa-foundation-VpcId`、`osa-foundation-PublicSubnetAz1Id`、`osa-foundation-PublicSubnetAz2Id`、`osa-foundation-PrivateSubnetAz1Id`、`osa-foundation-PrivateSubnetAz2Id`、`osa-foundation-PublicSubnetIds`、`osa-foundation-PrivateSubnetIds`、`osa-foundation-RepositoryArn`、`osa-foundation-RepositoryUri`、`osa-foundation-OidcProviderArn`、`osa-foundation-BuildRoleArn`、`osa-foundation-FoundationExecutionRoleArn`、`osa-foundation-StackName`、`osa-foundation-Region`。後続テンプレートでは `Fn::ImportValue` で値を取り込み、カンマ区切りのサブネット一覧は `Fn::Split` でリストにします。
 
-The GitHub trust requires the exact owner/repository/branch subject and `sts.amazonaws.com` audience; it grants no long-lived credentials. See [GitHub's AWS OIDC guide](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
+GitHub の信頼ポリシーは owner/repository/branch subject と `sts.amazonaws.com` audience の完全一致を要求し、長期認証情報は作成しません。[GitHub の AWS OIDC ガイド](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)を参照してください。
 
-### Create and validate
+### 作成と検証
 
-Creating named IAM roles requires `CAPABILITY_NAMED_IAM`. The caller needs permission to create the declared resources and pass the foundation execution role to CloudFormation.
+名前付き IAM ロールの作成には `CAPABILITY_NAMED_IAM` が必要です。このテンプレート自身が `FoundationExecutionRoleArn` ロールを作成するため、初回のスタック作成は呼び出し元の認証情報で行います。ロールの作成前に `--role-arn` で渡すことはできません。同じスタックを後で更新するときは、出力 `FoundationExecutionRoleArn` を取得して `--role-arn` に指定します。呼び出し元にはこのロールの `iam:PassRole` 権限が必要です。CloudFormation は以後のスタック操作にこのロールを関連付けます。AWS の [CreateStack ドキュメント](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_CreateStack.html)と [UpdateStack ドキュメント](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html)を参照してください。
 
+初回デプロイではロールがまだないため `--role-arn` を省略します。同じ foundation スタックに後続の変更を行う際は、`FoundationExecutionRoleArn` を取得して、適用するテンプレートまたはパラメーターの変更とともに通常のデプロイコマンドに渡します:
 ```sh
 REGION=eu-central-1; STACK=osa-foundation
 aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
@@ -75,15 +76,19 @@ aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \
     GitHubOwner=OWNER GitHubRepository=open-sales-analytics
 ```
 
-Validate locally with the signed, pinned AWS `cfn-validate` binary and the repository's static assertions:
-
+署名を検証した固定バージョンの AWS `cfn-validate` バイナリとリポジトリの静的チェックでローカル検証します:
 ```sh
-cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
-python3 scripts/validate_foundation_template.py
+EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \\
+  --query "Stacks[0].Outputs[?OutputKey=='FoundationExecutionRoleArn'].OutputValue" --output text)
+aws cloudformation deploy --region "$REGION" --stack-name "$STACK" \\
+  --template-file deploy/cloudformation/osa-foundation.yaml \\
+  --capabilities CAPABILITY_NAMED_IAM --role-arn "$EXECUTION_ROLE_ARN" \\
+  --parameter-overrides AvailabilityZone1=eu-central-1a AvailabilityZone2=eu-central-1b \\
+    GitHubOwner=OWNER GitHubRepository=open-sales-analytics
 ```
 
-The validator bundles schemas and rules, so the validation itself needs no AWS credentials or network. CI verifies the binary's SHA-256 and detached signature before running it; CI never deploys this template. See the [AWS CloudFormation validation guide](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cloudformation-validate.html) and [AWS validator signature instructions](https://github.com/aws-cloudformation/cloudformation-validate/blob/main/INSTALLATION.md).
+検証ツールにはスキーマとルールが含まれるため、検証そのものに AWS 認証情報やネットワーク接続は不要です。CI はバイナリの SHA-256 と detached signature を検証し、テンプレートをデプロイしません。[AWS CloudFormation 検証ガイド](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cloudformation-validate.html)と[AWS 検証ツールの署名手順](https://github.com/aws-cloudformation/cloudformation-validate/blob/main/INSTALLATION.md)を参照してください。
 
-### Delete and cleanup
+### 削除とクリーンアップ
 
-Delete downstream stacks before `osa-foundation`; CloudFormation prevents deleting exports still imported by another stack. Then use `aws cloudformation delete-stack`. Remove ECR images explicitly before cleanup. Bounded lifecycle and empty-on-delete behavior are deferred to issue #236. Review parameters, IAM capabilities, and the AWS change set before any deployment; offline validation does not confirm regional AZ or CIDR availability. See [CloudFormation resource documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html).
+`osa-foundation` を削除する前に、そのエクスポートをインポートしている下位スタックをすべて削除してください。他のスタックからインポート中のエクスポートは CloudFormation で削除できません。その後 `aws cloudformation delete-stack` を実行します。クリーンアップ前に ECR イメージを明示的に削除してください。ライフサイクル上限と削除時の空化は issue #236 の対象です。デプロイ前にパラメーター、IAM capabilities、AWS change set を確認してください。オフライン検証では対象リージョンの AZ や CIDR の利用可否は確認できません。[CloudFormation リソースドキュメント](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html)を参照してください。
