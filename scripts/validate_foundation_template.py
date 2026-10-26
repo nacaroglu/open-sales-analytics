@@ -727,6 +727,8 @@ def assert_exact_policy(
         statement = statements[sid]
         require(
             statement_actions(statement) == actions
+            and re.findall(r"(?m)^\\s+Effect: (.+)$", statement) == ["Allow"]
+            and re.search(r"(?m)^\\s+Not(?:Action|Resource):", statement) is None
             and len(re.findall(r"(?m)^\s+Action:", statement)) == 1,
             f"{role_name}.{sid} action set must be exact",
         )
