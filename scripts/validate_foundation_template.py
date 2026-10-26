@@ -634,7 +634,7 @@ for phrase in (
     "targets only osa-prod",
     "cloudformation.amazonaws.com",
     "ec2.amazonaws.com",
-    "amazonsmmanagedinstancecore",
+    "amazonssmmanagedinstancecore",
     "resource: * exceptions are limited",
     "exact environment osastack request tag",
     "only for that role to cloudformation.amazonaws.com",
