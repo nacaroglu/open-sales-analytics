@@ -157,7 +157,7 @@ jobs:
           done
           test "$ready" -eq 1
 
-          "${compose[@]}" exec -T app python -m app.telemetry_test_signal
+          "${compose[@]}" exec -T app env PYTHONPATH=/app/backend python -m app.telemetry_test_signal
           captured=0
           for _ in $(seq 1 15); do
             if [ -s "$sink_file" ]; then
