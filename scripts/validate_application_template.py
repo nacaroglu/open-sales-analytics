@@ -51,9 +51,12 @@ resource_body = resources.group("body")
 resource_names = re.findall(r"(?m)^  ([A-Za-z][A-Za-z0-9]*):\n    Type:", resource_body)
 require(resource_names == ["ReleaseImageMetadataParameter"],
         "the sole application resource must be ReleaseImageMetadataParameter")
-require("Type: AWS::SSM::Parameter" in resource_body and "Type: String" in resource_body
-        and "SecureString" not in resource_body,
-        "release metadata must be one non-secret SSM String parameter")
+require(
+    "    Type: AWS::SSM::Parameter" in resource_body
+    and re.findall(r"(?m)^      Type: (.+)$", resource_body) == ["String"]
+    and "SecureString" not in resource_body,
+    "release metadata must be exactly one non-secret SSM String parameter",
+)
 require("Name: !If\n        - IsDevelopment\n        - /osa/dev/release/image\n        - /osa/prod/release/image" in resource_body,
         "parameter path must map development to /osa/dev and production to /osa/prod")
 require("Fn::ImportValue: osa-foundation-RepositoryUri" in resource_body
