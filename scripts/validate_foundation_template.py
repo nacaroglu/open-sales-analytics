@@ -1174,6 +1174,18 @@ for role_name, environment, prefix, parameter_env in (
     ("ObservabilityExecutionRole", "osa-observability", "OsaObservability", "observability"),
 ):
     expected = env_policy(environment, prefix, parameter_env)
+    if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        expected[f"ManageOsa{'Dev' if parameter_env == 'dev' else 'Prod'}ReleaseImageParameter"] = (
+            {
+                "ssm:AddTagsToResource",
+                "ssm:DeleteParameter",
+                "ssm:GetParameter",
+                "ssm:PutParameter",
+                "ssm:RemoveTagsFromResource",
+            },
+            [ssm_parameter_arn(f"osa/{parameter_env}/release/image")],
+            [],
+        )
     if role_name == "ObservabilityExecutionRole":
         expected.update(
             {
