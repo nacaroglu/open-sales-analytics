@@ -1002,6 +1002,246 @@ assert_exact_policy(
     },
 )
 
+
+# Deploy roles: exact statement sets and exact stack/role ARNs.
+for deploy_role, stack_name, exec_role, prefix in (
+    ("DevDeployRole", "osa-dev", "DevApplicationExecutionRole", "OsaDev"),
+    ("ProductionPromotionRole", "osa-prod", "ProdApplicationExecutionRole", "OsaProd"),
+):
+    assert_exact_policy(
+        deploy_role,
+        {
+            f"Manage{prefix}Stack": (
+                {
+                    "cloudformation:CreateStack",
+                    "cloudformation:DeleteStack",
+                    "cloudformation:UpdateStack",
+                },
+                [cfn_stack_arn(stack_name)],
+                equals(f"cloudformation:RoleArn: !GetAtt {exec_role}.Arn"),
+            ),
+            f"Read{prefix}Stack": (
+                {
+                    "cloudformation:DescribeStackEvents",
+                    "cloudformation:DescribeStackResources",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:GetTemplate",
+                },
+                [cfn_stack_arn(stack_name)],
+                [],
+            ),
+            f"PassOnly{prefix}ExecutionRole": (
+                {"iam:PassRole"},
+                [f"!GetAtt {exec_role}.Arn"],
+                equals("iam:PassedToService: cloudformation.amazonaws.com"),
+            ),
+        },
+    )
+
+
+def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[str, tuple[set[str], list[str], list[str]]]:
+    sg_arn = ec2_arn("security-group/*")
+    instance_arn = ec2_arn("instance/*")
+    volume_arn = ec2_arn("volume/*")
+    eip_arn = ec2_arn("elastic-ip/*")
+    foundation_vpc = ec2_arn(f"vpc/{dollar}{{Vpc}}")
+    boundary_tag = f"ec2:ResourceTag/OSAStack: {environment}"
+    request_tag = f"aws:RequestTag/OSAStack: {environment}"
+    return {
+        "DescribeEc2State": (
+            {
+                "ec2:DescribeAddresses",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeVpcs",
+            },
+            ['"*"'],
+            [],
+        ),
+        f"RunTagged{sid_prefix}Instances": (
+            {"ec2:RunInstances"},
+            ['"*"'],
+            [
+                "StringEquals:",
+                request_tag,
+                "ArnEqualsIfExists:",
+                f"ec2:Vpc: {foundation_vpc}",
+            ],
+        ),
+        f"ManageTagged{sid_prefix}Instances": (
+            {"ec2:ModifyInstanceAttribute", "ec2:TerminateInstances"},
+            [instance_arn],
+            equals(boundary_tag),
+        ),
+        f"CreateTagged{sid_prefix}SecurityGroups": (
+            {"ec2:CreateSecurityGroup"},
+            [sg_arn, foundation_vpc],
+            equals(request_tag),
+        ),
+        f"TagCreated{sid_prefix}SecurityGroups": (
+            {"ec2:CreateTags"},
+            [sg_arn],
+            [
+                "StringEquals:",
+                "ec2:CreateAction: CreateSecurityGroup",
+                request_tag,
+                "ForAllValues:StringEquals:",
+                "aws:TagKeys:",
+                "- Name",
+                "- OSAStack",
+                "- Project",
+            ],
+        ),
+        f"AllocateTagged{sid_prefix}Addresses": (
+            {"ec2:AllocateAddress"},
+            [eip_arn],
+            equals(request_tag),
+        ),
+        f"TagCreated{sid_prefix}Addresses": (
+            {"ec2:CreateTags"},
+            [eip_arn],
+            [
+                "StringEquals:",
+                "ec2:CreateAction: AllocateAddress",
+                request_tag,
+                "ForAllValues:StringEquals:",
+                "aws:TagKeys:",
+                "- Name",
+                "- OSAStack",
+                "- Project",
+            ],
+        ),
+        f"ManageTagged{sid_prefix}Addresses": (
+            {"ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:ReleaseAddress"},
+            [eip_arn, instance_arn],
+            equals(boundary_tag),
+        ),
+        f"ManageTagged{sid_prefix}SecurityGroups": (
+            {
+                "ec2:AuthorizeSecurityGroupEgress",
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:DeleteSecurityGroup",
+                "ec2:RevokeSecurityGroupEgress",
+                "ec2:RevokeSecurityGroupIngress",
+            },
+            [sg_arn],
+            equals(boundary_tag),
+        ),
+        f"CreateTagsFor{sid_prefix}Instances": (
+            {"ec2:CreateTags"},
+            ['"*"'],
+            [
+                "StringEquals:",
+                "ec2:CreateAction: RunInstances",
+                request_tag,
+            ],
+        ),
+        f"Manage{sid_prefix}Tags": (
+            {"ec2:CreateTags", "ec2:DeleteTags"},
+            [instance_arn, sg_arn, volume_arn],
+            [
+                "StringEquals:",
+                boundary_tag,
+                "ForAllValues:StringEquals:",
+                "aws:TagKeys:",
+                "- Name",
+                "- Project",
+            ],
+        ),
+        "PassOnlyOsaEc2InstanceRole": (
+            {"iam:PassRole"},
+            ["!GetAtt Ec2InstanceRole.Arn"],
+            equals("iam:PassedToService: ec2.amazonaws.com"),
+        ),
+        f"ReadOsa{parameter_env.title()}Parameters": (
+            {"ssm:GetParameters"},
+            [ssm_parameter_arn(f"osa/{parameter_env}/*")],
+            [],
+        ),
+    }
+
+
+for role_name, environment, prefix, parameter_env in (
+    ("DevApplicationExecutionRole", "osa-dev", "OsaDev", "dev"),
+    ("ProdApplicationExecutionRole", "osa-prod", "OsaProd", "prod"),
+    ("ObservabilityExecutionRole", "osa-observability", "OsaObservability", "observability"),
+):
+    expected = env_policy(environment, prefix, parameter_env)
+    if role_name == "ObservabilityExecutionRole":
+        expected.update(
+            {
+                "CreateTaggedOsaObservabilityVolumes": (
+                    {"ec2:CreateVolume"},
+                    [ec2_arn("volume/*")],
+                    equals("aws:RequestTag/OSAStack: osa-observability"),
+                ),
+                "TagCreatedOsaObservabilityVolumes": (
+                    {"ec2:CreateTags"},
+                    [ec2_arn("volume/*")],
+                    [
+                        "StringEquals:",
+                        "ec2:CreateAction: CreateVolume",
+                        "aws:RequestTag/OSAStack: osa-observability",
+                        "ForAllValues:StringEquals:",
+                        "aws:TagKeys:",
+                        "- Name",
+                        "- OSAStack",
+                        "- Project",
+                    ],
+                ),
+                "ManageTaggedOsaObservabilityVolumes": (
+                    {"ec2:AttachVolume", "ec2:DeleteVolume", "ec2:DetachVolume"},
+                    [ec2_arn("volume/*"), ec2_arn("instance/*")],
+                    equals("ec2:ResourceTag/OSAStack: osa-observability"),
+                ),
+            }
+        )
+    assert_exact_policy(role_name, expected)
+
+for role_name in required_roles - {"Ec2InstanceRole"}:
+    require(
+        re.search(r"(?m)^      ManagedPolicyArns:", role_body(role_name)) is None,
+        f"{role_name} must not attach unreviewed managed policies",
+    )
+
+# The EC2 role has exactly the approved AWS SSM managed policy and no others.
+managed = re.search(
+    r"(?ms)^      ManagedPolicyArns:\\n(?P<body>.*?)(?=^      Policies:|^      Tags:|\\Z)",
+    role_body("Ec2InstanceRole"),
+)
+managed_arns = (
+    re.findall(r"(?m)^        - (.+)$", managed.group("body"))
+    if managed is not None
+    else []
+)
+require(
+    managed_arns
+    == [
+        f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore"'
+    ],
+    "Ec2InstanceRole must attach exactly AmazonSSMManagedInstanceCore",
+)
+assert_exact_policy(
+    "Ec2InstanceRole",
+    {
+        "EcrAuthorizationToken": ({"ecr:GetAuthorizationToken"}, ['"*"'], []),
+        "PullImagesFromFoundationRepository": (
+            {
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+            },
+            ["!GetAtt Repository.Arn"],
+            [],
+        ),
+    },
+)
+
 print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
 
 require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
