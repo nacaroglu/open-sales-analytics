@@ -729,10 +729,6 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
-              - Sid: ReadOsaDevParameters
-                Effect: Allow
-                Action: ssm:GetParameters
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/*"
               - Sid: ManageOsaDevReleaseImageParameter
                 Effect: Allow
                 Action:
@@ -895,10 +891,6 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
-              - Sid: ReadOsaProdParameters
-                Effect: Allow
-                Action: ssm:GetParameters
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/*"
               - Sid: ManageOsaProdReleaseImageParameter
                 Effect: Allow
                 Action:
