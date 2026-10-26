@@ -502,15 +502,19 @@ Resources:
                 Action:
                   - cloudformation:CreateStack
                   - cloudformation:DeleteStack
-                  - cloudformation:DescribeStackEvents
-                  - cloudformation:DescribeStackResources
-                  - cloudformation:DescribeStacks
-                  - cloudformation:GetTemplate
                   - cloudformation:UpdateStack
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
                 Condition:
                   StringEquals:
                     cloudformation:RoleArn: !GetAtt DevApplicationExecutionRole.Arn
+              - Sid: ReadOsaDevStack
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplate
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
               - Sid: PassOnlyOsaDevExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -552,15 +556,19 @@ Resources:
                 Action:
                   - cloudformation:CreateStack
                   - cloudformation:DeleteStack
-                  - cloudformation:DescribeStackEvents
-                  - cloudformation:DescribeStackResources
-                  - cloudformation:DescribeStacks
-                  - cloudformation:GetTemplate
                   - cloudformation:UpdateStack
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-prod/*"
                 Condition:
                   StringEquals:
                     cloudformation:RoleArn: !GetAtt ProdApplicationExecutionRole.Arn
+              - Sid: ReadOsaProdStack
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplate
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-prod/*"
               - Sid: PassOnlyOsaProdExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
