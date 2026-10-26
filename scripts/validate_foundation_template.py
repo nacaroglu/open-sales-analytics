@@ -1211,7 +1211,7 @@ for role_name in required_roles - {"Ec2InstanceRole"}:
 
 # The EC2 role has exactly the approved AWS SSM managed policy and no others.
 managed = re.search(
-    r"(?ms)^      ManagedPolicyArns:\\n(?P<body>.*?)(?=^      Policies:|^      Tags:|\\Z)",
+    r"(?ms)^      ManagedPolicyArns:\n(?P<body>.*?)(?=^      Policies:|^      Tags:|\Z)",
     role_body("Ec2InstanceRole"),
 )
 managed_arns = (
