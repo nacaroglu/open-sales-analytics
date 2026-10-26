@@ -627,7 +627,7 @@ for role_name in (
     "ObservabilityExecutionRole",
     "Ec2InstanceRole",
 ):
-    require(role_name in doc, f"README must document the purpose of {role_name}")
+    require(role_name.lower() in doc, f"README must document the purpose of {role_name}")
 for phrase in (
     "environment:production",
     "stack osa-dev",
