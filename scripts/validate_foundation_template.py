@@ -637,8 +637,8 @@ for phrase in (
     "amazonssmmanagedinstancecore",
     "resource: * exceptions are limited",
     "exact environment osastack request tag",
-    "only for that role to cloudformation.amazonaws.com",
-    "may pass only prodapplicationexecutionrole",
+    "may pass only devapplicationexecutionrole to cloudformation through iam:passrole",
+    "may pass only prodapplicationexecutionrole to cloudformation through iam:passrole",
     "may pass only devapplicationexecutionrole",
 ):
     require(phrase in doc, f"README must document the IAM contract: {phrase}")
