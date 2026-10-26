@@ -198,7 +198,7 @@ for reference in ("#240", "#263", "#264"):
 for url in (
     "https://docs.aws.amazon.com/vpc/latest/userguide/subnet-route-tables.html",
     "https://docs.aws.amazon.com/us_en/AWSEC2/latest/UserGuide/working-with-ip-addresses.html",
-    "https://docs.aws.amazon.com/en_en/vpc/latest/userguide/vpc-security-groups.html",
+    "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html",
 ):
     require(url in readme, f"README must cite the applicable AWS source: {url}")
 
