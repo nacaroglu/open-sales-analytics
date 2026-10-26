@@ -279,6 +279,7 @@ def validate_openapi_response(base_url: str, path: str, payload: dict, module: s
 
 
 def dataset_state(compose: list[str]) -> list[dict[str, str | int | bool]]:
+    """Snapshot dataset files and directory presence, ignoring expected directory mtime changes."""
     output = compose_run(
         compose,
         "exec",
@@ -288,8 +289,8 @@ def dataset_state(compose: list[str]) -> list[dict[str, str | int | bool]]:
         "-c",
         "import json; from pathlib import Path; root=Path('/data'); "
         "print(json.dumps(sorted(({ 'path': str(path.relative_to(root)), "
-        "'directory': path.is_dir(), 'size': path.stat().st_size, "
-        "'mtime_ns': path.stat().st_mtime_ns } for path in root.rglob('*')), "
+        "'directory': path.is_dir(), 'size': 0 if path.is_dir() else path.stat().st_size, "
+        "'mtime_ns': 0 if path.is_dir() else path.stat().st_mtime_ns } for path in root.rglob('*')), "
         "key=lambda item: item['path'])))",
     )
     try:
@@ -556,7 +557,7 @@ def run_self_hosted(base_url: str, compose: list[str]) -> None:
     check(
         artifacts_after_invalid == artifacts_before_invalid,
         "IT-05",
-        "invalid upload changed dataset files, WALs, temporary uploads, or directory state",
+        "invalid upload changed dataset artifacts or left a temporary upload",
     )
     mark("IT-05", "invalid CSV was rejected without creating a dataset")
 
