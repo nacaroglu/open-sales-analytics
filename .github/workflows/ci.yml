@@ -68,6 +68,32 @@ jobs:
   # Fails on any `uses:` that is not a local path and not pinned to a 40-character commit SHA.
   # Plain shell, no secret, no third-party action beyond checkout; runs on fork and Dependabot pull requests.
   # Policy: README.md (Pinned actions).
+  cloudformation-foundation:
+    name: CloudFormation foundation (offline schema and security checks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install and verify pinned AWS cfn-validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=1.14.0
+          asset="cfn-validate-${version}-linux-x64"
+          base="https://github.com/aws-cloudformation/cloudformation-validate/releases/download/v${version}"
+          curl --fail --silent --show-error --location "$base/$asset" --output "$asset"
+          curl --fail --silent --show-error --location "$base/$asset.sig" --output "$asset.sig"
+          curl --fail --silent --show-error --location "$base/signing-key.pem" --output signing-key.pem
+          printf '%s  %s\\n' 'e63674a37a2431a85d637326e959c1717af01b4768734a5cb0bf79ef8652ece2' "$asset" | sha256sum --check --strict
+          printf '%s  %s\\n' 'f0a7827e53764081deda3d363126e7c67dfb4844bd4db5f2d3fe42c713e064d0' signing-key.pem | sha256sum --check --strict
+          openssl dgst -sha256 -verify signing-key.pem -signature "$asset.sig" "$asset"
+          chmod +x "$asset"
+          sudo install -m 0755 "$asset" /usr/local/bin/cfn-validate
+      - name: Validate CloudFormation schema offline
+        run: cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
+      - name: Check foundation security invariants
+        run: python3 scripts/validate_foundation_template.py
+
   pinned-actions:
     name: Actions are pinned to commit SHAs
     runs-on: ubuntu-latest
