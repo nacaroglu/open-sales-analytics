@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  Shared OSA application release contract for development and production. Creates only one
-  non-secret, stack-managed SSM String parameter that records the digest-pinned image reference.
+  Shared OSA application runtime for development and production. Creates one digest-pinned
+  application instance, public HTTPS endpoint, and non-secret release metadata.
 
 Parameters:
   Environment:
@@ -24,6 +24,27 @@ Parameters:
     ConstraintDescription: Specify a non-empty release version using letters, numbers, dot, underscore, plus, or hyphen.
     MinLength: 1
     MaxLength: 128
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Existing Amazon Linux 2023 AMI ID in the selected deployment region.
+    AllowedPattern: "^ami-[a-f0-9]{8,17}$"
+    ConstraintDescription: Specify an AMI ID in the form ami- followed by 8 to 17 lowercase hexadecimal characters.
+    MinLength: 12
+    MaxLength: 21
+  InstanceType:
+    Type: String
+    Description: EC2 instance type compatible with the supplied AMI architecture.
+    AllowedPattern: "^[a-z][0-9][a-z0-9]*\\.[a-z0-9]+$"
+    ConstraintDescription: Specify a valid EC2 instance type such as t3.small.
+    MinLength: 4
+    MaxLength: 32
+  PublicHostname:
+    Type: String
+    Description: Public DNS hostname that the operator points at this stack's Elastic IP.
+    AllowedPattern: "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+    ConstraintDescription: Specify a dotted DNS hostname whose labels do not start or end with a hyphen.
+    MinLength: 3
+    MaxLength: 253
 
 Conditions:
   IsDevelopment: !Equals [!Ref Environment, development]
@@ -50,6 +71,324 @@ Resources:
         Environment: !Ref Environment
         OSAStack: !If [IsDevelopment, osa-dev, osa-prod]
 
+  OsaInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${AWS::StackName}-instance-profile"
+      Path: !Sub "/${AWS::StackName}/"
+      Roles:
+        - !If
+          - IsDevelopment
+          - Fn::ImportValue: osa-foundation-DevCaddyAuthEc2InstanceRoleName
+          - Fn::Sub:
+              - "${FoundationStackName}-ec2-instance"
+              - FoundationStackName:
+                  Fn::ImportValue: osa-foundation-StackName
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Public HTTP-to-HTTPS access for ${AWS::StackName}"
+      VpcId:
+        Fn::ImportValue: osa-foundation-VpcId
+      SecurityGroupIngress:
+        - Description: HTTP for ACME validation and HTTPS redirect.
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: Public HTTPS for the OSA application.
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: ECR, image layers, Systems Manager, package and certificate endpoints over HTTPS.
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-application"
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !If [IsDevelopment, osa-dev, osa-prod]
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref OsaInstanceProfile
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          AssociatePublicIpAddress: false
+          DeleteOnTermination: true
+          SubnetId:
+            Fn::ImportValue: osa-foundation-PublicSubnetAz1Id
+          GroupSet:
+            - !GetAtt AppSecurityGroup.GroupId
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euo pipefail
+              exec > >(tee -a /var/log/osa-bootstrap.log) 2>&1
+
+              dnf install -y docker amazon-ecr-credential-helper curl
+              systemctl enable --now docker
+              install -d -m 0755 /usr/local/lib/docker/cli-plugins
+              compose_arch="$(uname -m)"
+              case "$compose_arch" in
+                x86_64) compose_arch=x86_64 ;;
+                aarch64) compose_arch=aarch64 ;;
+                *) echo "Unsupported architecture: $compose_arch" >&2; exit 1 ;;
+              esac
+              curl --fail --silent --show-error --location \
+                "https://github.com/docker/compose/releases/download/v5.6.1/docker-compose-linux-$compose_arch" \
+                --output /usr/local/lib/docker/cli-plugins/docker-compose
+              chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+
+              install -d -m 0700 /root/.docker /opt/osa
+              registry_host="$(cut -d/ -f1 <<< '${RepositoryUri}')"
+              cat > /root/.docker/config.json <<DOCKERCONFIG
+              {"credHelpers":{"$registry_host":"ecr-login"}}
+              DOCKERCONFIG
+              chmod 0600 /root/.docker/config.json
+
+              cat > /opt/osa/compose.yaml <<'COMPOSE'
+              services:
+                app:
+                  image: ${!OSA_IMAGE}
+                  restart: unless-stopped
+                  environment:
+                    OSA_ENVIRONMENT: ${!OSA_ENVIRONMENT}
+                    OSA_VERSION: ${!OSA_VERSION}
+                    PUBLIC_DEMO_MODE: ${!PUBLIC_DEMO_MODE}
+                  expose:
+                    - "8000"
+                  healthcheck:
+                    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+                    interval: 15s
+                    timeout: 5s
+                    retries: 4
+                    start_period: 20s
+                caddy:
+                  image: caddy:2.10.2-alpine
+                  entrypoint: ["/usr/local/bin/validate-deployment-auth"]
+                  command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+                  restart: unless-stopped
+                  depends_on:
+                    app:
+                      condition: service_healthy
+                  environment:
+                    PUBLIC_HOSTNAME: ${!PUBLIC_HOSTNAME}
+                    OSA_ENVIRONMENT: ${!OSA_ENVIRONMENT}
+                    PUBLIC_DEMO_MODE: ${!PUBLIC_DEMO_MODE}
+                    CADDY_AUTH_BLOCK: ${!CADDY_AUTH_BLOCK}
+                  ports:
+                    - "80:80"
+                    - "443:443"
+                  volumes:
+                    - caddy-data:/data
+                    - caddy-config:/config
+                    - /opt/osa/validate_deployment_auth.sh:/usr/local/bin/validate-deployment-auth:ro
+                  configs:
+                    - source: caddyfile
+                      target: /etc/caddy/Caddyfile
+                  healthcheck:
+                    test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+                    interval: 30s
+                    timeout: 5s
+                    retries: 3
+                    start_period: 10s
+              volumes:
+                caddy-data:
+                caddy-config:
+              configs:
+                caddyfile:
+                  file: /opt/osa/Caddyfile.runtime
+              COMPOSE
+
+              cat > /opt/osa/Caddyfile <<'CADDY'
+              http://{$PUBLIC_HOSTNAME} {
+                redir https://{$PUBLIC_HOSTNAME}{uri} permanent
+              }
+              {$PUBLIC_HOSTNAME} {
+                {$CADDY_AUTH_BLOCK}
+                reverse_proxy app:8000
+              }
+              CADDY
+
+              cat > /opt/osa/.env <<'ENVVARS'
+              OSA_IMAGE=${RepositoryUri}@sha256:${ImageDigest}
+              OSA_ENVIRONMENT=${Environment}
+              OSA_VERSION=${ReleaseVersion}
+              PUBLIC_HOSTNAME=${PublicHostname}
+              PUBLIC_DEMO_MODE=${PublicDemoMode}
+              CADDY_AUTH_BLOCK=
+              ENVVARS
+              chmod 0600 /opt/osa/.env
+              install -m 0644 /opt/osa/Caddyfile /opt/osa/Caddyfile.runtime
+              cat > /opt/osa/validate_deployment_auth.sh <<'PREFLIGHT'
+              #!/bin/sh
+
+              set -eu
+
+              environment="$(printenv OSA_ENVIRONMENT 2>/dev/null || true)"
+              public_demo_mode="$(printenv PUBLIC_DEMO_MODE 2>/dev/null || true)"
+              auth_block="$(printenv CADDY_AUTH_BLOCK 2>/dev/null || true)"
+
+              case "$environment:$public_demo_mode" in
+                development:false)
+                  case "$auth_block" in
+                    *"basic_auth"*) ;;
+                    *)
+                      echo "CADDY_AUTH_BLOCK must contain a Basic Authentication directive in development." >&2
+                      exit 1
+                      ;;
+                  esac
+                  ;;
+                production:true)
+                  if [ -n "$auth_block" ]; then
+                    echo "CADDY_AUTH_BLOCK must be empty in production." >&2
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  echo "OSA_ENVIRONMENT and PUBLIC_DEMO_MODE must be development/false or production/true." >&2
+                  exit 1
+                  ;;
+              esac
+
+              if [ "$#" -eq 0 ]; then
+                echo "A Caddy command is required after deployment auth validation." >&2
+                exit 1
+              fi
+
+              if [ "$#" -ge 2 ] && [ "$1" = "caddy" ] && [ "$2" = "run" ]; then
+                if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+                  echo "Caddy configuration is invalid; refusing to start." >&2
+                  exit 1
+                fi
+              fi
+
+              exec "$@"
+              PREFLIGHT
+              chmod 0755 /opt/osa/validate_deployment_auth.sh
+              cat > /opt/osa/start_osa_compose.sh <<'STARTCOMPOSE'
+              #!/bin/sh
+
+              set -eu
+
+              environment="$(printenv OSA_ENVIRONMENT 2>/dev/null || true)"
+              public_demo_mode="$(printenv PUBLIC_DEMO_MODE 2>/dev/null || true)"
+              auth_block="$(printenv CADDY_AUTH_BLOCK 2>/dev/null || true)"
+
+              case "$environment:$public_demo_mode" in
+                development:false)
+                  if ! parameter_type="$(aws ssm get-parameter \\
+                    --name /osa/dev/caddy/auth \\
+                    --query Parameter.Type \\
+                    --output text \\
+                    --cli-connect-timeout 5 \\
+                    --cli-read-timeout 10 2>/dev/null)" || [ "$parameter_type" != "SecureString" ]; then
+                    echo "Development Caddy authentication parameter must be a SecureString." >&2
+                    exit 1
+                  fi
+                  if ! auth_block="$(aws ssm get-parameter \\
+                    --name /osa/dev/caddy/auth \\
+                    --with-decryption \\
+                    --query Parameter.Value \\
+                    --output text \\
+                    --cli-connect-timeout 5 \\
+                    --cli-read-timeout 10 2>/dev/null)"; then
+                    echo "Unable to load development Caddy authentication configuration from SSM." >&2
+                    exit 1
+                  fi
+                  case "$auth_block" in
+                    *basic_auth*) ;;
+                    *)
+                      echo "Development Caddy authentication configuration is missing or invalid." >&2
+                      exit 1
+                      ;;
+                  esac
+                  ;;
+                production:true)
+                  if [ -n "$auth_block" ]; then
+                    echo "Production Caddy authentication configuration must be empty." >&2
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  echo "OSA_ENVIRONMENT and PUBLIC_DEMO_MODE must be development/false or production/true." >&2
+                  exit 1
+                  ;;
+              esac
+
+              export CADDY_AUTH_BLOCK="$auth_block"
+              exec docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml up --remove-orphans
+              STARTCOMPOSE
+              chmod 0755 /opt/osa/start_osa_compose.sh
+              cat > /etc/systemd/system/osa-compose.service <<'UNIT'
+              [Unit]
+              Description=OSA digest-pinned application and Caddy deployment
+              Requires=docker.service
+              After=docker.service network-online.target
+              Wants=network-online.target
+
+              [Service]
+              Type=simple
+              WorkingDirectory=/opt/osa
+              EnvironmentFile=/opt/osa/.env
+              Environment=AWS_ECR_DISABLE_CACHE=true
+              ExecStartPre=/usr/bin/docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml pull
+              ExecStart=/opt/osa/start_osa_compose.sh
+              ExecStop=/usr/bin/docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml down
+              Restart=always
+              RestartSec=10
+
+              [Install]
+              WantedBy=multi-user.target
+              UNIT
+
+              systemctl daemon-reload
+              systemctl enable --now osa-compose.service
+            - RepositoryUri:
+                Fn::ImportValue: osa-foundation-RepositoryUri
+              PublicDemoMode: !If [IsDevelopment, "false", "true"]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-application"
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !If [IsDevelopment, osa-dev, osa-prod]
+
+  AppElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public"
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !If [IsDevelopment, osa-dev, osa-prod]
+
+  AppElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref AppInstance
+      AllocationId: !GetAtt AppElasticIp.AllocationId
+
 Outputs:
   Environment:
     Description: Selected application environment.
@@ -68,3 +407,18 @@ Outputs:
   ReleaseParameterName:
     Description: Environment-specific name of the stack-managed non-secret release parameter.
     Value: !Ref ReleaseImageMetadataParameter
+  InstanceId:
+    Description: EC2 instance ID for runtime verification and Systems Manager administration.
+    Value: !Ref AppInstance
+  PublicIp:
+    Description: Elastic IP address associated with the application instance.
+    Value: !Ref AppElasticIp
+  PublicEndpoint:
+    Description: HTTPS endpoint served by Caddy for the supplied public hostname.
+    Value: !Sub "https://${PublicHostname}"
+  PublicHostname:
+    Description: DNS hostname that the operator points at PublicIp before certificate issuance.
+    Value: !Ref PublicHostname
+  ImageDigest:
+    Description: Validated immutable image digest used by the application instance.
+    Value: !Ref ImageDigest

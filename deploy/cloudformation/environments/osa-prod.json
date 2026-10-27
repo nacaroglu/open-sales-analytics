@@ -1,0 +1,18 @@
+{
+  "StackName": "osa-prod",
+  "TemplateFile": "../osa-application.yaml",
+  "Parameters": {
+    "Environment": "production"
+  },
+  "RuntimeInputs": [
+    "ImageDigest",
+    "ReleaseVersion",
+    "AmiId",
+    "InstanceType",
+    "PublicHostname"
+  ],
+  "FoundationRoleOutputs": {
+    "CloudFormationExecutionRole": "ProdApplicationExecutionRoleArn",
+    "GitHubDeployRole": "ProductionPromotionRoleArn"
+  }
+}

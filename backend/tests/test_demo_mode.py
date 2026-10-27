@@ -1,7 +1,11 @@
+import asyncio
 import logging
+from datetime import UTC, datetime
 
 import pytest
+from app.api.datasets import create_dataset
 from app.config import Settings, get_settings
+from app.errors import ApiError
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -98,6 +102,26 @@ def test_nothing_is_added_to_an_existing_empty_dir(demo, data_dir):
 )
 def test_403_whatever_the_request_contains(demo, data_dir, send):
     assert_403(send(demo))
+    assert not data_dir.exists()
+
+
+def test_public_demo_rejects_upload_without_reading_the_request_body(data_dir):
+    class UnreadableRequest:
+        @property
+        def stream(self):
+            raise AssertionError("public-demo upload request body must not be consumed")
+
+    with pytest.raises(ApiError) as error:
+        asyncio.run(
+            create_dataset(
+                UnreadableRequest(),
+                Settings(PUBLIC_DEMO_MODE=True, DATASET_DIR=data_dir),
+                datetime(2025, 1, 1, tzinfo=UTC),
+            )
+        )
+
+    assert error.value.status == 403
+    assert error.value.code == "upload_disabled"
     assert not data_dir.exists()
 
 
