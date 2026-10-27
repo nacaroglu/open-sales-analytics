@@ -100,7 +100,7 @@ def prometheus_target_up(result: dict, target: str) -> bool:
 
 
 def tempo_trace_contains(result: dict, trace_id: str) -> bool:
-    """Return whether Tempo returned the expected trace in its wrapped OTLP JSON body."""
+    """Find the synthetic trace ID anywhere in Tempo's versioned response wrappers."""
 
     def normalized(value: object) -> str | None:
         if not isinstance(value, str):
@@ -117,17 +117,71 @@ def tempo_trace_contains(result: dict, trace_id: str) -> bool:
     expected = normalized(trace_id)
     if expected is None:
         return False
-    if normalized(result.get("traceID")) == expected:
-        return True
-    trace = result.get("trace", result)
-    if not isinstance(trace, dict):
-        return False
-    return any(
-        normalized(span.get("traceId")) == expected
-        for resource_span in trace.get("resourceSpans", [])
-        for scope in resource_span.get("scopeSpans", [])
-        for span in scope.get("spans", [])
-    )
+
+    def walk(value: object):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key.lower() in {"traceid", "trace_id"}:
+                    yield child
+                yield from walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from walk(child)
+
+    return any(normalized(value) == expected for value in walk(result))
+
+
+def tempo_trace_diagnostic(result: dict, trace_id: str) -> str:
+    """Return bounded response structure and ID encoding metadata, never raw response data."""
+    expected = trace_id.lower()
+    trace_id_fields: list[dict[str, object]] = []
+    counts = {"resourceSpans": 0, "scopeSpans": 0, "spans": 0, "batches": 0}
+
+    def walk(value: object) -> None:
+        if isinstance(value, dict):
+            for count_key in counts:
+                child = value.get(count_key)
+                if isinstance(child, list):
+                    counts[count_key] += len(child)
+            for key, child in value.items():
+                if key.lower() in {"traceid", "trace_id"} and len(trace_id_fields) < 8:
+                    encoding = "non-string"
+                    matches = False
+                    if isinstance(child, str):
+                        lowered = child.lower()
+                        if len(lowered) == 32 and all(
+                            char in "0123456789abcdef" for char in lowered
+                        ):
+                            encoding = "hex"
+                            matches = lowered == expected
+                        else:
+                            try:
+                                decoded = base64.b64decode(child, validate=True)
+                            except (ValueError, binascii.Error):
+                                encoding = "other-string"
+                            else:
+                                encoding = "base64"
+                                matches = len(decoded) == 16 and decoded.hex() == expected
+                    trace_id_fields.append({"field": key, "encoding": encoding, "matches": matches})
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(result)
+    return json.dumps(
+        {
+            "top_level_keys": sorted(result)[:20],
+            "wrapper_keys": {
+                key: sorted(result[key])[:20]
+                for key in ("trace", "batches")
+                if isinstance(result.get(key), dict)
+            },
+            "counts": counts,
+            "trace_id_fields": trace_id_fields,
+        },
+        sort_keys=True,
+    )[:1500]
 
 
 def main() -> None:
@@ -251,9 +305,18 @@ def main() -> None:
             for _, value in stream.get("values", [])
         )
 
+    last_trace_response = None
+
     def trace_visible() -> bool:
+        nonlocal last_trace_response
         result = request(f"{urls['tempo']}/api/traces/{TRACE_ID}")
+        last_trace_response = result
         return tempo_trace_contains(result, TRACE_ID)
+
+    def trace_timeout_diagnostic() -> str:
+        if last_trace_response is None:
+            return "no successful Tempo response"
+        return tempo_trace_diagnostic(last_trace_response, TRACE_ID)
 
     def collector_target_up() -> bool:
         query = urllib.parse.urlencode({"query": 'up{job="otelcol-internal"}'})
@@ -262,7 +325,7 @@ def main() -> None:
 
     wait_for("metrics → Prometheus", metric_visible, metric_timeout_diagnostic)
     wait_for("logs → Loki", log_visible)
-    wait_for("traces → Tempo", trace_visible)
+    wait_for("traces → Tempo", trace_visible, trace_timeout_diagnostic)
     wait_for("otelcol-internal scrape target → Prometheus", collector_target_up)
 
 

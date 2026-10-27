@@ -16,6 +16,7 @@ routing_urls = VALIDATOR.routing_urls
 synthetic_counter_point = VALIDATOR.synthetic_counter_point
 synthetic_counter_query = VALIDATOR.synthetic_counter_query
 tempo_trace_contains = VALIDATOR.tempo_trace_contains
+tempo_trace_diagnostic = VALIDATOR.tempo_trace_diagnostic
 
 
 def test_routing_urls_support_compose_internal_service_dns():
@@ -74,6 +75,17 @@ def test_tempo_trace_verification_reads_wrapped_base64_ids_fixture():
     fixture = ROOT / "backend/tests/fixtures/tempo_trace_response_wrapped.json"
     response = json.loads(fixture.read_text(encoding="utf-8"))
     assert tempo_trace_contains(response, "0123456789abcdef0123456789abcdef")
+
+
+def test_tempo_trace_verification_reads_batches_response_fixture():
+    fixture = ROOT / "backend/tests/fixtures/tempo_trace_response_batches.json"
+    response = json.loads(fixture.read_text(encoding="utf-8"))
+    assert tempo_trace_contains(response, "0123456789abcdef0123456789abcdef")
+    diagnostic = tempo_trace_diagnostic(response, "0123456789abcdef0123456789abcdef")
+    assert '"batches": 1' in diagnostic
+    assert '"encoding": "base64"' in diagnostic
+    assert '"matches": true' in diagnostic
+    assert "ASNFZ4mrze8BI0VniavN7w==" not in diagnostic
 
 
 def test_tempo_trace_verification_accepts_legacy_trace_id_response():
