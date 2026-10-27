@@ -31,7 +31,21 @@
           "for": "5m",
           "noDataState": "OK",
           "execErrState": "Error",
-          "isPaused": false
+          "isPaused": false,
+          "labels": {
+            "service": "{{- $value := index $labels \"service_name\" -}}{{- if and $value (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
+            "environment": "{{- $value := index $labels \"deployment_environment_name\" -}}{{- if and $value (match \"^(development|production)$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
+            "deployed_version": "{{- $value := index $labels \"service_version\" -}}{{- if and $value (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
+            "severity": "critical",
+            "owner": "osa-maintainer"
+          },
+          "annotations": {
+            "summary": "At least three internal dataset creation failures occurred within ten minutes.",
+            "description": "The threshold remained true for five minutes. Invalid user CSVs and documented validation rejections are excluded.",
+            "dashboard_url": "{{- $environment := index $labels \"deployment_environment_name\" -}}{{- $version := index $labels \"service_version\" -}}{{ reReplaceAll \"/+$\" \"\" (externalURL) }}/d/osa-operations/osa-operations?var-environment={{ if and $environment (match \"^(development|production)$\" $environment) }}{{ $environment }}{{ else }}unknown{{ end }}&var-deployed_version={{ if and $version (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $version) }}{{ $version }}{{ else }}unknown{{ end }}",
+            "runbook_url": "https://github.com/nacaroglu/open-sales-analytics/blob/main/observability/runbooks/osa-repeated-dataset-creation-failures.md",
+            "logs_and_traces": "In the OSA Operations dashboard, use the service, environment, and deployed_version labels to filter Loki, then follow the trace_id from a privacy-safe log entry into Tempo. Do not search by dataset identifiers or request bodies."
+          }
         }
       ]
     }

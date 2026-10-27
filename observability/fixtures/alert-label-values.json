@@ -1,0 +1,44 @@
+[
+  {
+    "label_kind": "service",
+    "label_value": "open-sales-analytics",
+    "expected_safe_value": "open-sales-analytics"
+  },
+  {
+    "label_kind": "service",
+    "label_value": "open-sales-analytics?var-environment=production",
+    "expected_safe_value": "unknown"
+  },
+  {
+    "label_kind": "service",
+    "expected_safe_value": "unknown"
+  },
+  {
+    "label_kind": "environment",
+    "label_value": "production",
+    "expected_safe_value": "production"
+  },
+  {
+    "label_kind": "environment",
+    "label_value": "production&var-deployed_version=private",
+    "expected_safe_value": "unknown"
+  },
+  {
+    "label_kind": "environment",
+    "expected_safe_value": "unknown"
+  },
+  {
+    "label_kind": "deployed_version",
+    "label_value": "20261027-120000-a1b2c3d",
+    "expected_safe_value": "20261027-120000-a1b2c3d"
+  },
+  {
+    "label_kind": "deployed_version",
+    "label_value": "release&var-environment=production",
+    "expected_safe_value": "unknown"
+  },
+  {
+    "label_kind": "deployed_version",
+    "expected_safe_value": "unknown"
+  }
+]

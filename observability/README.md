@@ -33,6 +33,8 @@ Prometheus, Loki, and Tempo APIs are at `http://127.0.0.1:9090`,
 published ports bind only to loopback. Override them with `OSA_GRAFANA_PORT`,
 `OSA_PROMETHEUS_PORT`, `OSA_LOKI_PORT`, `OSA_TEMPO_HTTP_PORT`,
 `OSA_OTLP_GRPC_PORT`, and `OSA_OTLP_HTTP_PORT`.
+Set `OSA_GRAFANA_ROOT_URL` to the public HTTPS root when Grafana is behind a
+reverse proxy; the alert dashboard link uses Grafana's configured root URL.
 
 OTLP enters the Collector on host-local ports 4317 (gRPC) and 4318 (HTTP).
 Inside the private network, the Collector routes metrics to Prometheus, logs
@@ -88,6 +90,14 @@ qualifying series, the rule returns to OK so recovery clears the alert. Offline
 fixtures cover below-threshold behavior, rejected-input exclusion, the pending
 boundary, firing, and resolution; run them with
 `python3 scripts/test_grafana_alert.py`.
+
+Each alert instance carries `service`, `environment`, `deployed_version`,
+`severity=critical`, and `owner=osa-maintainer`. The environment and version
+labels filter the dashboard link. Its values are allowlisted; missing or
+malformed values render as `unknown`, so telemetry cannot add query parameters
+or redirect the link. The alert also links to the Git-versioned
+[repeated creation failure runbook](runbooks/osa-repeated-dataset-creation-failures.md),
+which explains how to correlate privacy-safe Loki records with Tempo traces.
 
 CI runs offline checks for data-source UIDs/endpoints, dashboard rows and
 panels, filters, links, no-data guidance, and the alert's metric expression and
