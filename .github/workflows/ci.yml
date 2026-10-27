@@ -194,8 +194,8 @@ jobs:
           trap 'rm -rf "$secret_dir"' EXIT
           webhook_file="$secret_dir/webhook-url"
           printf '%s' 'https://hooks.example.invalid/ci-only' > "$webhook_file"
-          sudo chown 472:0 "$webhook_file"
           chmod 0400 "$webhook_file"
+          sudo chown 472:0 "$webhook_file"
           export OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file"
           sudo env OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file" \
             python3 scripts/validate_alert_webhook_config.py
