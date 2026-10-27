@@ -1,4 +1,4 @@
-"""Guard the pull-request workflow's independent backend and frontend jobs."""
+"""Guard required, independently scheduled pull-request CI checks."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/ci.yml")
+MAKEFILE = Path("Makefile")
 REQUIRED_COMMANDS = {
     "backend-tests": (
         "uv run pytest",
@@ -22,6 +23,17 @@ REQUIRED_COMMANDS = {
         "npm run build",
     ),
 }
+CONTAINER_CHECKS = (
+    'docker build --build-arg OSA_VERSION=',
+    'org.opencontainers.image.version',
+    'runtime-override',
+    'Verify the runtime image contains only production artifacts',
+    'docker-compose.integration-test.yaml up --detach --no-build',
+    'curl -f http://localhost:8000/api/health',
+    "grep -qi '<div id=\"root\"'",
+    'Wait for Docker health status',
+    'run: make e2e',
+)
 
 
 def fail(message: str) -> None:
@@ -74,7 +86,63 @@ def validate() -> None:
     if "python3 scripts/validate_ci_parallelism.py" not in structure_job:
         fail("the workflow structure regression check must remain enabled")
 
-    print("CI parallelism validation passed")
+    container = jobs.get("docker-smoke")
+    if container is None:
+        fail("the production image and browser job 'docker-smoke' is missing")
+    for check in CONTAINER_CHECKS:
+        if check not in container:
+            fail(f"docker-smoke is missing required image/browser check {check!r}")
+    for cleanup_check in (
+        "name: Remove Compose app and test data",
+        "if: always()",
+        'down --volumes --remove-orphans || cleanup_status=1',
+        'Browser Compose containers remain after cleanup',
+        'Browser Compose volumes remain after cleanup',
+    ):
+        if cleanup_check not in container:
+            fail(f"docker-smoke is missing failure-safe cleanup check {cleanup_check!r}")
+
+    integration = jobs.get("compose-integration")
+    if integration is None:
+        fail("the dedicated 'compose-integration' job is missing")
+    for check in (
+        "Validate integration Compose configuration",
+        "docker-compose.integration-test.yaml",
+        "docker-compose.test-telemetry.yaml config --quiet",
+        "run: make integration",
+    ):
+        if check not in integration:
+            fail(f"compose-integration is missing required check {check!r}")
+
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    for target in ("integration", "e2e"):
+        target_block = re.search(
+            rf"(?ms)^{target}:\n(?P<body>.*?)(?=^[A-Za-z][A-Za-z0-9_-]*:|\Z)", makefile
+        )
+        if target_block is None:
+            fail(f"Makefile target {target!r} is missing")
+        body = target_block.group("body")
+        if "trap cleanup EXIT" not in body or "scripts/compose_cleanup.py" not in body:
+            fail(f"Makefile target {target!r} must run owned-resource cleanup on success and failure")
+        if f"--kind {target}" not in body:
+            fail(f"Makefile target {target!r} must identify its test resources to cleanup")
+        if target == "e2e" and "up --build --detach" not in body:
+            fail("make e2e must retain its independent Compose lifecycle")
+
+    cleanup_script = Path("scripts/compose_cleanup.py").read_text(encoding="utf-8")
+    for behavior in (
+        '["docker", "container", "ls", "-aq", "--filter", "label=com.docker.compose.project"]',
+        '["docker", "volume", "ls", "-q", "--filter", "label=com.docker.compose.project"]',
+        '["docker", "network", "ls", "-q", "--filter", "label=com.docker.compose.project"]',
+        '"down", "--volumes", "--remove-orphans"',
+        "remaining = compose_projects().intersection(owned_projects)",
+        "verified_temp_root(path, scope, owner[\"kind\"], owner[\"token\"])",
+        "shutil.rmtree(path)",
+    ):
+        if behavior not in cleanup_script:
+            fail(f"Compose cleanup must keep container/network/volume/temp-data handling ({behavior})")
+
+    print("CI workflow structure and container/Compose coverage validation passed")
 
 
 if __name__ == "__main__":
