@@ -71,9 +71,9 @@ The separate `deploy/cloudformation/osa-foundation.yaml` template creates the sh
 
 Set `AvailabilityZone1` and `AvailabilityZone2` to distinct AZs. `VpcCidr`, the two `PublicSubnet*Cidr` values, and the two `PrivateSubnet*Cidr` values define non-overlapping network ranges; defaults are `10.40.0.0/16` and four `/20` subnets. Set `GitHubOwner` and `GitHubRepository`; `GitHubMainBranch` defaults to `main` and the OIDC subject matches that exact branch. `RepositoryName` defaults to `open-sales-analytics`.
 
-Deploy as `osa-foundation` to use stable stack-qualified exports: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, osa-foundation-DevDeployRoleArn, osa-foundation-ProductionPromotionRoleArn, osa-foundation-DevApplicationExecutionRoleArn, osa-foundation-ProdApplicationExecutionRoleArn, osa-foundation-ObservabilityExecutionRoleArn, osa-foundation-Ec2InstanceRoleArn, `osa-foundation-StackName`, and `osa-foundation-Region`. Import values in later templates with `Fn::ImportValue`; use `Fn::Split` for the comma-separated subnet lists.
+Deploy as `osa-foundation` to use stable stack-qualified exports: `osa-foundation-VpcId`, `osa-foundation-PublicSubnetAz1Id`, `osa-foundation-PublicSubnetAz2Id`, `osa-foundation-PrivateSubnetAz1Id`, `osa-foundation-PrivateSubnetAz2Id`, `osa-foundation-PublicSubnetIds`, `osa-foundation-PrivateSubnetIds`, `osa-foundation-RepositoryArn`, `osa-foundation-RepositoryUri`, `osa-foundation-OidcProviderArn`, `osa-foundation-BuildRoleArn`, `osa-foundation-FoundationExecutionRoleArn`, osa-foundation-DevDeployRoleArn, osa-foundation-DevVerificationRoleArn, osa-foundation-ProductionPromotionRoleArn, osa-foundation-DevApplicationExecutionRoleArn, osa-foundation-ProdApplicationExecutionRoleArn, osa-foundation-ObservabilityExecutionRoleArn, osa-foundation-Ec2InstanceRoleArn, `osa-foundation-StackName`, and `osa-foundation-Region`. Import values in later templates with `Fn::ImportValue`; use `Fn::Split` for the comma-separated subnet lists.
 
-The existing BuildRole trusts only the configured GitHub repository's main-branch subject and pushes to this stack's Repository ARN. DevDeployRole has the same exact owner/repository/main-branch subject and sts.amazonaws.com audience; its CloudFormation permissions target only stack osa-dev, require that stack's DevApplicationExecutionRole and may pass only DevApplicationExecutionRole to CloudFormation through iam:PassRole. ProductionPromotionRole trusts only the configured repository's environment:production subject and the same audience; it targets only osa-prod and may pass only ProdApplicationExecutionRole to CloudFormation through iam:PassRole. Keep the production GitHub environment protected.
+The existing BuildRole trusts only the configured GitHub repository's main-branch subject and pushes to this stack's Repository ARN. DevDeployRole has the exact owner/repository/main-branch subject and sts.amazonaws.com audience; its only CloudFormation mutation is UpdateStack on stack osa-dev, it reads only that stack, requires the stack's DevApplicationExecutionRole for updates, and may pass only DevApplicationExecutionRole to CloudFormation through iam:PassRole. DevVerificationRole trusts the same main-branch subject but grants only DescribeStacks on osa-dev and exact SecureString retrieval/decryption for the smoke credential. ProductionPromotionRole trusts only the configured repository's environment:production subject and the same audience; it targets only osa-prod and may pass only ProdApplicationExecutionRole to CloudFormation through iam:PassRole. Keep the production GitHub environment protected.
 
 DevApplicationExecutionRole, ProdApplicationExecutionRole, and ObservabilityExecutionRole trust only cloudformation.amazonaws.com. They restrict mutable EC2 resources by OSAStack tags for osa-dev, osa-prod, and osa-observability respectively; the dev role can pass only DevCaddyAuthEc2InstanceRole and the prod/observability roles can pass only Ec2InstanceRole to ec2.amazonaws.com. DevApplicationExecutionRole and ProdApplicationExecutionRole can access only their exact release-image metadata parameter; they have no wildcard SSM resource access and cannot read the secret paths reserved for #242. ObservabilityExecutionRole retains only its separate observability-path parameter read. Ec2InstanceRole trusts only ec2.amazonaws.com, reads images only from Repository, and uses a custom minimal Session Manager policy without broad Parameter Store reads. It does not create an instance profile; that attachment belongs to #240. FoundationExecutionRole remains the foundation-only service role and retains its repository-scoped ECR lifecycle permissions from #236.
 
@@ -148,6 +148,18 @@ Configure these non-secret GitHub Actions repository variables from the `osa-fou
 
 The publish job exchanges GitHub's OIDC token for temporary credentials through the scoped build role. The role can authenticate to ECR, push images, and read image metadata only for the OSA repository so it can resolve the pushed digest; it cannot update CloudFormation stacks or pass roles. The [AWS credentials action's OIDC setup](https://github.com/aws-actions/configure-aws-credentials/blob/main/README.md#oidc) documents the GitHub permission and role trust requirements. Pull requests never receive these credentials.
 
+After ECR publication succeeds on `main`, the workflow updates only `osa-dev` using the exact `repository@sha256:digest` and readable version outputs. The shared application template receives the digest and version separately, then writes the combined immutable image reference into stack metadata and runtime configuration. The deploy job does not build, retag, or look up a different image. It waits for the CloudFormation update to complete; readiness and the sample-dashboard smoke check are handled by issue #249.
+
+Configure these additional non-secret repository variables before enabling automatic development deployment:
+
+- `OSA_DEV_DEPLOY_ROLE_ARN`: the `DevDeployRoleArn` foundation output.
+- `OSA_DEV_EXECUTION_ROLE_ARN`: the `DevApplicationExecutionRoleArn` foundation output.
+- `OSA_AMI_ID`: an Amazon Linux 2023 AMI ID in `OSA_AWS_REGION`, compatible with the selected instance type.
+- `OSA_INSTANCE_TYPE`: the development EC2 instance type.
+- `OSA_DEV_HOSTNAME`: the development DNS hostname.
+
+The GitHub OIDC development role can update and read only `osa-dev` and can pass only its development CloudFormation execution role. It has no create/delete-stack permission. Pull-request CI receives no OIDC token permission and never updates AWS resources.
+
 Each stack creates exactly one EC2 instance in `osa-foundation`'s first public subnet, disables automatic public-IP assignment, and attaches one stack-owned Elastic IP. Production uses `Ec2InstanceRole`; development uses `DevCaddyAuthEc2InstanceRole`. Both roles use a custom minimal Session Manager policy with only `ssm:UpdateInstanceInformation` and `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`, `ssmmessages:OpenControlChannel`, and `ssmmessages:OpenDataChannel`, without `AmazonSSMManagedInstanceCore` and its wildcard Parameter Store reads. Development additionally has `ssm:GetParameter` for only `arn:aws:ssm:<region>:<account>:parameter/osa/dev/caddy/auth` and `kms:Decrypt` only through regional Systems Manager, with the exact `PARAMETER_ARN` encryption context and `alias/aws/ssm` resource-alias condition. Production has no permission to retrieve or decrypt the auth parameter. The dev and prod CloudFormation execution roles may pass only their respective instance role to EC2. The instance has no SSH key pair. Administer it through Systems Manager Session Manager. AWS documents the minimal instance-profile policy for Session Manager at https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-create-iam-instance-profile.html.
 
 The app security group allows only public IPv4 TCP 80 and 443. Port 80 supports ACME validation and redirects to HTTPS; TCP 443 serves the application through Caddy. The only declared egress is TCP 443 to public IPv4 for ECR API and S3 image-layer downloads, Systems Manager, certificate acquisition, and required runtime endpoints. Security groups cannot filter AmazonProvidedDNS, so no broad DNS rule is declared. There is no public SSH or OTLP ingress, IPv6 rule, Route 53 resource, or private Collector route in this stack.
@@ -198,3 +210,47 @@ The `AppInstance=W9010` exclusion is narrow: the validator treats the required s
 
 
 The checked-in environment manifests at deploy/cloudformation/environments/osa-dev.json and osa-prod.json describe the two independent stacks and both point to deploy/cloudformation/osa-application.yaml. Each fixes its matching Environment value and references the environment-specific CloudFormation execution-role and GitHub deploy-role output keys from osa-foundation; the output keys resolve to role ARNs at deployment time, so no account-specific ARN is stored here. ImageDigest and ReleaseVersion are required runtime inputs supplied by the later build/deploy or promotion workflow and are not stored in these manifests. Development deploys a tested immutable digest, and production promotion must reuse that exact supplied digest without rebuilding or retagging it. Create osa-foundation before either application stack, and delete the application stacks before foundation teardown.
+
+
+### Development deployment verification
+
+After `deploy-dev` succeeds on `main`, `verify-dev` assumes the read-only `DevVerificationRole` exported as `osa-foundation-DevVerificationRoleArn` (configure repository variable `OSA_DEV_VERIFICATION_ROLE_ARN`). It reads only the `osa-dev` stack outputs and `/osa/dev/caddy/smoke-credential`. The credential is a SecureString in `username:password` format. Add a dedicated smoke user to `/osa/dev/caddy/auth` while preserving its existing human-user entries; use the procedure below. Keep both values out of GitHub secrets/variables, source control, command output, and logs.
+
+The verifier checks the stack digest and release version against the published artifact, polls HTTPS `/health/ready` with normal TLS certificate and hostname validation for up to five minutes, creates the bundled sample through Basic Auth, checks its USD metadata and exact analytics, then deletes it using its dataset Bearer token. It masks the credential before further output and publishes only hostname, release version, digest, readiness, and cleanup status in the workflow summary. Any mismatch, timeout, or failed cleanup fails the job.
+
+### Manual production promotion
+
+Configure the repository-level variables `OSA_AWS_REGION`, `OSA_ECR_REPOSITORY_URI`, `OSA_PRODUCTION_SOURCE_READ_ROLE_ARN`, `OSA_PROD_PROMOTION_ROLE_ARN`, `OSA_PROD_EXECUTION_ROLE_ARN`, `OSA_AMI_ID`, `OSA_INSTANCE_TYPE`, and `OSA_PROD_HOSTNAME`. The source-read role is exported as `osa-foundation-ProductionSourceReadRoleArn`; the production promotion and execution roles use the exports documented above.
+
+Create the GitHub repository Environment named `production`, enable required reviewers, and prevent self-review where the repository plan supports it. Add the intended operators as reviewers. The `promote-production.yml` workflow is started with Actions → Promote development release to production → Run workflow, using the `main` branch. It reads and validates the current dev digest/version with the read-only source role. The promotion job pauses for the `production` Environment approval before it obtains the production role credentials. After approval, it rereads dev and prod metadata, records the old prod release, and updates `osa-prod` to the current dev digest and version without building or retagging. Open the run summary to inspect source, target, and previous release metadata.
+
+The production promotion role's OIDC trust uses the exact subject `repo:<owner>/<repository>:environment:production` and audience `sts.amazonaws.com`. The source-read role has two exact subjects: the repository's configured main branch for preflight and the protected `production` Environment for a fresh source read after approval. It has only `cloudformation:DescribeStacks` on `osa-dev`. The production promotion role can update and read only `osa-prod` and pass only `ProdApplicationExecutionRole` to CloudFormation. Do not configure AWS access keys.
+
+The Caddy Basic Auth exception applies only to `/api/datasets/` paths with a 22-character URL-safe dataset ID and a 43-character URL-safe Bearer header. FastAPI validates the token. Readiness, sample creation, and all other paths remain Basic Auth protected.
+
+To add or rotate the dedicated smoke user without replacing the existing human user, run this in a private terminal with shell tracing disabled. It retrieves the existing auth block into a shell variable without printing it, appends one bcrypt entry, and writes both SecureStrings from mode-restricted temporary files. Choose a username not already in the block. The password is entered silently; use the same username and password for both parameters.
+
+```sh
+set +x
+umask 077
+read -rp 'Smoke username: ' smoke_username
+case "$smoke_username" in (*[!A-Za-z0-9_-]*|'') echo 'Invalid username' >&2; exit 1;; esac
+read -rsp 'Smoke password: ' smoke_password; printf '\n'
+smoke_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$smoke_password")"
+existing_auth="$(aws ssm get-parameter --name /osa/dev/caddy/auth --with-decryption --query Parameter.Value --output text)"
+if printf '%s\n' "$existing_auth" | grep -Eq "^[[:space:]]+$smoke_username[[:space:]]"; then
+  echo 'Smoke username already exists; choose another username' >&2; exit 1
+fi
+case "$existing_auth" in ('basic_auth {'*'}') ;; (*) echo 'Existing auth block is not the expected basic_auth form' >&2; exit 1;; esac
+auth_body="${existing_auth%?}"
+updated_auth="$(printf '%s\n  %s %s\n}' "$auth_body" "$smoke_username" "$smoke_hash")"
+auth_file="$(mktemp)"; credential_file="$(mktemp)"
+trap 'rm -f "$auth_file" "$credential_file"' EXIT
+printf '%s' "$updated_auth" > "$auth_file"
+printf '%s:%s' "$smoke_username" "$smoke_password" > "$credential_file"
+aws ssm put-parameter --name /osa/dev/caddy/auth --type SecureString --value "file://$auth_file" --overwrite >/dev/null
+aws ssm put-parameter --name /osa/dev/caddy/smoke-credential --type SecureString --value "file://$credential_file" --overwrite >/dev/null
+unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_username
+```
+
+The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.

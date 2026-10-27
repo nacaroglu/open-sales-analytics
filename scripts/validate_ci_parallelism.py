@@ -26,16 +26,16 @@ REQUIRED_COMMANDS = {
     ),
 }
 CONTAINER_CHECKS = (
-    'docker build --build-arg OSA_VERSION=',
-    'org.opencontainers.image.version',
+    "docker build --build-arg OSA_VERSION=",
+    "org.opencontainers.image.version",
     '[[ "$label" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}$ ]]',
-    'runtime-override',
-    'Verify the runtime image contains only production artifacts',
-    'docker-compose.integration-test.yaml up --detach --no-build',
-    'curl -f http://localhost:8000/api/health',
+    "runtime-override",
+    "Verify the runtime image contains only production artifacts",
+    "docker-compose.integration-test.yaml up --detach --no-build",
+    "curl -f http://localhost:8000/api/health",
     "grep -qi '<div id=\"root\"'",
-    'Wait for Docker health status',
-    'run: make e2e',
+    "Wait for Docker health status",
+    "run: make e2e",
 )
 
 
@@ -124,11 +124,86 @@ def validate() -> None:
     ):
         if marker not in publisher:
             fail(f"publish-ecr is missing required security or ordering marker {marker!r}")
-    for forbidden in ("aws-access-key-id:", "aws-secret-access-key:", "secrets.", "aws cloudformation"):
+    for forbidden in (
+        "aws-access-key-id:",
+        "aws-secret-access-key:",
+        "secrets.",
+        "aws cloudformation",
+    ):
         if forbidden in publisher.lower():
-            fail(f"publish-ecr must not use long-lived credentials or deploy AWS resources: {forbidden!r}")
-    if "configure-aws-credentials" in source.split("  pull_request:", 1)[0].lower():
-        fail("pull-request CI must not request AWS credentials")
+            fail(
+                f"publish-ecr must not use long-lived credentials or deploy AWS resources: {forbidden!r}"
+            )
+
+    deployer = jobs.get("deploy-dev")
+    if deployer is None:
+        fail("main-branch development deployment job is missing")
+    for marker in (
+        "if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.publish-ecr.result == 'success'",
+        "needs: [publish-ecr]",
+        "id-token: write",
+        "aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd",
+        "role-to-assume: ${{ vars.OSA_DEV_DEPLOY_ROLE_ARN }}",
+        "needs.publish-ecr.outputs.image-ref",
+        "needs.publish-ecr.outputs.release-version",
+        "python3 scripts/deploy_dev_stack.py --validate-only",
+        "run: python3 scripts/deploy_dev_stack.py",
+        "DEV_EXECUTION_ROLE_ARN: ${{ vars.OSA_DEV_EXECUTION_ROLE_ARN }}",
+        "OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}",
+        "OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}",
+        "OSA_DEV_HOSTNAME: ${{ vars.OSA_DEV_HOSTNAME }}",
+    ):
+        if marker not in deployer:
+            fail(f"deploy-dev is missing required ordering, identity, or digest marker {marker!r}")
+    for forbidden in (
+        "aws-access-key-id:",
+        "aws-secret-access-key:",
+        "secrets.",
+        "osa-prod",
+        "osa-observability",
+        "productionpromotionrolearn",
+        "aws ecr",
+        "docker ",
+        "cloudformation:create-stack",
+        "cloudformation:delete-stack",
+    ):
+        if forbidden in deployer.lower():
+            fail(
+                f"deploy-dev must stay read/update-only for osa-dev without long-lived credentials: {forbidden!r}"
+            )
+    oidc_jobs = {name for name, block in jobs.items() if "configure-aws-credentials" in block}
+    verifier = jobs.get("verify-dev")
+    if verifier is None:
+        fail("main-branch dev verification job is missing")
+    for marker in (
+        "if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy-dev.result == 'success'",
+        "needs: [deploy-dev, publish-ecr]",
+        "id-token: write",
+        "role-to-assume: ${{ vars.OSA_DEV_VERIFICATION_ROLE_ARN }}",
+        "needs.publish-ecr.outputs.digest",
+        "needs.publish-ecr.outputs.release-version",
+        "OSA_DEV_HOSTNAME: ${{ vars.OSA_DEV_HOSTNAME }}",
+        "python3 scripts/verify_dev_deployment.py --validate-only",
+        "run: python3 scripts/verify_dev_deployment.py",
+    ):
+        if marker not in verifier:
+            fail(f"verify-dev is missing required ordering, identity, or release marker {marker!r}")
+    for forbidden in ("aws-access-key-id:", "aws-secret-access-key:", "secrets.", "osa-prod", "cloudformation:update-stack", "cloudformation:delete-stack"):
+        if forbidden in verifier.lower():
+            fail(f"verify-dev must remain read-only and secret-free: {forbidden!r}")
+    if oidc_jobs != {"publish-ecr", "deploy-dev", "verify-dev"}:
+        fail("only the main-branch publisher, dev deploy, and read-only verifier may configure AWS credentials")
+    for name in oidc_jobs:
+        block = jobs[name]
+        if "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" not in block:
+            fail(f"AWS credential job {name!r} must be main-push-only")
+        if "id-token: write" not in block:
+            fail(f"AWS credential job {name!r} must grant OIDC token permission at job scope")
+    for name, block in jobs.items():
+        if name not in oidc_jobs and re.search(r"(?m)^      id-token:\s*write$", block):
+            fail(f"non-deployment job {name!r} must not receive an OIDC token permission")
+    if re.search(r"(?m)^  id-token:\s*write$", permissions):
+        fail("workflow-level OIDC permission must remain disabled for pull requests")
 
     structure_job = jobs.get("ci-structure", "")
     if "python3 scripts/validate_ci_parallelism.py" not in structure_job:
@@ -152,9 +227,9 @@ def validate() -> None:
     for cleanup_check in (
         "name: Remove Compose app and test data",
         "if: always()",
-        'down --volumes --remove-orphans || cleanup_status=1',
-        'Browser Compose containers remain after cleanup',
-        'Browser Compose volumes remain after cleanup',
+        "down --volumes --remove-orphans || cleanup_status=1",
+        "Browser Compose containers remain after cleanup",
+        "Browser Compose volumes remain after cleanup",
     ):
         if cleanup_check not in container:
             fail(f"docker-smoke is missing failure-safe cleanup check {cleanup_check!r}")
@@ -180,7 +255,9 @@ def validate() -> None:
             fail(f"Makefile target {target!r} is missing")
         body = target_block.group("body")
         if "trap cleanup EXIT" not in body or "scripts/compose_cleanup.py" not in body:
-            fail(f"Makefile target {target!r} must run owned-resource cleanup on success and failure")
+            fail(
+                f"Makefile target {target!r} must run owned-resource cleanup on success and failure"
+            )
         if f"--kind {target}" not in body:
             fail(f"Makefile target {target!r} must identify its test resources to cleanup")
         if target == "e2e" and "up --build --detach" not in body:
@@ -193,11 +270,13 @@ def validate() -> None:
         '["docker", "network", "ls", "-q", "--filter", "label=com.docker.compose.project"]',
         '"down", "--volumes", "--remove-orphans"',
         "remaining = compose_projects().intersection(owned_projects)",
-        "verified_temp_root(path, scope, owner[\"kind\"], owner[\"token\"])",
+        'verified_temp_root(path, scope, owner["kind"], owner["token"])',
         "shutil.rmtree(path)",
     ):
         if behavior not in cleanup_script:
-            fail(f"Compose cleanup must keep container/network/volume/temp-data handling ({behavior})")
+            fail(
+                f"Compose cleanup must keep container/network/volume/temp-data handling ({behavior})"
+            )
 
     cloudformation = jobs.get("cloudformation-foundation")
     if cloudformation is None:
@@ -235,7 +314,9 @@ def validate() -> None:
         'openssl dgst -sha256 -verify signing-key.pem -signature "$asset.sig" "$asset"',
     ):
         if integrity_check not in cloudformation:
-            fail(f"cloudformation-foundation is missing release integrity check {integrity_check!r}")
+            fail(
+                f"cloudformation-foundation is missing release integrity check {integrity_check!r}"
+            )
 
     lowered_cloudformation = cloudformation.lower()
     for forbidden in (
@@ -246,7 +327,9 @@ def validate() -> None:
         "aws_session_token",
     ):
         if forbidden in lowered_cloudformation:
-            fail(f"cloudformation-foundation must remain offline/read-only and must not use {forbidden!r}")
+            fail(
+                f"cloudformation-foundation must remain offline/read-only and must not use {forbidden!r}"
+            )
     if re.search(r"\baws\s+(?:cloudformation|ec2|iam|ecr|ssm)\b", lowered_cloudformation):
         fail("cloudformation-foundation must not invoke AWS resource or identity commands")
 
@@ -275,7 +358,9 @@ def validate() -> None:
             if marker not in validator_source:
                 fail(f"{path} is missing reviewed infrastructure assertion marker {marker!r}")
 
-    print("CI workflow structure, immutable ECR publication, container/Compose coverage, and CloudFormation security validation passed")
+    print(
+        "CI workflow structure, immutable ECR publication, container/Compose coverage, and CloudFormation security validation passed"
+    )
 
 
 if __name__ == "__main__":
