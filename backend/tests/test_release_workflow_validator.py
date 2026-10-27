@@ -73,3 +73,37 @@ def test_ci_validator_rejects_unsafe_development_deployment_wiring(
         VALIDATOR.validate()
 
     assert message in capsys.readouterr().err
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "needs: [deploy-dev, publish-ecr]",
+            "needs: [publish-ecr]",
+            "verify-dev is missing required ordering",
+        ),
+        (
+            "role-to-assume: ${{ vars.OSA_DEV_VERIFICATION_ROLE_ARN }}",
+            "role-to-assume: ${{ vars.OSA_DEV_DEPLOY_ROLE_ARN }}",
+            "verify-dev is missing required ordering",
+        ),
+    ],
+)
+def test_ci_validator_rejects_unsafe_development_verification_wiring(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    old: str,
+    new: str,
+    message: str,
+) -> None:
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert old in source
+    altered_workflow = tmp_path / "ci.yml"
+    altered_workflow.write_text(source.replace(old, new), encoding="utf-8")
+    monkeypatch.setattr(VALIDATOR, "WORKFLOW", altered_workflow)
+
+    with pytest.raises(SystemExit):
+        VALIDATOR.validate()
+
+    assert message in capsys.readouterr().err

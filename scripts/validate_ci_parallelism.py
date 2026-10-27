@@ -172,8 +172,27 @@ def validate() -> None:
                 f"deploy-dev must stay read/update-only for osa-dev without long-lived credentials: {forbidden!r}"
             )
     oidc_jobs = {name for name, block in jobs.items() if "configure-aws-credentials" in block}
-    if oidc_jobs != {"publish-ecr", "deploy-dev"}:
-        fail("only the main-branch ECR publisher and dev deploy jobs may configure AWS credentials")
+    verifier = jobs.get("verify-dev")
+    if verifier is None:
+        fail("main-branch dev verification job is missing")
+    for marker in (
+        "if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy-dev.result == 'success'",
+        "needs: [deploy-dev, publish-ecr]",
+        "id-token: write",
+        "role-to-assume: ${{ vars.OSA_DEV_VERIFICATION_ROLE_ARN }}",
+        "needs.publish-ecr.outputs.digest",
+        "needs.publish-ecr.outputs.release-version",
+        "OSA_DEV_HOSTNAME: ${{ vars.OSA_DEV_HOSTNAME }}",
+        "python3 scripts/verify_dev_deployment.py --validate-only",
+        "run: python3 scripts/verify_dev_deployment.py",
+    ):
+        if marker not in verifier:
+            fail(f"verify-dev is missing required ordering, identity, or release marker {marker!r}")
+    for forbidden in ("aws-access-key-id:", "aws-secret-access-key:", "secrets.", "osa-prod", "cloudformation:update-stack", "cloudformation:delete-stack"):
+        if forbidden in verifier.lower():
+            fail(f"verify-dev must remain read-only and secret-free: {forbidden!r}")
+    if oidc_jobs != {"publish-ecr", "deploy-dev", "verify-dev"}:
+        fail("only the main-branch publisher, dev deploy, and read-only verifier may configure AWS credentials")
     for name in oidc_jobs:
         block = jobs[name]
         if "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" not in block:
