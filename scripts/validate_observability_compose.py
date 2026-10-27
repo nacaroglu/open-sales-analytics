@@ -25,13 +25,18 @@ except (json.JSONDecodeError, TypeError):
 expected_services = {"collector", "prometheus", "loki", "tempo", "grafana"}
 services = compose.get("services")
 require(isinstance(services, dict), "Compose services must be an object")
-require(set(services) == expected_services, "Observability project must contain exactly its five services")
+require(
+    set(services) == expected_services,
+    "Observability project must contain exactly its five services",
+)
 require(compose.get("name") == "osa-observability", "Observability project name must stay isolated")
 
 expected_volumes = {"prometheus-data", "loki-data", "tempo-data", "grafana-data"}
 volumes = compose.get("volumes")
 require(isinstance(volumes, dict), "Compose must declare named data volumes")
-require(set(volumes) == expected_volumes, "Only the four observability data volumes may be declared")
+require(
+    set(volumes) == expected_volumes, "Only the four observability data volumes may be declared"
+)
 for name, volume in volumes.items():
     require(
         isinstance(volume, dict)
@@ -41,7 +46,10 @@ for name, volume in volumes.items():
     )
 
 networks = compose.get("networks")
-require(isinstance(networks, dict) and set(networks) == {"observability"}, "A single private network is required")
+require(
+    isinstance(networks, dict) and set(networks) == {"observability"},
+    "A single private network is required",
+)
 require(
     networks["observability"].get("internal") is True
     and networks["observability"].get("name") == "osa-observability_observability",
@@ -67,15 +75,22 @@ used_volumes: set[str] = set()
 for name, service in services.items():
     require(isinstance(service, dict), f"Service {name} must be an object")
     require("build" not in service, f"Service {name} must use a published image")
-    require(service.get("image") == expected_images[name], f"Service {name} must use its explicit release image")
+    require(
+        service.get("image") == expected_images[name],
+        f"Service {name} must use its explicit release image",
+    )
     require(
         service.get("networks") == {"observability": None},
         f"Service {name} must use only the private observability network",
     )
-    require("depends_on" not in service, f"Service {name} must not depend on the application project")
+    require(
+        "depends_on" not in service, f"Service {name} must not depend on the application project"
+    )
 
     for port in service.get("ports", []):
-        require(port.get("host_ip") == "127.0.0.1", f"Service {name} publishes a port outside loopback")
+        require(
+            port.get("host_ip") == "127.0.0.1", f"Service {name} publishes a port outside loopback"
+        )
         require(
             int(port.get("target", -1)) in allowed_host_targets[name],
             f"Service {name} publishes an unapproved host port",
@@ -85,14 +100,22 @@ for name, service in services.items():
         require(isinstance(mount, dict), f"Service {name} has a malformed mount")
         if mount.get("type") == "volume":
             source = mount.get("source")
-            require(source in expected_volumes, f"Service {name} mounts a volume outside this project")
+            require(
+                source in expected_volumes, f"Service {name} mounts a volume outside this project"
+            )
             used_volumes.add(source)
         elif mount.get("type") == "bind":
-            require(mount.get("read_only") is True, f"Service {name} has a writable configuration bind mount")
+            require(
+                mount.get("read_only") is True,
+                f"Service {name} has a writable configuration bind mount",
+            )
         else:
             fail(f"Service {name} has an unsupported mount type")
 
-require(used_volumes == expected_volumes, "Every declared data volume must be mounted by an observability service")
+require(
+    used_volumes == expected_volumes,
+    "Every declared data volume must be mounted by an observability service",
+)
 grafana_environment = services["grafana"].get("environment", {})
 require(
     isinstance(grafana_environment, dict)
