@@ -6,7 +6,6 @@ import re
 import sys
 from pathlib import Path
 
-
 WORKFLOW = Path(".github/workflows/ci.yml")
 MAKEFILE = Path("Makefile")
 FOUNDATION_VALIDATOR = Path("scripts/validate_foundation_template.py")
@@ -86,6 +85,38 @@ def validate() -> None:
             if command not in block:
                 fail(f"job {name!r} is missing required check {command!r}")
 
+    publisher = jobs.get("publish-ecr")
+    if publisher is None:
+        fail("main-branch immutable ECR publishing job is missing")
+    for marker in (
+        "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+        "needs:",
+        "ci-structure",
+        "backend-tests",
+        "frontend",
+        "cloudformation-foundation",
+        "pinned-actions",
+        "dependency-scan",
+        "compose-integration",
+        "telemetry-resource-identity",
+        "docker-smoke",
+        "id-token: write",
+        "aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd",
+        "vars.OSA_BUILD_ROLE_ARN",
+        "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+        "python3 scripts/publish_ecr_image.py",
+        "needs.docker-smoke.outputs.release-version",
+        "digest: ${{ steps.publish.outputs.digest }}",
+        "image-ref: ${{ steps.publish.outputs.image-ref }}",
+    ):
+        if marker not in publisher:
+            fail(f"publish-ecr is missing required security or ordering marker {marker!r}")
+    for forbidden in ("aws-access-key-id:", "aws-secret-access-key:", "secrets.", "aws cloudformation"):
+        if forbidden in publisher.lower():
+            fail(f"publish-ecr must not use long-lived credentials or deploy AWS resources: {forbidden!r}")
+    if "configure-aws-credentials" in source.split("  pull_request:", 1)[0].lower():
+        fail("pull-request CI must not request AWS credentials")
+
     structure_job = jobs.get("ci-structure", "")
     if "python3 scripts/validate_ci_parallelism.py" not in structure_job:
         fail("the workflow structure regression check must remain enabled")
@@ -93,6 +124,15 @@ def validate() -> None:
     container = jobs.get("docker-smoke")
     if container is None:
         fail("the production image and browser job 'docker-smoke' is missing")
+    for marker in (
+        "Save the validated image for the main-branch publisher",
+        "docker save open-sales-analytics | gzip > /tmp/osa-release-image.tar.gz",
+        "name: osa-release-image",
+    ):
+        if marker not in container:
+            fail(f"docker-smoke is missing the single-build image handoff marker {marker!r}")
+    if "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" not in container:
+        fail("the release image artifact must be limited to successful main push builds")
     for check in CONTAINER_CHECKS:
         if check not in container:
             fail(f"docker-smoke is missing required image/browser check {check!r}")
@@ -222,7 +262,7 @@ def validate() -> None:
             if marker not in validator_source:
                 fail(f"{path} is missing reviewed infrastructure assertion marker {marker!r}")
 
-    print("CI workflow structure, container/Compose coverage, and CloudFormation security validation passed")
+    print("CI workflow structure, immutable ECR publication, container/Compose coverage, and CloudFormation security validation passed")
 
 
 if __name__ == "__main__":

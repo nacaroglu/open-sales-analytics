@@ -443,7 +443,8 @@ exact_trust("DevCaddyAuthEc2InstanceRole", "ec2.amazonaws.com")
 
 build_statements = policy_statements("BuildRole")
 require(
-    set(build_statements) == {"EcrAuthorizationToken", "PushImagesToFoundationRepository"}
+    set(build_statements)
+    == {"EcrAuthorizationToken", "PushImagesToFoundationRepository", "ReadPublishedImageDigest"}
     and statement_actions(build_statements["EcrAuthorizationToken"]) == {"ecr:GetAuthorizationToken"}
     and statement_actions(build_statements["PushImagesToFoundationRepository"])
     == {
@@ -454,6 +455,8 @@ require(
         "ecr:UploadLayerPart",
     }
     and "Resource: !GetAtt Repository.Arn" in build_statements["PushImagesToFoundationRepository"]
+    and statement_actions(build_statements["ReadPublishedImageDigest"]) == {"ecr:DescribeImages"}
+    and "Resource: !GetAtt Repository.Arn" in build_statements["ReadPublishedImageDigest"]
     and "cloudformation:" not in role_body("BuildRole")
     and "iam:PassRole" not in role_body("BuildRole"),
     "BuildRole must be limited to repository pushes with no deployment or PassRole permissions",
@@ -903,6 +906,7 @@ assert_exact_policy(
             ["!GetAtt Repository.Arn"],
             [],
         ),
+        "ReadPublishedImageDigest": ({"ecr:DescribeImages"}, ["!GetAtt Repository.Arn"], []),
     },
 )
 assert_exact_policy(
