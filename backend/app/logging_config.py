@@ -127,7 +127,7 @@ class JsonFormatter(logging.Formatter):
                     "event": "http.request",
                     "operation": "http.request",
                     "outcome": fields.get("outcome")
-                    if fields.get("outcome") in {"success", "error"}
+                    if fields.get("outcome") in {"success", "rejected", "failure"}
                     else "unknown",
                     "method": method if method in _METHODS else "OTHER",
                     "route": route
