@@ -69,7 +69,12 @@ class FakeResponse:
         return None
 
 
-def aws_runner(*, credential: str = CREDENTIAL, stack_outputs: str = STACK_OUTPUTS):
+def aws_runner(
+    *,
+    credential: str = CREDENTIAL,
+    stack_outputs: str = STACK_OUTPUTS,
+    parameter_type: str = "SecureString",
+):
     calls: list[list[str]] = []
 
     def run(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
@@ -77,7 +82,8 @@ def aws_runner(*, credential: str = CREDENTIAL, stack_outputs: str = STACK_OUTPU
         if command[:3] == ["aws", "cloudformation", "describe-stacks"]:
             return subprocess.CompletedProcess(command, 0, stdout=stack_outputs, stderr="")
         if command[:3] == ["aws", "ssm", "get-parameter"]:
-            return subprocess.CompletedProcess(command, 0, stdout=credential, stderr="")
+            value = parameter_type if "Parameter.Type" in command else credential
+            return subprocess.CompletedProcess(command, 0, stdout=value, stderr="")
         return subprocess.CompletedProcess(command, 1, stdout="", stderr="unexpected command")
 
     return run, calls
@@ -133,6 +139,19 @@ def test_read_smoke_credential_uses_only_secure_parameter_and_masks_it(capsys):
             "get-parameter",
             "--name",
             "/osa/dev/caddy/smoke-credential",
+            "--query",
+            "Parameter.Type",
+            "--output",
+            "text",
+            "--region",
+            REGION,
+        ],
+        [
+            "aws",
+            "ssm",
+            "get-parameter",
+            "--name",
+            "/osa/dev/caddy/smoke-credential",
             "--with-decryption",
             "--query",
             "Parameter.Value",
@@ -140,9 +159,20 @@ def test_read_smoke_credential_uses_only_secure_parameter_and_masks_it(capsys):
             "text",
             "--region",
             REGION,
-        ]
+        ],
     ]
     assert f"::add-mask::{CREDENTIAL}" in capsys.readouterr().out
+
+
+def test_read_smoke_credential_rejects_plain_string_without_decrypting():
+    runner, calls = aws_runner(parameter_type="String")
+
+    with pytest.raises(VERIFY.VerificationError, match="must be a SecureString"):
+        VERIFY.read_smoke_credential(REGION, runner=runner)
+
+    assert len(calls) == 1
+    assert "Parameter.Type" in calls[0]
+    assert "--with-decryption" not in calls[0]
 
 
 @pytest.mark.parametrize(
@@ -163,11 +193,19 @@ def test_published_digest_prefix_is_normalized_against_stack_output():
 
 
 def test_ssm_retrieval_failure_does_not_echo_aws_error_or_secret(capsys):
+    calls = []
+
     def failed_runner(command, **kwargs):
+        calls.append(command)
+        if "Parameter.Type" in command:
+            return subprocess.CompletedProcess(command, 0, stdout="SecureString", stderr="")
         return subprocess.CompletedProcess(command, 1, stdout="", stderr=PASSWORD)
 
     with pytest.raises(VERIFY.VerificationError, match="retrieval failed") as error:
         VERIFY.read_smoke_credential(REGION, runner=failed_runner)
+    assert len(calls) == 2
+    assert "--with-decryption" not in calls[0]
+    assert "--with-decryption" in calls[1]
     assert PASSWORD not in str(error.value)
     assert PASSWORD not in capsys.readouterr().out
 

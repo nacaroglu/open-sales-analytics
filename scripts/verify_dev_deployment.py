@@ -78,6 +78,16 @@ def _mask_github_value(value: str) -> None:
 
 def read_smoke_credential(region: str, *, runner: AWS_RUNNER = subprocess.run) -> tuple[str, str]:
     """Read and immediately mask a dedicated user:password SSM SecureString."""
+    parameter_type = _run_aws(
+        runner,
+        [
+            "aws", "ssm", "get-parameter", "--name", SMOKE_PARAMETER,
+            "--query", "Parameter.Type", "--output", "text", "--region", region,
+        ],
+        step="Development smoke credential type check",
+    )
+    if parameter_type != "SecureString":
+        raise VerificationError("Development smoke credential must be a SecureString.")
     value = _run_aws(
         runner,
         [
