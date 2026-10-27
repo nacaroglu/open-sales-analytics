@@ -26,10 +26,16 @@ PASSWORD = "smoke-secret-marker"
 CREDENTIAL = f"{USERNAME}:{PASSWORD}"
 INPUTS = VERIFY.VerificationInputs(REGION, HOST, DIGEST, VERSION)
 STACK_OUTPUTS = json.dumps(
-    {"Stacks": [{"Outputs": [
-        {"OutputKey": "ImageDigest", "OutputValue": DIGEST},
-        {"OutputKey": "ReleaseVersion", "OutputValue": VERSION},
-    ]}]}
+    {
+        "Stacks": [
+            {
+                "Outputs": [
+                    {"OutputKey": "ImageDigest", "OutputValue": DIGEST},
+                    {"OutputKey": "ReleaseVersion", "OutputValue": VERSION},
+                ]
+            }
+        ]
+    }
 )
 CREATED = {
     "dataset_id": DATASET_ID,
@@ -89,9 +95,16 @@ def http_sequence(*, fail_analytics: bool = False, fail_delete: bool = False):
         assert context.check_hostname is True
         assert context.verify_mode != 0
         if request.full_url.endswith("/health/ready"):
-            return FakeResponse(200, json.dumps({
-                "status": "ready", "environment": "development", "version": VERSION,
-            }).encode())
+            return FakeResponse(
+                200,
+                json.dumps(
+                    {
+                        "status": "ready",
+                        "environment": "development",
+                        "version": VERSION,
+                    }
+                ).encode(),
+            )
         if request.full_url.endswith("/api/datasets/sample"):
             return FakeResponse(201, json.dumps(CREATED).encode())
         if request.full_url.endswith("/analytics"):
@@ -113,15 +126,28 @@ def test_read_smoke_credential_uses_only_secure_parameter_and_masks_it(capsys):
     username, password = VERIFY.read_smoke_credential(REGION, runner=runner)
 
     assert (username, password) == (USERNAME, PASSWORD)
-    assert calls == [[
-        "aws", "ssm", "get-parameter", "--name", "/osa/dev/caddy/smoke-credential",
-        "--with-decryption", "--query", "Parameter.Value", "--output", "text",
-        "--region", REGION,
-    ]]
+    assert calls == [
+        [
+            "aws",
+            "ssm",
+            "get-parameter",
+            "--name",
+            "/osa/dev/caddy/smoke-credential",
+            "--with-decryption",
+            "--query",
+            "Parameter.Value",
+            "--output",
+            "text",
+            "--region",
+            REGION,
+        ]
+    ]
     assert f"::add-mask::{CREDENTIAL}" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("credential", ["", "username-only", ":password", "user:", "user:pass\nword"])
+@pytest.mark.parametrize(
+    "credential", ["", "username-only", ":password", "user:", "user:pass\nword"]
+)
 def test_read_smoke_credential_rejects_malformed_value(credential):
     runner, _ = aws_runner(credential=credential)
     with pytest.raises(VERIFY.VerificationError, match="credential is missing or malformed"):
@@ -131,7 +157,8 @@ def test_read_smoke_credential_rejects_malformed_value(credential):
 def test_published_digest_prefix_is_normalized_against_stack_output():
     VERIFY.verify_deployment(
         VERIFY.VerificationInputs(REGION, HOST, f"sha256:{DIGEST}", VERSION),
-        runner=aws_runner()[0], opener=http_sequence()[0],
+        runner=aws_runner()[0],
+        opener=http_sequence()[0],
     )
 
 
@@ -149,21 +176,38 @@ def test_stack_metadata_is_read_only_and_must_match_expected_release():
     runner, calls = aws_runner()
 
     VERIFY.verify_deployment(
-        INPUTS, runner=runner, opener=http_sequence()[0], summary_path=None,
+        INPUTS,
+        runner=runner,
+        opener=http_sequence()[0],
+        summary_path=None,
     )
 
     assert calls[0][:5] == [
-        "aws", "cloudformation", "describe-stacks", "--stack-name", "osa-dev",
+        "aws",
+        "cloudformation",
+        "describe-stacks",
+        "--stack-name",
+        "osa-dev",
     ]
     assert calls[1][0:3] == ["aws", "ssm", "get-parameter"]
-    assert not any("update-stack" in value or "osa-prod" in value for call in calls for value in call)
+    assert not any(
+        "update-stack" in value or "osa-prod" in value for call in calls for value in call
+    )
 
 
 def test_stack_metadata_mismatch_stops_before_reading_the_credential():
-    wrong_outputs = json.dumps({"Stacks": [{"Outputs": [
-        {"OutputKey": "ImageDigest", "OutputValue": "b" * 64},
-        {"OutputKey": "ReleaseVersion", "OutputValue": VERSION},
-    ]}]})
+    wrong_outputs = json.dumps(
+        {
+            "Stacks": [
+                {
+                    "Outputs": [
+                        {"OutputKey": "ImageDigest", "OutputValue": "b" * 64},
+                        {"OutputKey": "ReleaseVersion", "OutputValue": VERSION},
+                    ]
+                }
+            ]
+        }
+    )
     runner, calls = aws_runner(stack_outputs=wrong_outputs)
 
     with pytest.raises(VERIFY.VerificationError, match="does not match the published image"):
@@ -229,9 +273,13 @@ def test_readiness_requires_exact_environment_version_and_verified_https():
 
 def test_readiness_version_mismatch_is_terminal():
     def opener(request, **_: Any):
-        body = json.dumps({
-            "status": "ready", "environment": "development", "version": "wrong-version",
-        }).encode()
+        body = json.dumps(
+            {
+                "status": "ready",
+                "environment": "development",
+                "version": "wrong-version",
+            }
+        ).encode()
         return FakeResponse(200, body)
 
     with pytest.raises(VERIFY.VerificationError, match="metadata does not match"):
@@ -251,8 +299,14 @@ def test_readiness_timeout_is_bounded():
 
     with pytest.raises(VERIFY.VerificationError, match="timed out"):
         VERIFY.wait_until_ready(
-            f"https://{HOST}", USERNAME, PASSWORD, VERSION, timeout_seconds=3,
-            opener=opener, monotonic=lambda: now[0], sleep=sleep,
+            f"https://{HOST}",
+            USERNAME,
+            PASSWORD,
+            VERSION,
+            timeout_seconds=3,
+            opener=opener,
+            monotonic=lambda: now[0],
+            sleep=sleep,
         )
     assert sleeps and sum(sleeps) <= 3
 

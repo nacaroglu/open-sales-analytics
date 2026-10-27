@@ -74,6 +74,7 @@ def test_ci_validator_rejects_unsafe_development_deployment_wiring(
 
     assert message in capsys.readouterr().err
 
+
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
