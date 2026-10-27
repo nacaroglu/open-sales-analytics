@@ -8,6 +8,8 @@ from typing import BinaryIO
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel, Field, model_validator
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser, parse_options_header
@@ -21,6 +23,7 @@ from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.capacity import count_live_datasets
 from app.config import Settings, get_settings
 from app.currencies import CURRENCIES, is_valid_currency
+from app.domain_telemetry import instrument_operation
 from app.errors import ApiError
 from app.importer import dataset_path
 from app.ingest import CreatedDataset, ingest_csv, new_upload_path
@@ -426,6 +429,7 @@ def _sample_unavailable() -> ApiError:
     return ApiError(500, "sample_unavailable", "The sample dataset is not available right now.")
 
 
+@instrument_operation("osa.dataset.sample.create", module="dataset", source="sample")
 def _ingest_sample(settings: Settings) -> CreatedDataset | None:
     """Import a copy of the bundled sample; ``None`` if the sample is not clean.
 
@@ -434,10 +438,16 @@ def _ingest_sample(settings: Settings) -> CreatedDataset | None:
     copy = new_upload_path(settings)
     try:
         shutil.copyfile(SAMPLE_CSV, copy)
-        outcome = ingest_csv(copy, SAMPLE_CURRENCY, settings)
+        outcome = ingest_csv(copy, SAMPLE_CURRENCY, settings, source="sample")
     finally:
         copy.unlink(missing_ok=True)
-    return outcome if isinstance(outcome, CreatedDataset) else None
+    if not isinstance(outcome, CreatedDataset):
+        span = trace.get_current_span()
+        span.set_attribute("osa.operation.outcome", "failure")
+        span.set_attribute("osa.error.code", "invalid_input")
+        span.set_status(Status(StatusCode.ERROR))
+        return None
+    return outcome
 
 
 @router.post("/datasets/sample", status_code=201)

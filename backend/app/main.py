@@ -15,6 +15,7 @@ from app.api.overview import router as overview_router
 from app.api.products import router as products_router
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely
 from app.config import Settings, get_settings
+from app.domain_telemetry import use_tracer_provider
 from app.errors import register_error_handlers
 from app.health import readiness_checks
 from app.http_instrumentation import RequestTelemetryMiddleware, configure_trace_context_propagation
@@ -32,11 +33,12 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
         telemetry = create_telemetry(settings)
         application.state.telemetry = telemetry
-        prepare_dataset_dir(settings)
-        await run_sweep_safely(settings)
-        timer = asyncio.create_task(run_cleanup_loop(settings))
-        application.state.initialized = True
-        yield
+        with use_tracer_provider(telemetry.tracer_provider):
+            prepare_dataset_dir(settings)
+            await run_sweep_safely(settings)
+            timer = asyncio.create_task(run_cleanup_loop(settings))
+            application.state.initialized = True
+            yield
     finally:
         application.state.initialized = False
         if timer is not None:

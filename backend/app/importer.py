@@ -5,6 +5,7 @@ from pathlib import Path
 import duckdb
 
 from app.config import Settings
+from app.domain_telemetry import instrument_operation
 from app.schema import create_dataset
 
 # A blank customer_id takes the order's one non-blank ID; validation has already
@@ -100,6 +101,7 @@ def dataset_path(settings: Settings, dataset_id: str) -> Path:
     return settings.dataset_dir / f"{dataset_id}.duckdb"
 
 
+@instrument_operation("osa.duckdb.canonical_import", module="duckdb")
 def import_dataset(
     staging: duckdb.DuckDBPyConnection,
     csv_path: str | os.PathLike[str],

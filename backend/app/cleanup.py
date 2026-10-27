@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.auth import _EXPIRY_SQL
 from app.config import Settings
+from app.domain_telemetry import instrument_operation
 from app.response_cache import ResponseCache, response_cache_for_settings
 from app.schema import DatasetFileError, open_dataset_readonly
 from app.tokens import is_valid_dataset_id
@@ -157,6 +158,7 @@ def _sweep_uploads_dir(directory: Path, now: datetime) -> int:
     return removed
 
 
+@instrument_operation("osa.dataset.cleanup", module="cleanup")
 def sweep(settings: Settings, now: datetime, cache: ResponseCache | None = None) -> SweepResult:
     """One cleanup pass over DATASET_DIR; ``now`` must be timezone-aware."""
     if cache is None:

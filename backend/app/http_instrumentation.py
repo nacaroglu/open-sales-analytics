@@ -11,6 +11,8 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from starlette.datastructures import Headers
 from starlette.routing import Match
 
+from app.domain_telemetry import use_tracer_provider
+
 _METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"}
 _PROPAGATOR = TraceContextTextMapPropagator()
 
@@ -90,31 +92,32 @@ class RequestTelemetryMiddleware:
 
         error: BaseException | None = None
         try:
-            with tracer.start_as_current_span(
-                f"{method} {route}",
-                context=parent_context,
-                kind=SpanKind.SERVER,
-                record_exception=False,
-                set_status_on_exception=False,
-            ) as span:
-                span.set_attributes(attributes)
-                try:
-                    await self.app(scope, receive, wrapped_send)
-                except BaseException as exc:
-                    error = exc
-                    raise
-                finally:
-                    if error is not None:
-                        status_code = max(status_code, 500)
-                    error_class = (
-                        "server_error"
-                        if status_code >= 500
-                        else ("client_error" if status_code >= 400 else "none")
-                    )
-                    span.set_attribute("http.response.status_code", status_code)
-                    span.set_attribute("osa.error.class", error_class)
-                    if error_class == "server_error":
-                        span.set_status(Status(StatusCode.ERROR))
+            with use_tracer_provider(telemetry.tracer_provider):
+                with tracer.start_as_current_span(
+                    f"{method} {route}",
+                    context=parent_context,
+                    kind=SpanKind.SERVER,
+                    record_exception=False,
+                    set_status_on_exception=False,
+                ) as span:
+                    span.set_attributes(attributes)
+                    try:
+                        await self.app(scope, receive, wrapped_send)
+                    except BaseException as exc:
+                        error = exc
+                        raise
+                    finally:
+                        if error is not None:
+                            status_code = max(status_code, 500)
+                        error_class = (
+                            "server_error"
+                            if status_code >= 500
+                            else ("client_error" if status_code >= 400 else "none")
+                        )
+                        span.set_attribute("http.response.status_code", status_code)
+                        span.set_attribute("osa.error.class", error_class)
+                        if error_class == "server_error":
+                            span.set_status(Status(StatusCode.ERROR))
         finally:
             elapsed = max(0.0, time.perf_counter() - started)
             metric_attributes = {
