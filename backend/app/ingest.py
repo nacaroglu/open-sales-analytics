@@ -3,9 +3,11 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 
 from app.config import Settings
 from app.currencies import is_valid_currency
+from app.custom_metrics import current_metrics
 from app.domain_telemetry import operation_span
 from app.importer import dataset_path, import_dataset
 from app.meta import read_meta
@@ -58,11 +60,15 @@ def ingest_csv(
 
     staging = None
     bounded_source = source if source in {"upload", "sample"} else "other"
+    validation_started = perf_counter()
     with operation_span("osa.csv.validate", module="validation", source=bounded_source) as span:
         try:
             structure = validate_structure(csv_path, settings.max_upload_bytes, settings.max_rows)
             if not structure.ok:
                 span.set_attribute("osa.operation.outcome", "rejected")
+                _record_validation_outcome(
+                    bounded_source, structure.errors, "rejected", validation_started
+                )
                 return _discard(structure, staging, csv_path)
 
             staging = stage_csv(csv_path)
@@ -70,13 +76,45 @@ def ingest_csv(
             rows.warnings = structure.warnings + rows.warnings
             if not rows.ok:
                 span.set_attribute("osa.operation.outcome", "rejected")
+                _record_validation_outcome(
+                    bounded_source, rows.errors, "rejected", validation_started
+                )
                 return _discard(rows, staging, csv_path)
             span.set_attribute("osa.operation.outcome", "accepted")
+            _record_validation_outcome(bounded_source, (), "success", validation_started)
         except BaseException:
+            metrics = current_metrics()
+            if metrics is not None and bounded_source in {"upload", "sample"}:
+                metrics.record_dataset_operation(
+                    "validate",
+                    bounded_source,
+                    "failure",
+                    failure_class="internal",
+                    duration_seconds=perf_counter() - validation_started,
+                )
             _discard(None, staging, csv_path)
             raise
 
-    return _import(staging, csv_path, currency, settings, now, rows.to_dict()["warnings"])
+    return _import(
+        staging, csv_path, currency, settings, now, rows.to_dict()["warnings"], bounded_source
+    )
+
+
+def _record_validation_outcome(source: str, errors, outcome: str, started: float) -> None:
+    metrics = current_metrics()
+    if metrics is None or source not in {"upload", "sample"}:
+        return
+    failure_class = "validation" if outcome == "rejected" else "none"
+    metrics.record_dataset_operation(
+        "validate",
+        source,
+        outcome,
+        failure_class=failure_class,
+        duration_seconds=perf_counter() - started,
+    )
+    for code in {getattr(error, "code", None) for error in errors}:
+        if isinstance(code, str):
+            metrics.record_validation_rejection(code)
 
 
 def _discard(result, staging, csv_path: Path):
@@ -89,13 +127,24 @@ def _discard(result, staging, csv_path: Path):
     return result
 
 
-def _import(staging, csv_path, currency, settings, now, warnings) -> CreatedDataset:
+def _import(
+    staging, csv_path, currency, settings, now, warnings, source="upload"
+) -> CreatedDataset:
     dataset_id = new_dataset_id()
     token = new_token()
     target = dataset_path(settings, dataset_id)
     try:
         # import_dataset closes the staging connection and deletes the CSV.
-        import_dataset(staging, csv_path, dataset_id, currency, hash_token(token), settings, now)
+        import_dataset(
+            staging,
+            csv_path,
+            dataset_id,
+            currency,
+            hash_token(token),
+            settings,
+            now,
+            source=source,
+        )
         connection = open_dataset_readonly(target)
         try:
             meta = read_meta(connection)

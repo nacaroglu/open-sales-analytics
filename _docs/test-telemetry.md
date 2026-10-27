@@ -67,6 +67,9 @@ business identifier, query, CSV content, SQL text, exception message, or excepti
 The request middleware and lifespan install the same scoped provider context, so domain spans remain
 children of their request span and scheduled cleanup uses the application-owned provider.
 
+The custom dataset, validation, analytics and DuckDB instrument catalogue, including units, semantics and the full
+dimension allowlists, is documented in [custom-metrics.md](custom-metrics.md).
+
 For a fixed synthetic trace, counter, and log from the running app, invoke the private module inside
 the app container:
 
