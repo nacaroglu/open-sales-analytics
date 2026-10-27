@@ -8,11 +8,12 @@ import time
 import urllib.request
 from pathlib import Path
 
+import anyio
 import app.ingest as ingest_module
 import duckdb
 import pytest
 from app.config import Settings, get_settings
-from app.logging_config import JsonFormatter, configure_logging
+from app.logging_config import JsonFormatter, RequestLogMiddleware, configure_logging
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -81,23 +82,130 @@ def test_every_line_is_one_json_object_with_the_required_keys(client, log):
     client.get("/api/health")
     client.get("/api/nothing")
     for line in log.lines:
-        assert {"timestamp", "level", "logger", "message"} <= line.keys()
+        assert {
+            "timestamp",
+            "level",
+            "severity",
+            "logger",
+            "message",
+            "event",
+            "service_name",
+            "environment",
+            "version",
+        } <= line.keys()
+        assert line["service_name"] == "open-sales-analytics"
+        assert line["environment"] in {"development", "production"}
+        assert line["version"]
         assert line["timestamp"].endswith(("Z", "+00:00"))
 
 
-def test_encoded_newline_in_the_path_stays_on_one_line(client, log):
-    client.get("/api/x%0Afake%0D%1B[31m")
+def test_encoded_newline_and_marker_in_path_stay_out_of_request_log(client, log):
+    client.get("/api/datasets/MARKER_PRIVATE_ID%0Afake%0D%1B[31m")
     text = log.read()
     assert len(text.splitlines()) == 1
     entry = json.loads(text)
-    assert entry["path"] == "/api/x\nfake\r\x1b[31m"
+    assert entry["route"] == "unmatched"
+    assert "MARKER_PRIVATE_ID" not in text
+    assert "path" not in entry
 
 
-def test_formatter_escapes_control_characters_in_messages():
+def test_request_line_includes_active_trace_context(log):
+    from opentelemetry.sdk.trace import TracerProvider
+
+    provider = TracerProvider()
+    tracer = provider.get_tracer("logging-test")
+    try:
+        with tracer.start_as_current_span("test-span") as span:
+            logging.getLogger("app.test").info("safe event")
+            expected = span.get_span_context()
+        (line,) = log.lines
+        assert line["trace_id"] == f"{expected.trace_id:032x}"
+        assert line["span_id"] == f"{expected.span_id:016x}"
+    finally:
+        provider.shutdown()
+
+
+def test_logs_outside_a_span_omit_trace_context(log):
+    import logging
+
+    logging.getLogger("app.test").info("safe event")
+    (line,) = log.lines
+    assert "trace_id" not in line
+    assert "span_id" not in line
+
+
+def test_untrusted_log_fields_are_not_serialized(log):
+    logging.getLogger("app.test").info(
+        "safe event", extra={"fields": {"customer_id": "MARKER_CUSTOMER", "token": "MARKER_TOKEN"}}
+    )
+    text = log.read()
+    assert "MARKER_CUSTOMER" not in text
+    assert "MARKER_TOKEN" not in text
+
+
+def test_untrusted_log_message_is_replaced_with_a_safe_event(log):
+    logging.getLogger("app.test").info("MARKER_PRIVATE_VALUE")
+    text = log.read()
+    assert "MARKER_PRIVATE_VALUE" not in text
+    assert json.loads(text)["message"] == "application event"
+
+
+def test_request_middleware_logs_route_template_without_raw_path_or_query(log):
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok", "more_body": False})
+
+    async def exercise():
+        messages = []
+
+        async def send(message):
+            messages.append(message)
+
+        await RequestLogMiddleware(app)(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/datasets/MARKER_DATASET_ID/analytics",
+                "query_string": b"token=MARKER_QUERY_TOKEN",
+                "route": type("Route", (), {"path": "/api/datasets/{dataset_id}/analytics"})(),
+                "state": {},
+            },
+            receive,
+            send,
+        )
+        return messages
+
+    messages = anyio.run(exercise)
+    assert messages[0]["status"] == 200
+    text = log.read()
+    assert "MARKER_DATASET_ID" not in text
+    assert "MARKER_QUERY_TOKEN" not in text
+    line = json.loads(text)
+    assert line["route"] == "/api/datasets/{dataset_id}/analytics"
+
+
+def test_logged_exception_keeps_class_and_frames_but_not_message(log):
+    from app.logging_config import log_exception
+
+    try:
+        raise RuntimeError("MARKER_EXCEPTION_TEXT")
+    except RuntimeError as exc:
+        log_exception(logging.getLogger("app.test"), "operation failed", exc)
+    text = log.read()
+    (line,) = log.lines
+    assert "MARKER_EXCEPTION_TEXT" not in text
+    assert line["exception"] == "RuntimeError"
+    assert line["frames"]
+
+
+def test_formatter_keeps_untrusted_control_characters_out_of_message():
     record = logging.LogRecord("t", logging.INFO, "f", 1, "a\nb\x00c d", None, None)
     out = JsonFormatter().format(record)
     assert "\n" not in out and "\x00" not in out and " " not in out
-    assert json.loads(out)["message"] == "a\nb\x00c d"
+    assert json.loads(out)["message"] == "application event"
 
 
 def test_root_level_is_info_and_debug_output_is_dropped(log):
@@ -124,7 +232,7 @@ def test_other_loggers_use_the_same_format(log):
     logging.getLogger("app.cleanup").info("cleanup sweep: 0 datasets removed")
     (line,) = log.lines
     assert line["logger"] == "app.cleanup"
-    assert line["message"] == "cleanup sweep: 0 datasets removed"
+    assert line["message"] == "application event"
 
 
 def test_demo_rejection_line_is_json(tmp_path, log):
@@ -159,7 +267,7 @@ def test_each_outcome_writes_exactly_one_request_line(client, log):
     assert all(r["level"] == "INFO" for r in lines)
 
 
-def test_path_has_no_query_string(client, log):
+def test_request_uses_route_template_without_dataset_id_or_query(client, log):
     created = upload(client, good_csv()).json()
     log.clear()
     client.get(
@@ -167,25 +275,26 @@ def test_path_has_no_query_string(client, log):
         headers={"Authorization": f"Bearer {created['token']}"},
     )
     (line,) = log.requests()
-    assert line["path"] == f"/api/datasets/{created['dataset_id']}/analytics"
+    assert line["route"] == "/api/datasets/{dataset_id}/analytics"
     assert "start" not in json.dumps(line)
-    assert line["dataset_id"] == created["dataset_id"]
+    assert created["dataset_id"] not in json.dumps(line)
 
 
-def test_dataset_id_is_null_unless_the_path_holds_a_well_formed_id(client, log):
+def test_request_logs_never_include_dataset_ids(client, log):
     client.get("/api/datasets/sample")
     client.get("/api/datasets/junk")
     client.get("/api/health")
-    assert [r["dataset_id"] for r in log.requests()] == [None, None, None]
+    assert all("dataset_id" not in r for r in log.requests())
 
 
-def test_created_dataset_id_is_logged_for_upload_and_sample(client, log):
+def test_created_dataset_ids_are_never_logged_for_upload_and_sample(client, log):
     uploaded = upload(client, good_csv())
     sample = client.post("/api/datasets/sample")
     lines = log.requests()
     assert [r["status"] for r in lines] == [201, 201]
-    assert lines[0]["dataset_id"] == uploaded.json()["dataset_id"]
-    assert lines[1]["dataset_id"] == sample.json()["dataset_id"]
+    for line, response in zip(lines, (uploaded, sample), strict=True):
+        assert "dataset_id" not in line
+        assert response.json()["dataset_id"] not in json.dumps(line)
 
 
 def test_successful_upload_does_not_log_customer_id(client, log):
@@ -197,10 +306,10 @@ def test_successful_upload_does_not_log_customer_id(client, log):
     assert marker not in log.read()
 
 
-def test_dataset_id_is_null_for_a_failed_upload(client, log):
+def test_failed_upload_log_has_no_dataset_id(client, log):
     assert upload(client, good_csv(), currency="XXX").status_code == 400
     assert upload(client, HEADER + "\no1,2025-01-02,p1,Mug,abc,19.99\n").status_code == 422
-    assert [r["dataset_id"] for r in log.requests()] == [None, None]
+    assert all("dataset_id" not in r for r in log.requests())
 
 
 # --- unhandled exceptions ---
@@ -234,7 +343,7 @@ def test_swallowed_failure_is_logged_with_class_and_frames_only(client, log, mon
     assert any(f["function"] == "boom" for f in errors[0]["frames"])
     (request_line,) = log.requests()
     assert request_line["status"] == 500 and request_line["level"] == "ERROR"
-    assert request_line["dataset_id"] is None
+    assert "dataset_id" not in request_line
 
 
 def test_sample_failures_are_logged_too(client, log, monkeypatch):
@@ -397,5 +506,5 @@ def test_real_uvicorn_writes_one_json_request_line_per_request_and_no_access_log
     lines = output.read_text().splitlines()
     request_lines = [line for line in lines if line.startswith("{") and '"osa.request"' in line]
     assert len(request_lines) == 2
-    assert all(json.loads(line)["path"] == "/api/health" for line in request_lines)
+    assert all(json.loads(line)["route"] == "/api/health" for line in request_lines)
     assert not any("HTTP/1.1" in line for line in lines)
