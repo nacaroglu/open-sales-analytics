@@ -58,9 +58,9 @@ expected_images = {
 allowed_host_targets = {
     "collector": {4317, 4318},
     "grafana": {3000},
-    "prometheus": set(),
-    "loki": set(),
-    "tempo": set(),
+    "prometheus": {9090},
+    "loki": {3100},
+    "tempo": {3200},
 }
 
 used_volumes: set[str] = set()

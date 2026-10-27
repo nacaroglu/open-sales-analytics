@@ -111,6 +111,7 @@ def validate() -> None:
         "pinned-actions",
         "dependency-scan",
         "compose-integration",
+        "observability-routing",
         "telemetry-resource-identity",
         "docker-smoke",
         "id-token: write",
