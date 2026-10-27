@@ -11,6 +11,7 @@ distributor:
           endpoint: 0.0.0.0:4318
 
 ingester:
+  max_block_bytes: 52428800
   max_block_duration: 5m
   trace_idle_period: 10s
 
@@ -21,3 +22,16 @@ storage:
       path: /var/tempo/wal
     local:
       path: /var/tempo/blocks
+
+compaction:
+  block_retention: 168h
+  max_block_bytes: 1073741824
+
+overrides:
+  defaults:
+    ingestion:
+      rate_strategy: local
+      rate_limit_bytes: 1048576
+      burst_size_bytes: 2097152
+    global:
+      max_bytes_per_trace: 5000000

@@ -4,7 +4,14 @@
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any
+
+from validate_observability_retention import (
+    validate_aws_storage_bootstrap,
+    validate_backend_configs,
+    validate_ebs_template,
+)
 
 
 def fail(message: str) -> None:
@@ -132,4 +139,26 @@ for service in services.values():
     )
     require(not image.endswith(":latest"), "Mutable latest image tags are not allowed")
 
-print("Standalone observability Compose project invariants passed.")
+retention_errors = validate_backend_configs(Path("observability"))
+ebs_template = Path("deploy/cloudformation/osa-observability.yaml")
+if ebs_template.exists():
+    retention_errors.extend(validate_ebs_template(ebs_template))
+else:
+    print(
+        "EBS template check deferred: deploy/cloudformation/osa-observability.yaml "
+        "is supplied by issue #263.",
+        file=sys.stderr,
+    )
+bootstrap_script = Path("deploy/observability/bootstrap.sh")
+if bootstrap_script.exists():
+    retention_errors.extend(validate_aws_storage_bootstrap(bootstrap_script))
+else:
+    print(
+        "AWS storage mount check deferred: deploy/observability/bootstrap.sh "
+        "is supplied by issue #263.",
+        file=sys.stderr,
+    )
+for error in retention_errors:
+    fail(error)
+
+print("Standalone observability Compose and retention invariants passed.")
