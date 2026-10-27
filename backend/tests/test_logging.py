@@ -267,6 +267,21 @@ def test_each_outcome_writes_exactly_one_request_line(client, log):
     assert all(r["level"] == "INFO" for r in lines)
 
 
+@pytest.mark.parametrize(
+    ("status", "outcome"), [(200, "success"), (422, "rejected"), (500, "failure")]
+)
+def test_request_outcome_uses_bounded_status_class(log, status, outcome):
+    RequestLogMiddleware._log_request(
+        {"type": "http", "method": "GET", "route": type("Route", (), {"path": "/api/health"})()},
+        status,
+        time.perf_counter(),
+    )
+
+    (line,) = log.requests()
+    assert line["status"] == status
+    assert line["outcome"] == outcome
+
+
 def test_request_uses_route_template_without_dataset_id_or_query(client, log):
     created = upload(client, good_csv()).json()
     log.clear()
