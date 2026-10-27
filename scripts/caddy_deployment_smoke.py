@@ -64,6 +64,25 @@ def response(
         return error.code, error.read()
 
 
+def assert_basic_challenge(
+    url: str,
+    *,
+    authorization: str,
+    method: str = "GET",
+    body: bytes | None = None,
+) -> None:
+    request = urllib.request.Request(
+        url, data=body, headers={"Authorization": authorization}, method=method
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as result:
+            raise AssertionError(f"Expected Caddy Basic Auth challenge, received HTTP {result.status}")
+    except urllib.error.HTTPError as error:
+        challenge = error.headers.get("WWW-Authenticate", "")
+        if error.code != 401 or not challenge.startswith("Basic"):
+            raise AssertionError("Request did not receive the Caddy Basic Auth challenge") from None
+
+
 def wait_for_status(url: str, expected: int, *, auth: tuple[str, str] | None = None) -> None:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
@@ -159,6 +178,17 @@ def verify_development(network: str, auth_block: str) -> None:
         wait_for_status(f"{caddy_url}/", 401)
         wait_for_status(f"{caddy_url}/health/ready", 401)
         wait_for_status(f"{caddy_url}/api/datasets/sample", 401)
+        bearer_header = f"Bearer {'x' * 43}"
+        assert_basic_challenge(
+            f"{caddy_url}/api/datasets/sample", authorization=bearer_header, method="POST", body=b""
+        )
+        assert_basic_challenge(
+            f"{caddy_url}/api/datasets/not-a-token/analytics", authorization=bearer_header
+        )
+        assert_basic_challenge(
+            f"{caddy_url}/api/datasets/abcdefghijklmnopqrstuv.extra/analytics",
+            authorization=bearer_header,
+        )
         wait_for_status(f"{caddy_url}/", 200, auth=("ci-user", "ci-only"))
         wait_for_status(f"{caddy_url}/api/health", 200, auth=("ci-user", "ci-only"))
         status, sample = response(
