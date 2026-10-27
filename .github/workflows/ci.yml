@@ -89,10 +89,22 @@ jobs:
           openssl dgst -sha256 -verify signing-key.pem -signature "$asset.sig" "$asset"
           chmod +x "$asset"
           sudo install -m 0755 "$asset" /usr/local/bin/cfn-validate
-      - name: Validate CloudFormation schema offline
-        run: cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
-      - name: Check foundation security invariants
-        run: python3 scripts/validate_foundation_template.py
+      - name: Validate CloudFormation schemas offline
+        run: |
+          set -euo pipefail
+          cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
+          cfn-validate --strict deploy/cloudformation/osa-application.yaml \
+            --parameter Environment=development \
+            --parameter ImageDigest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --parameter ReleaseVersion=20261026-dev
+          cfn-validate --strict deploy/cloudformation/osa-application.yaml \
+            --parameter Environment=production \
+            --parameter ImageDigest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+            --parameter ReleaseVersion=20261026-prod
+      - name: Check foundation and application security invariants
+        run: |
+          python3 scripts/validate_foundation_template.py
+          python3 scripts/validate_application_template.py
 
 
   pinned-actions:

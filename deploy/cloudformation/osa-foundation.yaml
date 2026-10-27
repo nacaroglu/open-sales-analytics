@@ -729,10 +729,15 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
-              - Sid: ReadOsaDevParameters
+              - Sid: ManageOsaDevReleaseImageParameter
                 Effect: Allow
-                Action: ssm:GetParameters
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/*"
+                Action:
+                  - ssm:AddTagsToResource
+                  - ssm:DeleteParameter
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                  - ssm:RemoveTagsFromResource
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/release/image"
       Tags:
         - Key: Project
           Value: open-sales-analytics
@@ -886,10 +891,15 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
-              - Sid: ReadOsaProdParameters
+              - Sid: ManageOsaProdReleaseImageParameter
                 Effect: Allow
-                Action: ssm:GetParameters
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/*"
+                Action:
+                  - ssm:AddTagsToResource
+                  - ssm:DeleteParameter
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                  - ssm:RemoveTagsFromResource
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/release/image"
       Tags:
         - Key: Project
           Value: open-sales-analytics

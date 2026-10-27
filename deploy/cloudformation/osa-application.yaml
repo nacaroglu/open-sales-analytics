@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Shared OSA application release contract for development and production. Creates only one
+  non-secret, stack-managed SSM String parameter that records the digest-pinned image reference.
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Selects the isolated osa-dev or osa-prod release metadata path.
+    AllowedValues:
+      - development
+      - production
+  ImageDigest:
+    Type: String
+    Description: 64-character lowercase SHA-256 digest without a tag or repository prefix.
+    AllowedPattern: "^[a-f0-9]{64}$"
+    ConstraintDescription: Specify exactly 64 lowercase hexadecimal SHA-256 digest characters.
+    MinLength: 64
+    MaxLength: 64
+  ReleaseVersion:
+    Type: String
+    Description: Readable immutable release identifier associated with the selected image digest.
+    AllowedPattern: "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$"
+    ConstraintDescription: Specify a non-empty release version using letters, numbers, dot, underscore, plus, or hyphen.
+    MinLength: 1
+    MaxLength: 128
+
+Conditions:
+  IsDevelopment: !Equals [!Ref Environment, development]
+
+Resources:
+  ReleaseImageMetadataParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !If
+        - IsDevelopment
+        - /osa/dev/release/image
+        - /osa/prod/release/image
+      Type: String
+      Description: Non-secret immutable image reference for the selected OSA application release.
+      AllowedPattern: "^.+@sha256:[a-f0-9]{64}$"
+      Value:
+        Fn::Sub:
+          - "${RepositoryUri}@sha256:${Digest}"
+          - RepositoryUri:
+              Fn::ImportValue: osa-foundation-RepositoryUri
+            Digest: !Ref ImageDigest
+      Tags:
+        Project: open-sales-analytics
+        Environment: !Ref Environment
+        OSAStack: !If [IsDevelopment, osa-dev, osa-prod]
+
+Outputs:
+  Environment:
+    Description: Selected application environment.
+    Value: !Ref Environment
+  ImageReference:
+    Description: Immutable ECR repository reference pinned to the selected SHA-256 digest.
+    Value:
+      Fn::Sub:
+        - "${RepositoryUri}@sha256:${Digest}"
+        - RepositoryUri:
+            Fn::ImportValue: osa-foundation-RepositoryUri
+          Digest: !Ref ImageDigest
+  ReleaseVersion:
+    Description: Non-secret readable release version corresponding to ImageReference.
+    Value: !Ref ReleaseVersion
+  ReleaseParameterName:
+    Description: Environment-specific name of the stack-managed non-secret release parameter.
+    Value: !Ref ReleaseImageMetadataParameter

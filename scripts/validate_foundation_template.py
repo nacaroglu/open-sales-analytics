@@ -531,11 +531,18 @@ for role_name, environment, sid_prefix in environment_roles:
         and f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Addresses", ""),
         f"{role_name} address operations must be environment tagged",
     )
-    require(
-        f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod' if environment == 'osa-prod' else 'observability'}/*"
-        in statements.get(f"ReadOsa{'Dev' if environment == 'osa-dev' else 'Prod' if environment == 'osa-prod' else 'Observability'}Parameters", ""),
-        f"{role_name} parameter reads must stay in their environment path",
-    )
+    if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        parameter_path = f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod'}/release/image"
+        parameter_statement = statements.get(
+            f"ManageOsa{'Dev' if environment == 'osa-dev' else 'Prod'}ReleaseImageParameter", ""
+        )
+        require(
+            parameter_path in parameter_statement
+            and "parameter/osa/*" not in parameter_statement
+            and "parameter/osa/dev/*" not in parameter_statement
+            and "parameter/osa/prod/*" not in parameter_statement,
+            f"{role_name} SSM access must be limited to its exact release metadata parameter ARN",
+        )
     require(
         "iam:PassRole" in role_body(role_name)
         and "Resource: !GetAtt Ec2InstanceRole.Arn" in role_body(role_name)
@@ -1160,11 +1167,6 @@ def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[st
             ["!GetAtt Ec2InstanceRole.Arn"],
             equals("iam:PassedToService: ec2.amazonaws.com"),
         ),
-        f"ReadOsa{parameter_env.title()}Parameters": (
-            {"ssm:GetParameters"},
-            [ssm_parameter_arn(f"osa/{parameter_env}/*")],
-            [],
-        ),
     }
 
 
@@ -1174,9 +1176,26 @@ for role_name, environment, prefix, parameter_env in (
     ("ObservabilityExecutionRole", "osa-observability", "OsaObservability", "observability"),
 ):
     expected = env_policy(environment, prefix, parameter_env)
+    if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        expected[f"ManageOsa{'Dev' if parameter_env == 'dev' else 'Prod'}ReleaseImageParameter"] = (
+            {
+                "ssm:AddTagsToResource",
+                "ssm:DeleteParameter",
+                "ssm:GetParameter",
+                "ssm:PutParameter",
+                "ssm:RemoveTagsFromResource",
+            },
+            [ssm_parameter_arn(f"osa/{parameter_env}/release/image")],
+            [],
+        )
     if role_name == "ObservabilityExecutionRole":
         expected.update(
             {
+                "ReadOsaObservabilityParameters": (
+                    {"ssm:GetParameters"},
+                    [ssm_parameter_arn("osa/observability/*")],
+                    [],
+                ),
                 "CreateTaggedOsaObservabilityVolumes": (
                     {"ec2:CreateVolume"},
                     [ec2_arn("volume/*")],
