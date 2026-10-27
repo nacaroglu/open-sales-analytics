@@ -10,8 +10,7 @@ processors:
   batch: {}
 
 exporters:
-  debug:
-    verbosity: basic
+  nop: {}
 
 extensions:
   health_check:
@@ -23,12 +22,12 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [nop]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [nop]
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [nop]

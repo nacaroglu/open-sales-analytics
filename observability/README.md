@@ -48,6 +48,6 @@ docker compose -f observability/compose.yaml down --volumes
 
 The image tags are explicit release versions. Configuration files are mounted
 read-only. Compose fails before startup with an actionable message if
-`GRAFANA_ADMIN_PASSWORD` is missing. The Collector currently accepts OTLP and
-uses its debug exporter as a local bootstrap; signal routing to Prometheus,
-Loki, and Tempo is configured in the follow-up routing change.
+`GRAFANA_ADMIN_PASSWORD` is missing. Until the signal-routing change, the
+Collector accepts OTLP and discards it through a no-op exporter so telemetry
+does not spill into container logs.
