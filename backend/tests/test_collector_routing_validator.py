@@ -11,6 +11,23 @@ VALIDATOR = importlib.util.module_from_spec(VALIDATOR_SPEC)
 VALIDATOR_SPEC.loader.exec_module(VALIDATOR)
 prometheus_target_up = VALIDATOR.prometheus_target_up
 tcp_endpoint_ready = VALIDATOR.tcp_endpoint_ready
+routing_urls = VALIDATOR.routing_urls
+
+
+def test_routing_urls_support_compose_internal_service_dns():
+    assert routing_urls(
+        {
+            "OSA_ROUTING_COLLECTOR_URL": "http://collector:4318",
+            "OSA_ROUTING_PROMETHEUS_URL": "http://prometheus:9090",
+            "OSA_ROUTING_LOKI_URL": "http://loki:3100",
+            "OSA_ROUTING_TEMPO_URL": "http://tempo:3200",
+        }
+    ) == {
+        "collector": "http://collector:4318",
+        "prometheus": "http://prometheus:9090",
+        "loki": "http://loki:3100",
+        "tempo": "http://tempo:3200",
+    }
 
 
 def test_prometheus_internal_collector_target_is_up():

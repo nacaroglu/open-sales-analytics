@@ -4,14 +4,22 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
+from urllib.parse import urlsplit
 
-BASE = "http://127.0.0.1"
+DEFAULT_URLS = {
+    "collector": "http://127.0.0.1:4318",
+    "prometheus": "http://127.0.0.1:9090",
+    "loki": "http://127.0.0.1:3100",
+    "tempo": "http://127.0.0.1:3200",
+}
 SERVICE = "osa-ci-route-validation"
 MARKER = "osa-route-validation-synthetic"
 TRACE_ID = "0123456789abcdef0123456789abcdef"
@@ -51,6 +59,14 @@ def tcp_endpoint_ready(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
+def routing_urls(environ: Mapping[str, str]) -> dict[str, str]:
+    """Resolve bounded service endpoints for host or in-network synthetic probes."""
+    return {
+        name: environ.get(f"OSA_ROUTING_{name.upper()}_URL", default).rstrip("/")
+        for name, default in DEFAULT_URLS.items()
+    }
+
+
 def prometheus_target_up(result: dict, target: str) -> bool:
     """Return whether Prometheus reports the named scrape target as up."""
     if result.get("status") != "success":
@@ -66,9 +82,11 @@ def prometheus_target_up(result: dict, target: str) -> bool:
 
 
 def main() -> None:
+    urls = routing_urls(os.environ)
+    collector = urlsplit(urls["collector"])
     wait_for(
         "Collector OTLP receiver readiness",
-        lambda: tcp_endpoint_ready("127.0.0.1", 4318),
+        lambda: tcp_endpoint_ready(collector.hostname or "127.0.0.1", collector.port or 4318),
     )
     resource = {
         "attributes": [
@@ -79,7 +97,7 @@ def main() -> None:
     }
 
     def post(signal: str, body: dict) -> dict:
-        return request(f"{BASE}:4318/v1/{signal}", body)
+        return request(f"{urls['collector']}/v1/{signal}", body)
 
     post(
         "metrics",
@@ -167,12 +185,12 @@ def main() -> None:
 
     def metric_visible() -> bool:
         query = urllib.parse.urlencode({"query": "osa_route_validation"})
-        result = request(f"{BASE}:9090/api/v1/query?{query}")
+        result = request(f"{urls['prometheus']}/api/v1/query?{query}")
         return result.get("status") == "success" and bool(result.get("data", {}).get("result"))
 
     def log_visible() -> bool:
         query = urllib.parse.urlencode({"query": f'{{service_name="{SERVICE}"}}', "limit": "10"})
-        result = request(f"{BASE}:3100/loki/api/v1/query_range?{query}")
+        result = request(f"{urls['loki']}/loki/api/v1/query_range?{query}")
         return any(
             MARKER in value
             for stream in result.get("data", {}).get("result", [])
@@ -180,12 +198,12 @@ def main() -> None:
         )
 
     def trace_visible() -> bool:
-        result = request(f"{BASE}:3200/api/traces/{TRACE_ID}")
+        result = request(f"{urls['tempo']}/api/traces/{TRACE_ID}")
         return result.get("traceID", "").lower() == TRACE_ID
 
     def collector_target_up() -> bool:
         query = urllib.parse.urlencode({"query": 'up{job="otelcol-internal"}'})
-        result = request(f"{BASE}:9090/api/v1/query?{query}")
+        result = request(f"{urls['prometheus']}/api/v1/query?{query}")
         return prometheus_target_up(result, "collector:8888")
 
     wait_for("metrics → Prometheus", metric_visible)

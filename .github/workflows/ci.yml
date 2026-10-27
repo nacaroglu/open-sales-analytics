@@ -226,7 +226,14 @@ jobs:
             validate --config=/etc/otelcol-contrib/config.yaml
           "${compose[@]}" up --detach
           "${compose[@]}" exec -T prometheus promtool check config /etc/prometheus/prometheus.yml
-          python3 scripts/validate_collector_routing.py
+          docker run --rm \
+            --network "${project}_observability" \
+            --volume "$PWD/scripts/validate_collector_routing.py:/validate_collector_routing.py:ro" \
+            --env OSA_ROUTING_COLLECTOR_URL=http://collector:4318 \
+            --env OSA_ROUTING_PROMETHEUS_URL=http://prometheus:9090 \
+            --env OSA_ROUTING_LOKI_URL=http://loki:3100 \
+            --env OSA_ROUTING_TEMPO_URL=http://tempo:3200 \
+            python:3.12.8-slim python /validate_collector_routing.py
 
   telemetry-resource-identity:
     name: Telemetry resource identity (OTLP test Collector)
