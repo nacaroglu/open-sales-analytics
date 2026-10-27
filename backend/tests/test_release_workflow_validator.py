@@ -28,3 +28,48 @@ def test_ci_validator_rejects_a_workflow_without_main_push_trigger(
         VALIDATOR.validate()
 
     assert "push workflow must include main" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.publish-ecr.result == 'success'",
+            "if: always()",
+            "deploy-dev is missing required ordering",
+        ),
+        (
+            "needs.publish-ecr.outputs.image-ref",
+            "vars.OSA_ECR_REPOSITORY_URI",
+            "deploy-dev is missing required ordering",
+        ),
+        (
+            "role-to-assume: ${{ vars.OSA_DEV_DEPLOY_ROLE_ARN }}",
+            "role-to-assume: ${{ vars.OSA_BUILD_ROLE_ARN }}",
+            "deploy-dev is missing required ordering",
+        ),
+        (
+            "  ci-structure:\n    name: CI workflow structure\n    runs-on: ubuntu-latest",
+            "  ci-structure:\n    name: CI workflow structure\n    permissions:\n      id-token: write\n    runs-on: ubuntu-latest",
+            "non-deployment job 'ci-structure' must not receive an OIDC token permission",
+        ),
+    ],
+)
+def test_ci_validator_rejects_unsafe_development_deployment_wiring(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    old: str,
+    new: str,
+    message: str,
+) -> None:
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert old in source
+    altered_workflow = tmp_path / "ci.yml"
+    altered_workflow.write_text(source.replace(old, new), encoding="utf-8")
+    monkeypatch.setattr(VALIDATOR, "WORKFLOW", altered_workflow)
+
+    with pytest.raises(SystemExit):
+        VALIDATOR.validate()
+
+    assert message in capsys.readouterr().err

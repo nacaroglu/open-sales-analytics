@@ -504,8 +504,6 @@ Resources:
               - Sid: ManageOsaDevStack
                 Effect: Allow
                 Action:
-                  - cloudformation:CreateStack
-                  - cloudformation:DeleteStack
                   - cloudformation:UpdateStack
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
                 Condition:

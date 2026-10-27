@@ -474,9 +474,13 @@ for deploy_role, stack_name, exec_role, prefix in (
         f'!Sub "arn:{dollar}{{AWS::Partition}}:cloudformation:{dollar}{{AWS::Region}}:'
         f'{dollar}{{AWS::AccountId}}:stack/{stack_name}/*"'
     )
+    expected_manage_actions = (
+        {"cloudformation:UpdateStack"}
+        if deploy_role == "DevDeployRole"
+        else {"cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"}
+    )
     require(
-        statement_actions(manage)
-        == {"cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"}
+        statement_actions(manage) == expected_manage_actions
         and expected_stack_arn in manage
         and f"cloudformation:RoleArn: !GetAtt {exec_role}.Arn" in manage,
         f"{deploy_role} must mutate only {stack_name} when using its one execution role",
@@ -1043,11 +1047,15 @@ for deploy_role, stack_name, exec_role, prefix in (
         deploy_role,
         {
             f"Manage{prefix}Stack": (
-                {
-                    "cloudformation:CreateStack",
-                    "cloudformation:DeleteStack",
-                    "cloudformation:UpdateStack",
-                },
+                (
+                    {"cloudformation:UpdateStack"}
+                    if deploy_role == "DevDeployRole"
+                    else {
+                        "cloudformation:CreateStack",
+                        "cloudformation:DeleteStack",
+                        "cloudformation:UpdateStack",
+                    }
+                ),
                 [cfn_stack_arn(stack_name)],
                 equals(f"cloudformation:RoleArn: !GetAtt {exec_role}.Arn"),
             ),
