@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,6 +68,12 @@ def test_tempo_trace_verification_reads_the_otlp_json_trace_response():
     }
     assert tempo_trace_contains(response, "0123456789abcdef0123456789abcdef")
     assert not tempo_trace_contains(response, "ffffffffffffffffffffffffffffffff")
+
+
+def test_tempo_trace_verification_reads_wrapped_base64_ids_fixture():
+    fixture = ROOT / "backend/tests/fixtures/tempo_trace_response_wrapped.json"
+    response = json.loads(fixture.read_text(encoding="utf-8"))
+    assert tempo_trace_contains(response, "0123456789abcdef0123456789abcdef")
 
 
 def test_tempo_trace_verification_accepts_legacy_trace_id_response():

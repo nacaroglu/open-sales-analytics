@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import socket
@@ -98,13 +100,31 @@ def prometheus_target_up(result: dict, target: str) -> bool:
 
 
 def tempo_trace_contains(result: dict, trace_id: str) -> bool:
-    """Return whether Tempo returned the expected trace in its OTLP JSON body."""
-    expected = trace_id.lower()
-    if result.get("traceID", "").lower() == expected:
+    """Return whether Tempo returned the expected trace in its wrapped OTLP JSON body."""
+
+    def normalized(value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        lowered = value.lower()
+        if len(lowered) == 32 and all(char in "0123456789abcdef" for char in lowered):
+            return lowered
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (ValueError, binascii.Error):
+            return None
+        return decoded.hex() if len(decoded) == 16 else None
+
+    expected = normalized(trace_id)
+    if expected is None:
+        return False
+    if normalized(result.get("traceID")) == expected:
         return True
+    trace = result.get("trace", result)
+    if not isinstance(trace, dict):
+        return False
     return any(
-        span.get("traceId", "").lower() == expected
-        for resource_span in result.get("resourceSpans", [])
+        normalized(span.get("traceId")) == expected
+        for resource_span in trace.get("resourceSpans", [])
         for scope in resource_span.get("scopeSpans", [])
         for span in scope.get("spans", [])
     )
