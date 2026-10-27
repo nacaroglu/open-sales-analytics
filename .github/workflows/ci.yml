@@ -300,12 +300,21 @@ jobs:
               "metrics": ("resourceMetrics", "scopeMetrics", "metrics"),
               "logs": ("resourceLogs", "scopeLogs", "logRecords"),
           }
-          def read_signal_identities():
-              records = [
-                  json.loads(line)
-                  for line in sink.read_text().splitlines()
-                  if line.strip()
-              ]
+          def read_signal_identities(strict=False):
+              lines = sink.read_text().splitlines(keepends=True)
+              records = []
+              partial_trailing_record = False
+              for index, line in enumerate(lines):
+                  if not line.strip():
+                      continue
+                  trailing_partial = index == len(lines) - 1 and not line.endswith(("\n", "\r"))
+                  try:
+                      records.append(json.loads(line))
+                  except json.JSONDecodeError:
+                      if trailing_partial and not strict:
+                          partial_trailing_record = True
+                          continue
+                      raise
               observed = {}
               for signal, (resource_key, _, _) in signal_shapes.items():
                   resources = [
@@ -323,17 +332,18 @@ jobs:
                       assert identity in expected_identities, attributes
                       identities.add(identity)
                   observed[signal] = identities
-              return records, observed
+              return records, observed, partial_trailing_record
 
           deadline = time.monotonic() + 30
           while True:
-              records, observed_identities = read_signal_identities()
+              records, observed_identities, partial_trailing_record = read_signal_identities()
               if all(
                   identities == expected_identities
                   for identities in observed_identities.values()
-              ):
+              ) and not partial_trailing_record:
                   break
               if time.monotonic() >= deadline:
+                  records, observed_identities, _ = read_signal_identities(strict=True)
                   raise AssertionError(
                       f"Collector did not capture every resource identity: {observed_identities}"
                   )
