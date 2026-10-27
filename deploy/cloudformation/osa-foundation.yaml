@@ -530,6 +530,95 @@ Resources:
         - Key: OSAStack
           Value: !Ref AWS::StackName
 
+  DevVerificationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-dev-verification"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: Read-only GitHub Actions role for osa-dev release verification.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubMainBranchOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}"
+      Policies:
+        - PolicyName: OsaDevReleaseVerification
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadOnlyOsaDevStack
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
+              - Sid: ReadDevSmokeCredential
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/caddy/smoke-credential"
+              - Sid: DecryptDevSmokeCredentialThroughSsm
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
+                    kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/caddy/smoke-credential"
+                  ForAnyValue:StringEquals:
+                    kms:ResourceAliases: alias/aws/ssm
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  ProductionSourceReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-production-source-read"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: Read-only GitHub Actions role for selecting the current osa-dev release before production approval.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubMainBranchOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}"
+          - Sid: ProductionEnvironmentOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:environment:production"
+      Policies:
+        - PolicyName: ReadOsaDevReleaseMetadata
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadOnlyOsaDevStack
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
   ProductionPromotionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -1311,6 +1400,16 @@ Outputs:
     Value: !GetAtt DevDeployRole.Arn
     Export:
       Name: !Sub "${AWS::StackName}-DevDeployRoleArn"
+  DevVerificationRoleArn:
+    Description: Read-only GitHub OIDC role for verifying osa-dev releases.
+    Value: !GetAtt DevVerificationRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-DevVerificationRoleArn"
+  ProductionSourceReadRoleArn:
+    Description: Read-only role for obtaining osa-dev release metadata before production approval.
+    Value: !GetAtt ProductionSourceReadRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ProductionSourceReadRoleArn"
   ProductionPromotionRoleArn:
     Description: GitHub OIDC role for osa-prod promotion from the protected production environment.
     Value: !GetAtt ProductionPromotionRole.Arn

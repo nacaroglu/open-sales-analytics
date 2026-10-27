@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Static security assertions for the offline-validated OSA foundation template."""
-from pathlib import Path
 import json
 import re
 import sys
+from pathlib import Path
 
 TEMPLATE = Path("deploy/cloudformation/osa-foundation.yaml")
 text = TEMPLATE.read_text(encoding="utf-8")
@@ -357,6 +357,8 @@ required_roles = {
     "BuildRole",
     "FoundationExecutionRole",
     "DevDeployRole",
+    "DevVerificationRole",
+    "ProductionSourceReadRole",
     "ProductionPromotionRole",
     "DevApplicationExecutionRole",
     "ProdApplicationExecutionRole",
@@ -417,7 +419,7 @@ def exact_trust(role_name: str, principal: str, subject: str | None = None) -> N
         if subject is None
         else (
             "Principal:\n              Federated: !Ref GitHubOidcProvider" in body
-            and f"token.actions.githubusercontent.com:aud: sts.amazonaws.com" in body
+            and "token.actions.githubusercontent.com:aud: sts.amazonaws.com" in body
             and f"token.actions.githubusercontent.com:sub: !Sub \"{subject}\"" in body
             and "StringLike:" not in body
         ),
@@ -430,7 +432,20 @@ branch_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref
 production_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"
 exact_trust("BuildRole", "github", branch_subject)
 exact_trust("DevDeployRole", "github", branch_subject)
+exact_trust("DevVerificationRole", "github", branch_subject)
 exact_trust("ProductionPromotionRole", "github", production_subject)
+source_read_trust_match = re.search(
+    r"(?ms)^      AssumeRolePolicyDocument:\n(?P<body>.*?)(?=^      Policies:)",
+    role_body("ProductionSourceReadRole"),
+)
+source_read_trust = source_read_trust_match.group("body") if source_read_trust_match else ""
+require(
+    source_read_trust.count("Sid: ") == 2
+    and f'token.actions.githubusercontent.com:sub: !Sub "repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref:refs/heads/{dollar}{{GitHubMainBranch}}"' in source_read_trust
+    and f'token.actions.githubusercontent.com:sub: !Sub "repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"' in source_read_trust
+    and "StringLike:" not in source_read_trust,
+    "ProductionSourceReadRole must trust only main or the protected production environment",
+)
 for role_name in (
     "FoundationExecutionRole",
     "DevApplicationExecutionRole",
@@ -627,6 +642,8 @@ require(
 
 for output_name, role_name in (
     ("DevDeployRoleArn", "DevDeployRole"),
+    ("DevVerificationRoleArn", "DevVerificationRole"),
+    ("ProductionSourceReadRoleArn", "ProductionSourceReadRole"),
     ("ProductionPromotionRoleArn", "ProductionPromotionRole"),
     ("DevApplicationExecutionRoleArn", "DevApplicationExecutionRole"),
     ("ProdApplicationExecutionRoleArn", "ProdApplicationExecutionRole"),
@@ -649,6 +666,8 @@ for output_name, role_name in (
 
 for role_name in (
     "DevDeployRole",
+    "DevVerificationRole",
+    "ProductionSourceReadRole",
     "ProductionPromotionRole",
     "DevApplicationExecutionRole",
     "ProdApplicationExecutionRole",
@@ -858,6 +877,7 @@ def role_policy_arns(stack_name: str) -> list[str]:
 for role_name, sid in (
     ("BuildRole", "GitHubMainBranchOnly"),
     ("DevDeployRole", "GitHubMainBranchOnly"),
+    ("DevVerificationRole", "GitHubMainBranchOnly"),
 ):
     exact_assume_role_statement(
         role_name,
@@ -879,6 +899,11 @@ exact_assume_role_statement(
         f"token.actions.githubusercontent.com:sub: !Sub \"{production_subject}\"",
     ),
 )
+require(
+    source_read_trust.count("Action: sts:AssumeRoleWithWebIdentity") == 2
+    and source_read_trust.count("token.actions.githubusercontent.com:aud: sts.amazonaws.com") == 2,
+    "ProductionSourceReadRole must have exactly two OIDC trust statements with the expected audience",
+)
 for role_name, sid, service in (
     ("FoundationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
     ("DevApplicationExecutionRole", "CloudFormationServiceOnly", "cloudformation.amazonaws.com"),
@@ -893,6 +918,47 @@ for role_name, sid, service in (
         {"sts:AssumeRole"},
         [],
     )
+
+assert_exact_policy(
+    "ProductionSourceReadRole",
+    {
+        "ReadOnlyOsaDevStack": (
+            {"cloudformation:DescribeStacks"},
+            [cfn_stack_arn("osa-dev")],
+            [],
+        ),
+    },
+)
+
+assert_exact_policy(
+    "DevVerificationRole",
+    {
+        "ReadOnlyOsaDevStack": (
+            {"cloudformation:DescribeStacks"},
+            [cfn_stack_arn("osa-dev")],
+            [],
+        ),
+        "ReadDevSmokeCredential": (
+            {"ssm:GetParameter"},
+            [ssm_parameter_arn("osa/dev/caddy/smoke-credential")],
+            [],
+        ),
+        "DecryptDevSmokeCredentialThroughSsm": (
+            {"kms:Decrypt"},
+            [
+                f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:'
+                f'{dollar}{{AWS::AccountId}}:key/*"'
+            ],
+            [
+                "StringEquals:",
+                f'kms:ViaService: !Sub "ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}"',
+                f'kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/dev/caddy/smoke-credential"',
+                "ForAnyValue:StringEquals:",
+                "kms:ResourceAliases: alias/aws/ssm",
+            ],
+        ),
+    },
+)
 
 # Build and foundation roles have complete action/resource contracts, including #236.
 assert_exact_policy(
