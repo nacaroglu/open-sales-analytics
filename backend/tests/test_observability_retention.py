@@ -1,16 +1,22 @@
+import importlib.util
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from shutil import copyfile
 
-from scripts.validate_observability_retention import (
-    RETENTION_WINDOW,
-    is_expired,
-    validate_aws_storage_bootstrap,
-    validate_backend_configs,
-    validate_ebs_template,
-)
-
 ROOT = Path(__file__).resolve().parents[2]
+VALIDATOR_PATH = ROOT / "scripts" / "validate_observability_retention.py"
+VALIDATOR_SPEC = importlib.util.spec_from_file_location(
+    "osa_validate_observability_retention", VALIDATOR_PATH
+)
+assert VALIDATOR_SPEC is not None and VALIDATOR_SPEC.loader is not None
+VALIDATOR = importlib.util.module_from_spec(VALIDATOR_SPEC)
+VALIDATOR_SPEC.loader.exec_module(VALIDATOR)
+
+RETENTION_WINDOW = VALIDATOR.RETENTION_WINDOW
+is_expired = VALIDATOR.is_expired
+validate_aws_storage_bootstrap = VALIDATOR.validate_aws_storage_bootstrap
+validate_backend_configs = VALIDATOR.validate_backend_configs
+validate_ebs_template = VALIDATOR.validate_ebs_template
 
 
 def test_configured_backends_have_seven_day_retention_and_bounded_limits():
