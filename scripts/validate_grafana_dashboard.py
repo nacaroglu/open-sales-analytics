@@ -81,11 +81,19 @@ for expected in (
 ):
     require(expected in datasources, f"data-source provisioning is missing {expected!r}")
 require(
-    not re.search(r"(?im)^\s*(?:basicAuth|basicAuthUser|user|password|secureJsonData|token):", datasources),
+    not re.search(
+        r"(?im)^\s*(?:basicAuth|basicAuthUser|user|password|secureJsonData|token):", datasources
+    ),
     "data-source provisioning must not contain credentials",
 )
 provider = read_text(PROVIDER)
-for expected in ("apiVersion: 1", "name: osa-operations", "folder: OSA", "type: file", "path: /var/lib/grafana/dashboards"):
+for expected in (
+    "apiVersion: 1",
+    "name: osa-operations",
+    "folder: OSA",
+    "type: file",
+    "path: /var/lib/grafana/dashboards",
+):
     require(expected in provider, f"dashboard provider is missing {expected!r}")
 
 try:
@@ -96,9 +104,13 @@ require(dashboard.get("uid") == "osa-operations", "dashboard UID must stay stabl
 require(dashboard.get("title") == "OSA Operations", "dashboard title must be OSA Operations")
 panels = dashboard.get("panels")
 require(isinstance(panels, list), "dashboard panels must be a list")
-rows = [panel.get("title") for panel in panels if isinstance(panel, dict) and panel.get("type") == "row"]
+rows = [
+    panel.get("title") for panel in panels if isinstance(panel, dict) and panel.get("type") == "row"
+]
 require(tuple(rows) == ROWS, "dashboard must contain the five required rows in spec order")
-visual_panels = [panel for panel in panels if isinstance(panel, dict) and panel.get("type") != "row"]
+visual_panels = [
+    panel for panel in panels if isinstance(panel, dict) and panel.get("type") != "row"
+]
 titles = {panel.get("title") for panel in visual_panels}
 missing_panels = REQUIRED_PANELS - titles
 require(not missing_panels, f"dashboard is missing required panels: {sorted(missing_panels)}")
@@ -139,9 +151,14 @@ row_panels = {
 row_headers = [panel for panel in panels if isinstance(panel, dict) and panel.get("type") == "row"]
 for index, row in enumerate(row_headers):
     start = row.get("gridPos", {}).get("y", -1)
-    end = row_headers[index + 1].get("gridPos", {}).get("y", float("inf")) if index + 1 < len(row_headers) else float("inf")
+    end = (
+        row_headers[index + 1].get("gridPos", {}).get("y", float("inf"))
+        if index + 1 < len(row_headers)
+        else float("inf")
+    )
     titles_in_row = {
-        panel.get("title") for panel in visual_panels
+        panel.get("title")
+        for panel in visual_panels
         if start < panel.get("gridPos", {}).get("y", -1) < end
     }
     require(
@@ -153,11 +170,20 @@ variables = {item.get("name"): item for item in dashboard.get("templating", {}).
 environment = variables.get("environment", {})
 require(environment.get("type") == "custom", "environment must be a fixed custom variable")
 env_values = {option.get("value") for option in environment.get("options", [])}
-require(env_values == {"development", "production"}, "environment must be limited to development and production")
+require(
+    env_values == {"development", "production"},
+    "environment must be limited to development and production",
+)
 version = variables.get("deployed_version", {})
 require(version.get("type") == "query", "deployed_version must be populated from telemetry")
-require("label_values(" in str(version.get("query")), "deployed_version must query observed telemetry labels")
-require("service_version" in str(version.get("query")), "deployed_version must query the service version label")
+require(
+    "label_values(" in str(version.get("query")),
+    "deployed_version must query observed telemetry labels",
+)
+require(
+    "service_version" in str(version.get("query")),
+    "deployed_version must query the service version label",
+)
 
 for panel in visual_panels:
     title = str(panel.get("title", ""))
@@ -168,22 +194,41 @@ for panel in visual_panels:
         f"panel {title!r} must explain that missing data is not zero",
     )
     require(bool(field_defaults.get("noValue")), f"panel {title!r} must label null values")
-    if title == "Observability disk usage" or title == "Collector export failures and dropped telemetry":
+    if (
+        title == "Observability disk usage"
+        or title == "Collector export failures and dropped telemetry"
+    ):
         continue
     targets = panel.get("targets", [])
     require(bool(targets), f"application panel {title!r} must have a query")
     for target in targets:
         expression = str(target.get("expr", ""))
-        require(all(filter_name in expression for filter_name in FILTERS), f"application panel {title!r} must filter environment and deployed version")
+        require(
+            all(filter_name in expression for filter_name in FILTERS),
+            f"application panel {title!r} must filter environment and deployed version",
+        )
     links = panel.get("links", [])
     link_text = " ".join(str(link.get("url", "")) for link in links)
-    require("osa-loki" in link_text and "osa-tempo" in link_text, f"application panel {title!r} needs Loki and Tempo links")
-    require("${environment}" in link_text and "${deployed_version" in link_text, f"panel links for {title!r} must preserve selected filters")
+    require(
+        "osa-loki" in link_text and "osa-tempo" in link_text,
+        f"application panel {title!r} needs Loki and Tempo links",
+    )
+    require(
+        "${environment}" in link_text and "${deployed_version" in link_text,
+        f"panel links for {title!r} must preserve selected filters",
+    )
 
 annotations = dashboard.get("annotations", {}).get("list", [])
-deployment_annotations = [item for item in annotations if item.get("name") == "Application start / deployment activity"]
-require(len(deployment_annotations) == 1, "dashboard must provision application deployment annotations")
+deployment_annotations = [
+    item for item in annotations if item.get("name") == "Application start / deployment activity"
+]
+require(
+    len(deployment_annotations) == 1, "dashboard must provision application deployment annotations"
+)
 annotation_expr = str(deployment_annotations[0].get("expr", ""))
-require(all(filter_name in annotation_expr for filter_name in FILTERS), "deployment annotations must apply both dashboard filters")
+require(
+    all(filter_name in annotation_expr for filter_name in FILTERS),
+    "deployment annotations must apply both dashboard filters",
+)
 
 print("Grafana data sources, dashboard structure, filters, links, and no-data behavior passed.")
