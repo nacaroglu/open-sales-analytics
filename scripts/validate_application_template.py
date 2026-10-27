@@ -108,23 +108,26 @@ require("Project: open-sales-analytics" in release_resource_body and "Environmen
 profile = resource_blocks["OsaInstanceProfile"]
 profile_roles = re.search(r"(?ms)^      Roles:\n(?P<body>.*?)(?=^      Tags:|\Z)", profile)
 require(profile_roles is not None
-        and re.findall(r"(?m)^        - ", profile_roles.group("body")) == ["        - "]
+        and "- !If" in profile_roles.group("body")
+        and "IsDevelopment" in profile_roles.group("body")
+        and "Fn::ImportValue: osa-foundation-DevCaddyAuthEc2InstanceRoleName" in profile_roles.group("body")
         and '"${FoundationStackName}-ec2-instance"' in profile_roles.group("body")
         and profile_roles.group("body").count("Fn::ImportValue: osa-foundation-StackName") == 1
         and "InstanceProfileName: !Sub \"${AWS::StackName}-instance-profile\"" in profile
         and "Path: !Sub \"/${AWS::StackName}/\"" in profile
         and "AWS::IAM::Role" not in resource_body,
-        "the app-owned profile must contain only the imported foundation role name and use its own stack path/name")
+        "the app-owned profile must select the dev-only auth role or production baseline role and use its own stack path/name")
 require("Fn::ImportValue: osa-foundation-VpcId" in resource_blocks["AppSecurityGroup"]
         and "Fn::ImportValue: osa-foundation-PublicSubnetAz1Id" in resource_blocks["AppInstance"],
         "application networking must import the foundation VPC and first public subnet")
 require("Fn::ImportValue: osa-foundation-RepositoryUri" in resource_blocks["AppInstance"]
         and "Fn::ImportValue: osa-foundation-StackName" in resource_blocks["OsaInstanceProfile"],
         "runtime must import the repository URI and foundation role-name contract")
-imports = re.findall(r"(?m)^\s+Fn::ImportValue: (osa-foundation-[A-Za-z0-9]+)$", text)
+imports = re.findall(r"Fn::ImportValue: (osa-foundation-[A-Za-z0-9]+)", text)
 require(sorted(imports) == sorted([
     "osa-foundation-RepositoryUri", "osa-foundation-RepositoryUri", "osa-foundation-RepositoryUri",
-    "osa-foundation-StackName", "osa-foundation-VpcId", "osa-foundation-PublicSubnetAz1Id",
+    "osa-foundation-StackName", "osa-foundation-DevCaddyAuthEc2InstanceRoleName",
+    "osa-foundation-VpcId", "osa-foundation-PublicSubnetAz1Id",
 ]), "template must use only the documented foundation repository, stack name, VPC, and public subnet exports")
 
 security_group = resource_blocks["AppSecurityGroup"]
@@ -188,10 +191,32 @@ require("caddy:2.10.2-alpine" in instance and "reverse_proxy app:8000" in instan
 require(
     "{$CADDY_AUTH_BLOCK}" in instance
     and re.findall(r"(?m)^\s*CADDY_AUTH_BLOCK=(.*)$", instance) == [""]
-    and instance.count("basic_auth") == 1
+    and instance.count("basic_auth") == 2
     and '*"basic_auth"*)' in instance
     and not re.search(r"(?m)^\s*basic_auth\s*\{", instance),
     "the EC2 runtime must use an empty non-secret auth placeholder and reject a dev deployment without runtime Basic Auth",
+)
+start_marker = "cat > /opt/osa/start_osa_compose.sh <<'STARTCOMPOSE'"
+end_marker = "              STARTCOMPOSE"
+require(start_marker in instance and end_marker in instance, "user data must install the tested runtime wrapper")
+embedded_wrapper = instance.split(start_marker, 1)[1].split(end_marker, 1)[0]
+for contract in (
+    "aws ssm get-parameter", "--name /osa/dev/caddy/auth", "--query Parameter.Type",
+    "--with-decryption",
+    "development:false)", "production:true)", "2>/dev/null",
+    "exec docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml up --remove-orphans",
+):
+    require(contract in embedded_wrapper, f"embedded runtime wrapper must satisfy contract: {contract}")
+require(
+    'parameter_type="$(aws ssm get-parameter' in embedded_wrapper
+    and '!= "SecureString"' in embedded_wrapper,
+    "embedded runtime wrapper must reject an ordinary String parameter",
+)
+require(
+    "CADDY_AUTH_BLOCK=\n" in instance
+    and "EnvironmentFile=/opt/osa/.env" in instance
+    and "ExecStart=/opt/osa/start_osa_compose.sh" in instance,
+    "production must not retrieve auth and systemd must pass only the empty env-file placeholder to the wrapper",
 )
 require("AWS::EC2::EIP" in resource_blocks["AppElasticIp"]
         and "Domain: vpc" in resource_blocks["AppElasticIp"]

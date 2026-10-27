@@ -33,4 +33,11 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
+if [ "$#" -ge 2 ] && [ "$1" = "caddy" ] && [ "$2" = "run" ]; then
+  if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    echo "Caddy configuration is invalid; refusing to start." >&2
+    exit 1
+  fi
+fi
+
 exec "$@"
