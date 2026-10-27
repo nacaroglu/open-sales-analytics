@@ -1,0 +1,15 @@
+{
+  "StackName": "osa-dev",
+  "TemplateFile": "../osa-application.yaml",
+  "Parameters": {
+    "Environment": "development"
+  },
+  "RuntimeInputs": [
+    "ImageDigest",
+    "ReleaseVersion"
+  ],
+  "FoundationRoleOutputs": {
+    "CloudFormationExecutionRole": "DevApplicationExecutionRoleArn",
+    "GitHubDeployRole": "DevDeployRoleArn"
+  }
+}

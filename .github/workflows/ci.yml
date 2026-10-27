@@ -101,10 +101,11 @@ jobs:
             --parameter Environment=production \
             --parameter ImageDigest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
             --parameter ReleaseVersion=20261026-prod
-      - name: Check foundation and application security invariants
+      - name: Check foundation, application, and environment manifest invariants
         run: |
           python3 scripts/validate_foundation_template.py
           python3 scripts/validate_application_template.py
+          python3 scripts/validate_environment_manifests.py
 
 
   pinned-actions:
