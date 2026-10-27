@@ -41,6 +41,20 @@ def wait_for(label: str, check) -> None:
     raise SystemExit(f"Synthetic {label} route was not confirmed ({last_error}).")
 
 
+def prometheus_target_up(result: dict, target: str) -> bool:
+    """Return whether Prometheus reports the named scrape target as up."""
+    if result.get("status") != "success":
+        return False
+    rows = result.get("data", {}).get("result", [])
+    return any(
+        row.get("metric", {}).get("instance") == target
+        and isinstance(row.get("value"), list)
+        and len(row["value"]) > 1
+        and row["value"][1] == "1"
+        for row in rows
+    )
+
+
 def main() -> None:
     resource = {
         "attributes": [
@@ -49,18 +63,92 @@ def main() -> None:
             {"key": "service.version", "value": {"stringValue": "synthetic"}},
         ]
     }
-    post = lambda signal, body: request(f"{BASE}:4318/v1/{signal}", body)
+
+    def post(signal: str, body: dict) -> dict:
+        return request(f"{BASE}:4318/v1/{signal}", body)
+
     post(
         "metrics",
-        {"resourceMetrics": [{"resource": resource, "scopeMetrics": [{"scope": {"name": "route-check"}, "metrics": [{"name": "osa_route_validation", "sum": {"aggregationTemporality": 2, "isMonotonic": True, "dataPoints": [{"asInt": "1", "timeUnixNano": str(time.time_ns()), "attributes": [{"key": "marker", "value": {"stringValue": MARKER}}]}]}}]}]}]},
+        {
+            "resourceMetrics": [
+                {
+                    "resource": resource,
+                    "scopeMetrics": [
+                        {
+                            "scope": {"name": "route-check"},
+                            "metrics": [
+                                {
+                                    "name": "osa_route_validation",
+                                    "sum": {
+                                        "aggregationTemporality": 2,
+                                        "isMonotonic": True,
+                                        "dataPoints": [
+                                            {
+                                                "asInt": "1",
+                                                "timeUnixNano": str(time.time_ns()),
+                                                "attributes": [
+                                                    {
+                                                        "key": "marker",
+                                                        "value": {"stringValue": MARKER},
+                                                    }
+                                                ],
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
     )
     post(
         "logs",
-        {"resourceLogs": [{"resource": resource, "scopeLogs": [{"scope": {"name": "route-check"}, "logRecords": [{"timeUnixNano": str(time.time_ns()), "severityText": "INFO", "body": {"stringValue": MARKER}}]}]}]},
+        {
+            "resourceLogs": [
+                {
+                    "resource": resource,
+                    "scopeLogs": [
+                        {
+                            "scope": {"name": "route-check"},
+                            "logRecords": [
+                                {
+                                    "timeUnixNano": str(time.time_ns()),
+                                    "severityText": "INFO",
+                                    "body": {"stringValue": MARKER},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
     )
     post(
         "traces",
-        {"resourceSpans": [{"resource": resource, "scopeSpans": [{"scope": {"name": "route-check"}, "spans": [{"traceId": TRACE_ID, "spanId": "0123456789abcdef", "name": MARKER, "kind": 1, "startTimeUnixNano": str(time.time_ns()), "endTimeUnixNano": str(time.time_ns() + 1_000_000)}]}]}]},
+        {
+            "resourceSpans": [
+                {
+                    "resource": resource,
+                    "scopeSpans": [
+                        {
+                            "scope": {"name": "route-check"},
+                            "spans": [
+                                {
+                                    "traceId": TRACE_ID,
+                                    "spanId": "0123456789abcdef",
+                                    "name": MARKER,
+                                    "kind": 1,
+                                    "startTimeUnixNano": str(time.time_ns()),
+                                    "endTimeUnixNano": str(time.time_ns() + 1_000_000),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
     )
 
     def metric_visible() -> bool:
@@ -71,20 +159,33 @@ def main() -> None:
     def log_visible() -> bool:
         query = urllib.parse.urlencode({"query": f'{{service_name="{SERVICE}"}}', "limit": "10"})
         result = request(f"{BASE}:3100/loki/api/v1/query_range?{query}")
-        return any(MARKER in value for stream in result.get("data", {}).get("result", []) for _, value in stream.get("values", []))
+        return any(
+            MARKER in value
+            for stream in result.get("data", {}).get("result", [])
+            for _, value in stream.get("values", [])
+        )
 
     def trace_visible() -> bool:
         result = request(f"{BASE}:3200/api/traces/{TRACE_ID}")
         return result.get("traceID", "").lower() == TRACE_ID
 
+    def collector_target_up() -> bool:
+        query = urllib.parse.urlencode({"query": 'up{job="otelcol-internal"}'})
+        result = request(f"{BASE}:9090/api/v1/query?{query}")
+        return prometheus_target_up(result, "collector:8888")
+
     wait_for("metrics → Prometheus", metric_visible)
     wait_for("logs → Loki", log_visible)
     wait_for("traces → Tempo", trace_visible)
+    wait_for("otelcol-internal scrape target → Prometheus", collector_target_up)
 
 
 if __name__ == "__main__":
     try:
         main()
     except (OSError, urllib.error.URLError) as exc:
-        print(f"Synthetic route check could not reach a service ({type(exc).__name__}).", file=sys.stderr)
+        print(
+            f"Synthetic route check could not reach a service ({type(exc).__name__}).",
+            file=sys.stderr,
+        )
         raise SystemExit(1) from None
