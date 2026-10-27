@@ -124,6 +124,7 @@ jobs:
           python3 scripts/validate_foundation_template.py
           python3 scripts/validate_application_template.py
           python3 scripts/validate_environment_manifests.py
+          python3 scripts/validate_promotion_workflow.py
 
 
   pinned-actions:

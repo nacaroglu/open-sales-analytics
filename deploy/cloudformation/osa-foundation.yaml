@@ -577,6 +577,48 @@ Resources:
         - Key: OSAStack
           Value: !Ref AWS::StackName
 
+  ProductionSourceReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-osa-production-source-read"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: Read-only GitHub Actions role for selecting the current osa-dev release before production approval.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubMainBranchOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}"
+          - Sid: ProductionEnvironmentOnly
+            Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:environment:production"
+      Policies:
+        - PolicyName: ReadOsaDevReleaseMetadata
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadOnlyOsaDevStack
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
   ProductionPromotionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -1363,6 +1405,11 @@ Outputs:
     Value: !GetAtt DevVerificationRole.Arn
     Export:
       Name: !Sub "${AWS::StackName}-DevVerificationRoleArn"
+  ProductionSourceReadRoleArn:
+    Description: Read-only role for obtaining osa-dev release metadata before production approval.
+    Value: !GetAtt ProductionSourceReadRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ProductionSourceReadRoleArn"
   ProductionPromotionRoleArn:
     Description: GitHub OIDC role for osa-prod promotion from the protected production environment.
     Value: !GetAtt ProductionPromotionRole.Arn

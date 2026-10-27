@@ -1,0 +1,112 @@
+name: Promote development release to production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-dev-release:
+    name: Validate the current development release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      digest: ${{ steps.release.outputs.image_digest }}
+      version: ${{ steps.release.outputs.release_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate static promotion configuration
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}
+          PROD_SOURCE_READ_ROLE_ARN: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          PROD_PROMOTION_ROLE_ARN: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
+          PROD_EXECUTION_ROLE_ARN: ${{ vars.OSA_PROD_EXECUTION_ROLE_ARN }}
+          OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
+          OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
+          OSA_PROD_HOSTNAME: ${{ vars.OSA_PROD_HOSTNAME }}
+        run: python3 scripts/promote_production.py --validate-only
+      - name: Configure read-only development metadata credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          aws-region: ${{ vars.OSA_AWS_REGION }}
+          role-session-name: osa-prod-source-${{ github.run_id }}
+      - name: Read and validate osa-dev digest and version
+        id: release
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}
+          PROD_PROMOTION_ROLE_ARN: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
+          PROD_EXECUTION_ROLE_ARN: ${{ vars.OSA_PROD_EXECUTION_ROLE_ARN }}
+          PROD_SOURCE_READ_ROLE_ARN: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
+          OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
+          OSA_PROD_HOSTNAME: ${{ vars.OSA_PROD_HOSTNAME }}
+        run: python3 scripts/promote_production.py --read-dev
+
+  promote:
+    name: Promote the validated digest
+    if: github.ref == 'refs/heads/main'
+    needs: [read-dev-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate production configuration
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}
+          PROD_SOURCE_READ_ROLE_ARN: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          PROD_PROMOTION_ROLE_ARN: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
+          PROD_EXECUTION_ROLE_ARN: ${{ vars.OSA_PROD_EXECUTION_ROLE_ARN }}
+          OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
+          OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
+          OSA_PROD_HOSTNAME: ${{ vars.OSA_PROD_HOSTNAME }}
+        run: python3 scripts/promote_production.py --validate-only
+      - name: Configure read-only source credentials after approval
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          aws-region: ${{ vars.OSA_AWS_REGION }}
+          role-session-name: osa-prod-current-source-${{ github.run_id }}
+      - name: Refresh and validate current osa-dev release
+        id: fresh-dev
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}
+          PROD_SOURCE_READ_ROLE_ARN: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          PROD_PROMOTION_ROLE_ARN: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
+          PROD_EXECUTION_ROLE_ARN: ${{ vars.OSA_PROD_EXECUTION_ROLE_ARN }}
+          OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
+          OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
+          OSA_PROD_HOSTNAME: ${{ vars.OSA_PROD_HOSTNAME }}
+        run: python3 scripts/promote_production.py --read-dev
+      - name: Configure production credentials after environment approval
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
+          aws-region: ${{ vars.OSA_AWS_REGION }}
+          role-session-name: osa-prod-promote-${{ github.run_id }}
+      - name: Promote the dev digest without rebuilding
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}
+          PROD_SOURCE_READ_ROLE_ARN: ${{ vars.OSA_PRODUCTION_SOURCE_READ_ROLE_ARN }}
+          PROD_PROMOTION_ROLE_ARN: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
+          PROD_EXECUTION_ROLE_ARN: ${{ vars.OSA_PROD_EXECUTION_ROLE_ARN }}
+          OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
+          OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
+          OSA_PROD_HOSTNAME: ${{ vars.OSA_PROD_HOSTNAME }}
+          DEV_IMAGE_DIGEST: ${{ steps.fresh-dev.outputs.image_digest }}
+          DEV_RELEASE_VERSION: ${{ steps.fresh-dev.outputs.release_version }}
+        run: python3 scripts/promote_production.py --promote
