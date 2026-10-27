@@ -50,6 +50,8 @@ services:
       - "127.0.0.1:${OSA_GRAFANA_PORT:-3000}:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
     networks: [observability]
     restart: unless-stopped
 
