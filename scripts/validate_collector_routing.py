@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import sys
 import time
 import urllib.error
@@ -41,6 +42,15 @@ def wait_for(label: str, check) -> None:
     raise SystemExit(f"Synthetic {label} route was not confirmed ({last_error}).")
 
 
+def tcp_endpoint_ready(host: str, port: int, timeout: float = 1.0) -> bool:
+    """Return whether a TCP receiver accepts connections within the timeout."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def prometheus_target_up(result: dict, target: str) -> bool:
     """Return whether Prometheus reports the named scrape target as up."""
     if result.get("status") != "success":
@@ -56,6 +66,10 @@ def prometheus_target_up(result: dict, target: str) -> bool:
 
 
 def main() -> None:
+    wait_for(
+        "Collector OTLP receiver readiness",
+        lambda: tcp_endpoint_ready("127.0.0.1", 4318),
+    )
     resource = {
         "attributes": [
             {"key": "service.name", "value": {"stringValue": SERVICE}},
