@@ -362,6 +362,7 @@ required_roles = {
     "ProdApplicationExecutionRole",
     "ObservabilityExecutionRole",
     "Ec2InstanceRole",
+    "DevCaddyAuthEc2InstanceRole",
 }
 for role_name in required_roles:
     require(
@@ -438,6 +439,7 @@ for role_name in (
 ):
     exact_trust(role_name, "cloudformation.amazonaws.com")
 exact_trust("Ec2InstanceRole", "ec2.amazonaws.com")
+exact_trust("DevCaddyAuthEc2InstanceRole", "ec2.amazonaws.com")
 
 build_statements = policy_statements("BuildRole")
 require(
@@ -543,12 +545,13 @@ for role_name, environment, sid_prefix in environment_roles:
             and "parameter/osa/prod/*" not in parameter_statement,
             f"{role_name} SSM access must be limited to its exact release metadata parameter ARN",
         )
+    instance_role_name = "DevCaddyAuthEc2InstanceRole" if environment == "osa-dev" else "Ec2InstanceRole"
     require(
         "iam:PassRole" in role_body(role_name)
-        and "Resource: !GetAtt Ec2InstanceRole.Arn" in role_body(role_name)
+        and f"Resource: !GetAtt {instance_role_name}.Arn" in role_body(role_name)
         and "iam:PassedToService: ec2.amazonaws.com" in role_body(role_name)
         and role_body(role_name).count("iam:PassRole") == 1,
-        f"{role_name} may pass only Ec2InstanceRole to EC2",
+        f"{role_name} may pass only {instance_role_name} to EC2",
     )
     require(
         not any(other in role_body(role_name) for other in {"osa-prod", "osa-dev", "osa-observability"} - {environment}),
@@ -572,12 +575,15 @@ ec2_role_body = role_body("Ec2InstanceRole")
 ec2_statements = policy_statements("Ec2InstanceRole")
 require(
     "Service: ec2.amazonaws.com" in ec2_role_body
-    and f"arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore" in ec2_role_body
-    and set(ec2_statements) == {"EcrAuthorizationToken", "PullImagesFromFoundationRepository"}
+    and "ManagedPolicyArns:" not in ec2_role_body
+    and set(ec2_statements) == {
+        "EcrAuthorizationToken", "PullImagesFromFoundationRepository",
+        "SessionManagerInstanceRegistration", "SessionManagerChannels",
+    }
     and "Resource: !GetAtt Repository.Arn" in ec2_statements.get("PullImagesFromFoundationRepository", "")
     and "cloudformation:" not in ec2_role_body
     and "iam:PassRole" not in ec2_role_body,
-    "Ec2InstanceRole must trust only EC2, attach the SSM core policy, and pull only from Repository",
+    "Ec2InstanceRole must trust only EC2, grant minimal Session Manager actions, and pull only from Repository",
 )
 
 expected_wildcards = {
@@ -594,6 +600,11 @@ expected_wildcards = {
     ("ObservabilityExecutionRole", "RunTaggedOsaObservabilityInstances"),
     ("ObservabilityExecutionRole", "CreateTagsForOsaObservabilityInstances"),
     ("Ec2InstanceRole", "EcrAuthorizationToken"),
+    ("Ec2InstanceRole", "SessionManagerInstanceRegistration"),
+    ("Ec2InstanceRole", "SessionManagerChannels"),
+    ("DevCaddyAuthEc2InstanceRole", "EcrAuthorizationToken"),
+    ("DevCaddyAuthEc2InstanceRole", "SessionManagerInstanceRegistration"),
+    ("DevCaddyAuthEc2InstanceRole", "SessionManagerChannels"),
 }
 actual_wildcards: set[tuple[str, str]] = set()
 for role_name, (resource_type, _) in resources.items():
@@ -614,6 +625,7 @@ for output_name, role_name in (
     ("ProdApplicationExecutionRoleArn", "ProdApplicationExecutionRole"),
     ("ObservabilityExecutionRoleArn", "ObservabilityExecutionRole"),
     ("Ec2InstanceRoleArn", "Ec2InstanceRole"),
+    ("DevCaddyAuthEc2InstanceRoleName", "DevCaddyAuthEc2InstanceRole"),
 ):
     output = re.search(
         rf"(?ms)^  {output_name}:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
@@ -621,7 +633,9 @@ for output_name, role_name in (
     )
     require(
         output is not None
-        and f"Value: !GetAtt {role_name}.Arn" in output.group("body")
+        and (f"Value: !GetAtt {role_name}.Arn" in output.group("body")
+             if output_name != "DevCaddyAuthEc2InstanceRoleName"
+             else "Value: !Ref DevCaddyAuthEc2InstanceRole" in output.group("body"))
         and f'{dollar}{{AWS::StackName}}-{output_name}' in output.group("body"),
         f"{output_name} must expose a stable stack-qualified export for {role_name}",
     )
@@ -633,6 +647,7 @@ for role_name in (
     "ProdApplicationExecutionRole",
     "ObservabilityExecutionRole",
     "Ec2InstanceRole",
+    "DevCaddyAuthEc2InstanceRole",
 ):
     require(role_name.lower() in doc, f"README must document the purpose of {role_name}")
 for phrase in (
@@ -641,7 +656,9 @@ for phrase in (
     "targets only osa-prod",
     "cloudformation.amazonaws.com",
     "ec2.amazonaws.com",
-    "amazonssmmanagedinstancecore",
+    "custom minimal session manager policy",
+    "ssm:updateinstanceinformation",
+    "ssmmessages:createcontrolchannel",
     "resource: * exceptions are limited",
     "exact environment osastack request tag",
     "describevpcstate and listfoundationproviders in foundationexecutionrole",
@@ -662,6 +679,7 @@ for url in (
     "https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/control-access-with-iam.html",
     "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html",
     "https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-instance-permissions.html",
+    "https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-create-iam-instance-profile.html",
     "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ExamplePolicies_EC2.html",
     "https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html",
 ):
@@ -1164,7 +1182,7 @@ def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[st
         ),
         "PassOnlyOsaEc2InstanceRole": (
             {"iam:PassRole"},
-            ["!GetAtt Ec2InstanceRole.Arn"],
+            ["!GetAtt DevCaddyAuthEc2InstanceRole.Arn" if environment == "osa-dev" else "!GetAtt Ec2InstanceRole.Arn"],
             equals("iam:PassedToService: ec2.amazonaws.com"),
         ),
     }
@@ -1237,29 +1255,12 @@ for role_name, environment, prefix, parameter_env in (
         )
     assert_exact_policy(role_name, expected)
 
-for role_name in required_roles - {"Ec2InstanceRole"}:
+for role_name in required_roles:
     require(
         re.search(r"(?m)^      ManagedPolicyArns:", role_body(role_name)) is None,
         f"{role_name} must not attach unreviewed managed policies",
     )
 
-# The EC2 role has exactly the approved AWS SSM managed policy and no others.
-managed = re.search(
-    r"(?ms)^      ManagedPolicyArns:\n(?P<body>.*?)(?=^      Policies:|^      Tags:|\Z)",
-    role_body("Ec2InstanceRole"),
-)
-managed_arns = (
-    re.findall(r"(?m)^        - (.+)$", managed.group("body"))
-    if managed is not None
-    else []
-)
-require(
-    managed_arns
-    == [
-        f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::aws:policy/AmazonSSMManagedInstanceCore"'
-    ],
-    "Ec2InstanceRole must attach exactly AmazonSSMManagedInstanceCore",
-)
 assert_exact_policy(
     "Ec2InstanceRole",
     {
@@ -1271,6 +1272,49 @@ assert_exact_policy(
                 "ecr:GetDownloadUrlForLayer",
             },
             ["!GetAtt Repository.Arn"],
+            [],
+        ),
+        "SessionManagerInstanceRegistration": ({"ssm:UpdateInstanceInformation"}, ['"*"'], []),
+        "SessionManagerChannels": (
+            {
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+            },
+            ['"*"'],
+            [],
+        ),
+    },
+)
+assert_exact_policy(
+    "DevCaddyAuthEc2InstanceRole",
+    {
+        "EcrAuthorizationToken": ({"ecr:GetAuthorizationToken"}, ['"*"'], []),
+        "PullImagesFromFoundationRepository": (
+            {"ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"},
+            ["!GetAtt Repository.Arn"], [],
+        ),
+        "ReadOnlyDevCaddyAuthParameter": (
+            {"ssm:GetParameter"}, [ssm_parameter_arn("osa/dev/caddy/auth")], [],
+        ),
+        "DecryptOnlyDevCaddyAuthParameterThroughSsm": (
+            {"kms:Decrypt"}, [f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'],
+            [
+                "StringEquals:", f"kms:ViaService: !Sub \"ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}\"",
+                f"kms:EncryptionContext:PARAMETER_ARN: !Sub \"arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/dev/caddy/auth\"",
+                "ForAnyValue:StringEquals:", "kms:ResourceAliases: alias/aws/ssm",
+            ],
+        ),
+        "SessionManagerInstanceRegistration": ({"ssm:UpdateInstanceInformation"}, ['"*"'], []),
+        "SessionManagerChannels": (
+            {
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+            },
+            ['"*"'],
             [],
         ),
     },

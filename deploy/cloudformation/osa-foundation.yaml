@@ -725,7 +725,7 @@ Resources:
               - Sid: PassOnlyOsaEc2InstanceRole
                 Effect: Allow
                 Action: iam:PassRole
-                Resource: !GetAtt Ec2InstanceRole.Arn
+                Resource: !GetAtt DevCaddyAuthEc2InstanceRole.Arn
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
@@ -1117,12 +1117,12 @@ Resources:
         - Key: OSAStack
           Value: !Ref AWS::StackName
 
-  Ec2InstanceRole:
+  DevCaddyAuthEc2InstanceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${AWS::StackName}-ec2-instance"
+      RoleName: !Sub "${AWS::StackName}-ec2-dev-instance"
       Path: !Sub "/${AWS::StackName}/"
-      Description: EC2 may pull only the foundation image and use Systems Manager core functions.
+      Description: Development EC2 may pull the OSA image, use Session Manager, and read its Caddy auth parameter.
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1131,8 +1131,68 @@ Resources:
             Principal:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Policies:
+        - PolicyName: PullAndReadDevCaddyAuth
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: EcrAuthorizationToken
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: PullImagesFromFoundationRepository
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt Repository.Arn
+              - Sid: ReadOnlyDevCaddyAuthParameter
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/caddy/auth"
+              - Sid: DecryptOnlyDevCaddyAuthParameterThroughSsm
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
+                    kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/caddy/auth"
+                  ForAnyValue:StringEquals:
+                    kms:ResourceAliases: alias/aws/ssm
+              - Sid: SessionManagerInstanceRegistration
+                Effect: Allow
+                Action: ssm:UpdateInstanceInformation
+                Resource: "*"
+              - Sid: SessionManagerChannels
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  Ec2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ec2-instance"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: Production EC2 may pull only the foundation image and use Session Manager.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Ec2ServiceOnly
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
       Policies:
         - PolicyName: PullOnlyOsaRepository
           PolicyDocument:
@@ -1149,6 +1209,18 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
                 Resource: !GetAtt Repository.Arn
+              - Sid: SessionManagerInstanceRegistration
+                Effect: Allow
+                Action: ssm:UpdateInstanceInformation
+                Resource: "*"
+              - Sid: SessionManagerChannels
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
       Tags:
         - Key: Project
           Value: open-sales-analytics
@@ -1262,3 +1334,8 @@ Outputs:
     Value: !GetAtt Ec2InstanceRole.Arn
     Export:
       Name: !Sub "${AWS::StackName}-Ec2InstanceRoleArn"
+  DevCaddyAuthEc2InstanceRoleName:
+    Description: Development-only EC2 role allowed to read the Caddy authentication SecureString.
+    Value: !Ref DevCaddyAuthEc2InstanceRole
+    Export:
+      Name: !Sub "${AWS::StackName}-DevCaddyAuthEc2InstanceRoleName"
