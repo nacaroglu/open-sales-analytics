@@ -25,6 +25,19 @@ _DATASET_SUFFIX = ".duckdb"
 _WAL_SUFFIX = ".duckdb.wal"
 _IMPORTING_SUFFIX = ".duckdb.importing"
 _IMPORTING_WAL_SUFFIX = ".duckdb.importing.wal"
+_CLEANUP_EXCEPTION_CLASSES = {
+    "OSError",
+    "PermissionError",
+    "FileNotFoundError",
+    "NotADirectoryError",
+    "IsADirectoryError",
+    "RuntimeError",
+}
+
+
+def _cleanup_exception_class(exc: BaseException) -> str:
+    name = type(exc).__name__
+    return name if name in _CLEANUP_EXCEPTION_CLASSES else "OtherError"
 
 
 @dataclass(frozen=True)
@@ -72,8 +85,16 @@ def _remove_file(path: Path) -> bool:
         path.unlink()
     except FileNotFoundError:
         return False
-    except Exception:  # noqa: BLE001 - one bad file must not stop the sweep
-        logger.warning("cleanup file removal failed")
+    except Exception as exc:  # noqa: BLE001 - one bad file must not stop the sweep
+        logger.warning(
+            "cleanup file removal failed",
+            extra={
+                "fields": {
+                    "event": "cleanup.file_removal_failed",
+                    "exception_class": _cleanup_exception_class(exc),
+                }
+            },
+        )
         return False
     return True
 
@@ -87,8 +108,16 @@ def _remove_tree(path: Path) -> bool:
         shutil.rmtree(path)
     except FileNotFoundError:
         return False
-    except Exception:  # noqa: BLE001
-        logger.warning("cleanup directory removal failed")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "cleanup directory removal failed",
+            extra={
+                "fields": {
+                    "event": "cleanup.directory_removal_failed",
+                    "exception_class": _cleanup_exception_class(exc),
+                }
+            },
+        )
         return False
     return True
 
@@ -163,7 +192,16 @@ def sweep(settings: Settings, now: datetime, cache: ResponseCache | None = None)
         cache = response_cache_for_settings(settings)
     datasets, temp_files = _sweep_datasets_dir(settings.dataset_dir, now, cache)
     temp_files += _sweep_uploads_dir(settings.dataset_dir / "uploads", now)
-    logger.info("cleanup sweep completed", extra={"fields": {"event": "cleanup.sweep"}})
+    logger.info(
+        "cleanup sweep completed",
+        extra={
+            "fields": {
+                "event": "cleanup.sweep",
+                "datasets_removed": datasets,
+                "temporary_files_removed": temp_files,
+            }
+        },
+    )
     return SweepResult(datasets, temp_files)
 
 
@@ -171,8 +209,16 @@ async def run_sweep_safely(settings: Settings, now: datetime | None = None) -> N
     """Run one sweep in a worker thread; log instead of raising."""
     try:
         await run_in_threadpool(sweep, settings, now or datetime.now(UTC))
-    except Exception:  # noqa: BLE001 - the server and the timer must go on
-        logger.error("cleanup sweep failed")
+    except Exception as exc:  # noqa: BLE001 - the server and the timer must go on
+        logger.error(
+            "cleanup sweep failed",
+            extra={
+                "fields": {
+                    "event": "cleanup.sweep_failed",
+                    "exception_class": _cleanup_exception_class(exc),
+                }
+            },
+        )
 
 
 async def run_cleanup_loop(

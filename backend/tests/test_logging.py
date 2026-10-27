@@ -170,7 +170,7 @@ def test_request_middleware_logs_route_template_without_raw_path_or_query(log):
                 "method": "GET",
                 "path": "/api/datasets/MARKER_DATASET_ID/analytics",
                 "query_string": b"token=MARKER_QUERY_TOKEN",
-                "route": type("Route", (), {"path": "/api/datasets/{dataset_id}/analytics"})(),
+                "route": type("Route", (), {"path": "/api/datasets/{id}/analytics"})(),
                 "state": {},
             },
             receive,
@@ -184,7 +184,7 @@ def test_request_middleware_logs_route_template_without_raw_path_or_query(log):
     assert "MARKER_DATASET_ID" not in text
     assert "MARKER_QUERY_TOKEN" not in text
     line = json.loads(text)
-    assert line["route"] == "/api/datasets/{dataset_id}/analytics"
+    assert line["route"] == "/api/datasets/{id}/analytics"
 
 
 def test_logged_exception_keeps_class_and_frames_but_not_message(log):
@@ -275,7 +275,7 @@ def test_request_uses_route_template_without_dataset_id_or_query(client, log):
         headers={"Authorization": f"Bearer {created['token']}"},
     )
     (line,) = log.requests()
-    assert line["route"] == "/api/datasets/{dataset_id}/analytics"
+    assert line["route"] == "/api/datasets/{id}/analytics"
     assert "start" not in json.dumps(line)
     assert created["dataset_id"] not in json.dumps(line)
 
