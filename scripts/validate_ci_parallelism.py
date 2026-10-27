@@ -68,6 +68,19 @@ def validate() -> None:
     triggers = top_level_section(source, "on")
     if not re.search(r"(?m)^  pull_request:\s*(?:#.*)?$", triggers):
         fail("workflow must run for pull requests")
+    push_trigger = re.search(r"(?ms)^  push:\n(?P<body>.*?)(?=^  [A-Za-z_]+:|\Z)", triggers)
+    branches = (
+        re.search(r"(?m)^    branches:\s*\[(?P<branches>[^\]]*)\]", push_trigger.group("body"))
+        if push_trigger is not None
+        else None
+    )
+    configured_branches = (
+        {branch.strip().strip("'\"") for branch in branches.group("branches").split(",")}
+        if branches is not None
+        else set()
+    )
+    if "main" not in configured_branches:
+        fail("push workflow must include main in its branches")
 
     permissions = top_level_section(source, "permissions")
     permission_entries = re.findall(r"(?m)^  ([a-zA-Z0-9_-]+):\s*([^\s#]+)", permissions)
