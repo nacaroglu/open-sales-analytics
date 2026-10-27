@@ -43,6 +43,15 @@ _SAFE_EXCEPTION_EVENTS = {
     "sample dataset import failed",
     "sample dataset summary failed",
 }
+_CLEANUP_EXCEPTION_CLASSES = {
+    "OSError",
+    "PermissionError",
+    "FileNotFoundError",
+    "NotADirectoryError",
+    "IsADirectoryError",
+    "RuntimeError",
+    "OtherError",
+}
 _SAFE_MESSAGES = _SAFE_EXCEPTION_EVENTS | {
     "request",
     "cleanup file removal failed",
@@ -90,14 +99,17 @@ class JsonFormatter(logging.Formatter):
         if not _SAFE_VERSION.fullmatch(version):
             version = "unknown"
         span_context = trace.get_current_span().get_span_context()
+        message = (
+            record.msg
+            if isinstance(record.msg, str) and not record.args and record.msg in _SAFE_MESSAGES
+            else "application event"
+        )
         entry: dict = {
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
             "severity": record.levelname.lower(),
             "logger": record.name,
-            "message": record.msg
-            if isinstance(record.msg, str) and not record.args and record.msg in _SAFE_MESSAGES
-            else "application event",
+            "message": message,
             "event": "application.log",
             "service_name": "open-sales-analytics",
             "environment": settings.osa_environment,
@@ -136,6 +148,25 @@ class JsonFormatter(logging.Formatter):
         elif fields and record.name == "app.cleanup" and fields.get("event") == "cleanup.sweep":
             entry["event"] = "cleanup.sweep"
             entry["operation"] = "cleanup.sweep"
+            for key in ("datasets_removed", "temporary_files_removed"):
+                value = fields.get(key)
+                if isinstance(value, int) and 0 <= value <= 1_000_000:
+                    entry[key] = value
+        elif (
+            fields
+            and record.name == "app.cleanup"
+            and fields.get("event")
+            in {
+                "cleanup.file_removal_failed",
+                "cleanup.directory_removal_failed",
+                "cleanup.sweep_failed",
+            }
+        ):
+            entry["event"] = fields["event"]
+            entry["operation"] = "cleanup"
+            exception_class = fields.get("exception_class")
+            if exception_class in _CLEANUP_EXCEPTION_CLASSES:
+                entry["exception_class"] = exception_class
         exception = getattr(record, "osa_exception", None)
         if exception is None and record.exc_info:
             exception = record.exc_info[1]
@@ -243,7 +274,11 @@ class RequestLogMiddleware:
                 "fields": {
                     "event": "http.request",
                     "operation": "http.request",
-                    "outcome": "error" if status >= 500 else "success",
+                    "outcome": "failure"
+                    if status >= 500
+                    else "rejected"
+                    if status >= 400
+                    else "success",
                     "method": method,
                     "route": route,
                     "status": status,

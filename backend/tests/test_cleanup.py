@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import stat
@@ -259,9 +260,18 @@ def test_sweep_continues_after_an_undeletable_file(settings, monkeypatch, caplog
 
     assert first.exists() and not second.exists()
     assert result.datasets_removed == 1
-    assert any(
-        first.name in r.getMessage() and "PermissionError" in r.getMessage() for r in caplog.records
-    )
+    errors = [
+        r
+        for r in caplog.records
+        if getattr(r, "fields", {}).get("event") == "cleanup.file_removal_failed"
+    ]
+    assert len(errors) == 1
+    assert errors[0].getMessage() == "cleanup file removal failed"
+    assert errors[0].fields == {
+        "event": "cleanup.file_removal_failed",
+        "exception_class": "PermissionError",
+    }
+    assert first.name not in errors[0].getMessage()
 
 
 def test_sweep_logs_one_info_line_with_counts_only(settings, caplog):
@@ -275,9 +285,14 @@ def test_sweep_logs_one_info_line_with_counts_only(settings, caplog):
 
     records = [r for r in caplog.records if r.name == "app.cleanup"]
     assert len(records) == 1 and records[0].levelno == logging.INFO
-    message = records[0].getMessage()
-    assert "1 datasets" in message and "1 temporary" in message
-    assert expired.name not in message and old_csv.name not in message
+    assert records[0].getMessage() == "cleanup sweep completed"
+    assert records[0].fields == {
+        "event": "cleanup.sweep",
+        "datasets_removed": 1,
+        "temporary_files_removed": 1,
+    }
+    assert expired.name not in json.dumps(records[0].fields)
+    assert old_csv.name not in json.dumps(records[0].fields)
 
 
 def test_sweep_without_uploads_directory(settings):
@@ -376,7 +391,11 @@ def test_loop_survives_a_failing_sweep(settings, monkeypatch, caplog):
             run(run_cleanup_loop(settings, sleep=fake_sleep))
 
     assert len(calls) == 2
-    assert any("OSError" in r.getMessage() for r in caplog.records)
+    assert any(
+        r.getMessage() == "cleanup sweep failed"
+        and r.fields == {"event": "cleanup.sweep_failed", "exception_class": "OSError"}
+        for r in caplog.records
+    )
 
 
 def test_sweep_runs_in_a_worker_thread(settings, monkeypatch):
@@ -446,7 +465,11 @@ def test_startup_survives_a_failing_first_sweep_and_timer_is_cancelled(
         with TestClient(app) as client:
             assert client.get("/api/health").status_code == 200
 
-    assert any("OSError" in r.getMessage() for r in caplog.records)
+    assert any(
+        r.getMessage() == "cleanup sweep failed"
+        and r.fields == {"event": "cleanup.sweep_failed", "exception_class": "OSError"}
+        for r in caplog.records
+    )
 
 
 def test_invalid_interval_stops_startup(monkeypatch, tmp_path):
