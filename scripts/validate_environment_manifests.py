@@ -28,7 +28,7 @@ EXPECTED_KEYS = {
     "RuntimeInputs",
     "FoundationRoleOutputs",
 }
-EXPECTED_RUNTIME_INPUTS = ["ImageDigest", "ReleaseVersion"]
+EXPECTED_RUNTIME_INPUTS = ["ImageDigest", "ReleaseVersion", "AmiId", "InstanceType", "PublicHostname"]
 
 
 def fail(message: str) -> None:
@@ -58,7 +58,14 @@ template_parameters = set(
     re.findall(r"(?m)^  ([A-Za-z][A-Za-z0-9]*):\n", parameter_section.group("body"))
 )
 require(
-    template_parameters == {"Environment", "ImageDigest", "ReleaseVersion"},
+    template_parameters == {
+        "Environment",
+        "ImageDigest",
+        "ReleaseVersion",
+        "AmiId",
+        "InstanceType",
+        "PublicHostname",
+    },
     "application template input parameters do not match the manifest contract",
 )
 require(
@@ -95,7 +102,7 @@ for filename, expected in EXPECTED.items():
     )
     require(
         manifest["RuntimeInputs"] == EXPECTED_RUNTIME_INPUTS,
-        f"{path} must require runtime ImageDigest and ReleaseVersion inputs in template order",
+        f"{path} must require all non-environment application inputs in template order",
     )
     role_outputs = manifest["FoundationRoleOutputs"]
     require(

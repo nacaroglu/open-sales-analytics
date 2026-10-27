@@ -11,14 +11,19 @@ services:
 
   caddy:
     image: caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
+    entrypoint: ["/usr/local/bin/validate-deployment-auth"]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     environment:
       OSA_HOSTNAME: ${OSA_HOSTNAME:?Set OSA_HOSTNAME to the public hostname}
+      OSA_ENVIRONMENT: ${OSA_ENVIRONMENT:?Set OSA_ENVIRONMENT to development or production}
+      PUBLIC_DEMO_MODE: ${PUBLIC_DEMO_MODE:?Set PUBLIC_DEMO_MODE to match OSA_ENVIRONMENT}
       CADDY_AUTH_BLOCK: ${CADDY_AUTH_BLOCK?Set CADDY_AUTH_BLOCK to a Caddy basic-auth block or an empty string}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile.deploy:/etc/caddy/Caddyfile:ro
+      - ./scripts/validate_deployment_auth.sh:/usr/local/bin/validate-deployment-auth:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
