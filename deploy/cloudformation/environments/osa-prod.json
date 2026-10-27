@@ -6,7 +6,10 @@
   },
   "RuntimeInputs": [
     "ImageDigest",
-    "ReleaseVersion"
+    "ReleaseVersion",
+    "AmiId",
+    "InstanceType",
+    "PublicHostname"
   ],
   "FoundationRoleOutputs": {
     "CloudFormationExecutionRole": "ProdApplicationExecutionRoleArn",
