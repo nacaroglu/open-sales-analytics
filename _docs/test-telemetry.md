@@ -67,6 +67,13 @@ business identifier, query, CSV content, SQL text, exception message, or excepti
 The request middleware and lifespan install the same scoped provider context, so domain spans remain
 children of their request span and scheduled cleanup uses the application-owned provider.
 
+Application logs are emitted independently of the OTLP exporter as one-line JSON. Each record includes an ISO UTC
+timestamp, severity, event/message, service name, environment and version. A valid active span adds its trace and span
+IDs. HTTP request records use the bounded method and matched route template, status and duration; they omit raw paths,
+query strings and dataset IDs. Exception messages, request/response bodies, authorization headers, tokens, CSV values,
+and customer, order, product and dataset identifiers are excluded. Log extras are restricted to known structured
+fields, and unknown fields are discarded.
+
 For a fixed synthetic trace, counter, and log from the running app, invoke the private module inside
 the app container:
 
