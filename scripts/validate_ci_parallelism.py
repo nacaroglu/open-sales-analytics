@@ -26,6 +26,7 @@ REQUIRED_COMMANDS = {
 CONTAINER_CHECKS = (
     'docker build --build-arg OSA_VERSION=',
     'org.opencontainers.image.version',
+    '[[ "$label" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}$ ]]',
     'runtime-override',
     'Verify the runtime image contains only production artifacts',
     'docker-compose.integration-test.yaml up --detach --no-build',
