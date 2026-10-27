@@ -27,6 +27,8 @@ Compose maps host port `8000` by default. Set `OSA_PORT` to override it. Before 
 Open <http://localhost:8000>. You see the upload screen; **Try sample data** opens a dashboard with the sample file.
 `curl http://localhost:8000/api/health` returns `{"status":"ok"}`.
 
+The standalone local observability stack has separate [setup and lifecycle instructions](observability/README.md).
+
 `/health/live` checks only that the process responds. `/health/ready` returns `200` and
 `{"status":"ready","service":"open-sales-analytics","environment":"development","version":"local"}` only when initialization,
 temporary storage, DuckDB and the bundled sample are ready; otherwise it returns `503` with a generic status. The `environment`
