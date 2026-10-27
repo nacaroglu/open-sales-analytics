@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import shutil
 import sys
 import tempfile
@@ -12,7 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from app.config import Settings, get_settings
+from app.config import Settings, configured_osa_environment, get_settings
 from app.custom_metrics import use_custom_metrics
 from app.domain_telemetry import use_tracer_provider
 from app.ingest import CreatedDataset, ingest_csv
@@ -41,8 +40,10 @@ def main(
     temp_directory_factory: Callable[..., Any] = tempfile.TemporaryDirectory,
 ) -> int:
     """Run the controlled failure check with injectable boundaries for offline tests."""
-    environment = os.environ if environ is None else environ
-    if environment.get("OSA_ENVIRONMENT") != "development":
+    environment = (
+        configured_osa_environment() if environ is None else environ.get("OSA_ENVIRONMENT")
+    )
+    if environment != "development":
         print("Controlled failure check requires OSA_ENVIRONMENT=development.")
         return 2
     if not _arguments(argv).confirm_controlled_failure:

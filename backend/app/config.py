@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -69,6 +70,11 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             raise ValueError("must not be empty")
         return value
+
+
+def configured_osa_environment() -> str | None:
+    """Return the raw deployment environment, preserving whether it was explicitly set."""
+    return os.environ.get("OSA_ENVIRONMENT")
 
 
 @lru_cache
