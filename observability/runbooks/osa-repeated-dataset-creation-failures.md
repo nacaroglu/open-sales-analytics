@@ -1,7 +1,7 @@
 # Runbook: OSARepeatedDatasetCreationFailures
 
-**Runbook version:** 1  
-**Owner:** `osa-maintainer`
+- **Runbook version:** 1
+- **Owner:** `osa-maintainer`
 
 ## Meaning
 
