@@ -131,6 +131,7 @@ def stop_caddy(name: str) -> None:
 def run_production_browser_journey(caddy_url: str) -> None:
     environment = os.environ.copy()
     environment["E2E_BASE_URL"] = caddy_url
+    environment["OSA_CADDY_PUBLIC_DEMO_SMOKE"] = "true"
     result = subprocess.run(
         ["npm", "run", "e2e", "--", "e2e/deployment-demo.spec.ts"],
         cwd=ROOT / "frontend",

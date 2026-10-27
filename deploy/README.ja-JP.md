@@ -127,3 +127,5 @@ The `AppInstance=W9010` exclusion is narrow: the validator treats the required s
 
 
 The checked-in environment manifests at deploy/cloudformation/environments/osa-dev.json and osa-prod.json describe the two independent stacks and both point to deploy/cloudformation/osa-application.yaml. Each fixes its matching Environment value and references the environment-specific CloudFormation execution-role and GitHub deploy-role output keys from osa-foundation; the output keys resolve to role ARNs at deployment time, so no account-specific ARN is stored here. ImageDigest and ReleaseVersion are required runtime inputs supplied by the later build/deploy or promotion workflow and are not stored in these manifests. Development deploys a tested immutable digest, and production promotion must reuse that exact supplied digest without rebuilding or retagging it. Create osa-foundation before either application stack, and delete the application stacks before foundation teardown.
+
+ローカルおよびセルフホスト環境では、既定で `PUBLIC_DEMO_MODE=false` を使用し、CSV のアップロードを有効にします。開発環境では `PUBLIC_DEMO_MODE=false` とし、Caddy 設定に `basic_auth` を含めます。production では `PUBLIC_DEMO_MODE=true` とし、認証ブロックを空にします。

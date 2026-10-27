@@ -2,7 +2,10 @@ import { expect, test } from "@playwright/test";
 import { SAMPLE_KPIS, keyFigures } from "./helpers";
 
 test("production demo serves a usable sample dashboard through Caddy", async ({ page, request }) => {
-  test.skip(!process.env.E2E_BASE_URL, "Production Caddy smoke is the only runner for this journey.");
+  test.skip(
+    process.env.OSA_CADDY_PUBLIC_DEMO_SMOKE !== "true",
+    "Production Caddy smoke is the only runner for this journey.",
+  );
 
   const configResponse = await request.get("/api/config");
   expect(configResponse.ok()).toBeTruthy();
