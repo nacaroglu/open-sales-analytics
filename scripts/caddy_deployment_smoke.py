@@ -182,6 +182,8 @@ def verify_development(network: str, auth_block: str) -> None:
         assert_basic_challenge(
             f"{caddy_url}/api/datasets/sample", authorization=bearer_header, method="POST", body=b""
         )
+        assert_basic_challenge(f"{caddy_url}/", authorization=bearer_header)
+        assert_basic_challenge(f"{caddy_url}/assets/app.js", authorization=bearer_header)
         assert_basic_challenge(
             f"{caddy_url}/api/datasets/not-a-token/analytics", authorization=bearer_header
         )
