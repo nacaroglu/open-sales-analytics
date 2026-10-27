@@ -57,6 +57,16 @@ avoid duplicate spans and its raw URL path/query attributes. Request bodies, hea
 exception messages, and raw paths are not recorded. W3C `traceparent` and `tracestate` are extracted
 for trace parenting; requests continue normally when telemetry providers are not initialized.
 
+Domain spans cover sample dataset creation (`osa.dataset.sample.create`), CSV validation
+(`osa.csv.validate`), DuckDB canonical import (`osa.duckdb.canonical_import`), Overview query
+(`osa.analytics.overview.query`), Customer query (`osa.analytics.customers.query`), Product query
+(`osa.analytics.products.query`), and dataset cleanup (`osa.dataset.cleanup`). Each records a fixed
+module, a bounded outcome (`success`, `accepted`, `rejected`, or `failure`), and a fixed source where
+applicable. Failures add only a bounded error code and error span status. No dataset, token, filename,
+business identifier, query, CSV content, SQL text, exception message, or exception event is recorded.
+The request middleware and lifespan install the same scoped provider context, so domain spans remain
+children of their request span and scheduled cleanup uses the application-owned provider.
+
 For a fixed synthetic trace, counter, and log from the running app, invoke the private module inside
 the app container:
 

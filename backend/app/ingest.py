@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.config import Settings
 from app.currencies import is_valid_currency
+from app.domain_telemetry import operation_span
 from app.importer import dataset_path, import_dataset
 from app.meta import read_meta
 from app.schema import open_dataset_readonly
@@ -38,6 +39,8 @@ def ingest_csv(
     currency: str,
     settings: Settings,
     now: datetime | None = None,
+    *,
+    source: str = "upload",
 ) -> CreatedDataset | ValidationResult:
     """Validate an uploaded CSV and, if it is clean, turn it into a dataset.
 
@@ -54,19 +57,24 @@ def ingest_csv(
         raise ValueError("unsupported currency")
 
     staging = None
-    try:
-        structure = validate_structure(csv_path, settings.max_upload_bytes, settings.max_rows)
-        if not structure.ok:
-            return _discard(structure, staging, csv_path)
+    bounded_source = source if source in {"upload", "sample"} else "other"
+    with operation_span("osa.csv.validate", module="validation", source=bounded_source) as span:
+        try:
+            structure = validate_structure(csv_path, settings.max_upload_bytes, settings.max_rows)
+            if not structure.ok:
+                span.set_attribute("osa.operation.outcome", "rejected")
+                return _discard(structure, staging, csv_path)
 
-        staging = stage_csv(csv_path)
-        rows = validate_rows(staging, customer_id_max_length=settings.customer_id_max_length)
-        rows.warnings = structure.warnings + rows.warnings
-        if not rows.ok:
-            return _discard(rows, staging, csv_path)
-    except BaseException:
-        _discard(None, staging, csv_path)
-        raise
+            staging = stage_csv(csv_path)
+            rows = validate_rows(staging, customer_id_max_length=settings.customer_id_max_length)
+            rows.warnings = structure.warnings + rows.warnings
+            if not rows.ok:
+                span.set_attribute("osa.operation.outcome", "rejected")
+                return _discard(rows, staging, csv_path)
+            span.set_attribute("osa.operation.outcome", "accepted")
+        except BaseException:
+            _discard(None, staging, csv_path)
+            raise
 
     return _import(staging, csv_path, currency, settings, now, rows.to_dict()["warnings"])
 
