@@ -57,7 +57,7 @@ require(
 )
 
 expected_images = {
-    "collector": "otel/opentelemetry-collector-contrib:0.163.0",
+    "collector": "otel/opentelemetry-collector-contrib:0.161.0",
     "prometheus": "prom/prometheus:v3.14.0",
     "loki": "grafana/loki:3.7.8",
     "tempo": "grafana/tempo:3.1.1",
