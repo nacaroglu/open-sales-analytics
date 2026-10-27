@@ -14,6 +14,7 @@ tcp_endpoint_ready = VALIDATOR.tcp_endpoint_ready
 routing_urls = VALIDATOR.routing_urls
 synthetic_counter_point = VALIDATOR.synthetic_counter_point
 synthetic_counter_query = VALIDATOR.synthetic_counter_query
+tempo_trace_contains = VALIDATOR.tempo_trace_contains
 
 
 def test_routing_urls_support_compose_internal_service_dns():
@@ -48,6 +49,31 @@ def test_synthetic_counter_point_has_a_cumulative_start_timestamp():
 
 def test_synthetic_counter_query_matches_optional_prometheus_total_suffix():
     assert synthetic_counter_query() == '{__name__=~"osa_route_validation(_total)?"}'
+
+
+def test_tempo_trace_verification_reads_the_otlp_json_trace_response():
+    response = {
+        "resourceSpans": [
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {"traceId": "0123456789ABCDEF0123456789ABCDEF"},
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    assert tempo_trace_contains(response, "0123456789abcdef0123456789abcdef")
+    assert not tempo_trace_contains(response, "ffffffffffffffffffffffffffffffff")
+
+
+def test_tempo_trace_verification_accepts_legacy_trace_id_response():
+    assert tempo_trace_contains(
+        {"traceID": "0123456789ABCDEF0123456789ABCDEF"},
+        "0123456789abcdef0123456789abcdef",
+    )
 
 
 def test_prometheus_internal_collector_target_is_up():

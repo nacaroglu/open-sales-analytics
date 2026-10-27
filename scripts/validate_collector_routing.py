@@ -97,6 +97,19 @@ def prometheus_target_up(result: dict, target: str) -> bool:
     )
 
 
+def tempo_trace_contains(result: dict, trace_id: str) -> bool:
+    """Return whether Tempo returned the expected trace in its OTLP JSON body."""
+    expected = trace_id.lower()
+    if result.get("traceID", "").lower() == expected:
+        return True
+    return any(
+        span.get("traceId", "").lower() == expected
+        for resource_span in result.get("resourceSpans", [])
+        for scope in resource_span.get("scopeSpans", [])
+        for span in scope.get("spans", [])
+    )
+
+
 def main() -> None:
     urls = routing_urls(os.environ)
     collector = urlsplit(urls["collector"])
@@ -220,7 +233,7 @@ def main() -> None:
 
     def trace_visible() -> bool:
         result = request(f"{urls['tempo']}/api/traces/{TRACE_ID}")
-        return result.get("traceID", "").lower() == TRACE_ID
+        return tempo_trace_contains(result, TRACE_ID)
 
     def collector_target_up() -> bool:
         query = urllib.parse.urlencode({"query": 'up{job="otelcol-internal"}'})
