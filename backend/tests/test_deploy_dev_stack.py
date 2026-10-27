@@ -1,16 +1,22 @@
+import importlib.util
 import json
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
-from scripts.deploy_dev_stack import (
-    DeploymentError,
-    DeploymentInputs,
-    deploy_dev,
-    inputs_from_environment,
-)
+DEPLOY_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "deploy_dev_stack.py"
+DEPLOY_SPEC = importlib.util.spec_from_file_location("deploy_dev_stack", DEPLOY_SCRIPT)
+assert DEPLOY_SPEC is not None and DEPLOY_SPEC.loader is not None
+DEPLOYMENT = importlib.util.module_from_spec(DEPLOY_SPEC)
+sys.modules[DEPLOY_SPEC.name] = DEPLOYMENT
+DEPLOY_SPEC.loader.exec_module(DEPLOYMENT)
+DeploymentError = DEPLOYMENT.DeploymentError
+DeploymentInputs = DEPLOYMENT.DeploymentInputs
+deploy_dev = DEPLOYMENT.deploy_dev
+inputs_from_environment = DEPLOYMENT.inputs_from_environment
 
 REGION = "eu-central-1"
 ROLE_ARN = "arn:aws:iam::123456789012:role/osa-foundation/osa-foundation-osa-dev-deploy"
