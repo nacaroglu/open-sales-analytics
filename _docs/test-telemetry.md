@@ -113,3 +113,26 @@ request paths, query strings, authorization headers, raw request bodies, and exc
 the emitted JSON log sink and verifies the markers are absent while the bounded route template and
 approved deployment version remain available. The in-memory checks above cover the corresponding
 metric dimensions and span attributes/events.
+
+## Controlled creation-failure check
+
+The app image also includes a development-only CLI check that exercises the real CSV ingest
+service three times against a temporary storage path engineered to fail at dataset creation.
+It emits only bounded OpenTelemetry dimensions and a fixed summary; it does not create an HTTP
+route or write into the configured dataset directory. The command refuses to start unless the
+container has `OSA_ENVIRONMENT=development` and the explicit confirmation flag is present.
+
+From the repository root, run it inside the app container:
+
+```sh
+docker compose exec -T app env OSA_ENVIRONMENT=development PYTHONPATH=/app/backend \
+  python -m app.controlled_failure --confirm-controlled-failure
+```
+
+Expected output is `Controlled failure check passed: 3 internal dataset-creation failures;
+temporary storage cleaned.` A nonzero exit means the expected internal failures did not occur,
+telemetry could not be flushed or shut down, the command was interrupted, or temporary storage
+could not be removed. The isolated temporary directory is cleaned on every exit path; the check
+does not touch persistent datasets. Run it only in a development app container. CI covers its
+guards, three service calls, bounded metric dimensions, redacted output, interruption, and cleanup
+without starting Docker, a Collector, or external services.
