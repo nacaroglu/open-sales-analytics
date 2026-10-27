@@ -32,6 +32,15 @@
           "noDataState": "OK",
           "execErrState": "Error",
           "isPaused": false,
+          "notification_settings": {
+            "receiver": "OSA Test Webhook",
+            "group_by": [
+              "alertname",
+              "service",
+              "environment",
+              "deployed_version"
+            ]
+          },
           "labels": {
             "service": "{{- $value := index $labels \"service_name\" -}}{{- if and $value (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
             "environment": "{{- $value := index $labels \"deployment_environment_name\" -}}{{- if and $value (match \"^(development|production)$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",

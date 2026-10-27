@@ -4,6 +4,7 @@
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 
@@ -47,13 +48,32 @@ for name, volume in volumes.items():
 
 networks = compose.get("networks")
 require(
-    isinstance(networks, dict) and set(networks) == {"observability"},
-    "A single private network is required",
+    isinstance(networks, dict) and set(networks) == {"observability", "webhook-egress"},
+    "Private service networking and one dedicated Grafana webhook egress network are required",
 )
 require(
     networks["observability"].get("internal") is True
     and networks["observability"].get("name") == "osa-observability_observability",
     "The observability network must be private and owned by the observability project",
+)
+require(
+    networks["webhook-egress"].get("name") == "osa-observability_webhook-egress"
+    and not networks["webhook-egress"].get("internal", False),
+    "The dedicated Grafana webhook egress network must be external and project-owned",
+)
+
+secrets = compose.get("secrets")
+require(
+    isinstance(secrets, dict) and set(secrets) == {"osa_alert_webhook_url"},
+    "Only the protected Grafana webhook URL file may be mounted as an observability secret",
+)
+webhook_file = secrets["osa_alert_webhook_url"].get("file")
+repository_root = Path(__file__).resolve().parents[1]
+require(
+    isinstance(webhook_file, str)
+    and Path(webhook_file).is_absolute()
+    and repository_root not in Path(webhook_file).resolve().parents,
+    "The webhook URL file must be an absolute external path, never part of the checkout",
 )
 
 expected_images = {
@@ -80,8 +100,13 @@ for name, service in services.items():
         f"Service {name} must use its explicit release image",
     )
     require(
-        service.get("networks") == {"observability": None},
-        f"Service {name} must use only the private observability network",
+        service.get("networks")
+        == (
+            {"observability": None, "webhook-egress": None}
+            if name == "grafana"
+            else {"observability": None}
+        ),
+        f"Service {name} has an unapproved observability or egress network",
     )
     require(
         "depends_on" not in service, f"Service {name} must not depend on the application project"
@@ -123,6 +148,22 @@ require(
     and grafana_environment.get("GF_AUTH_ANONYMOUS_ENABLED") == "false"
     and grafana_environment.get("GF_SERVER_ROOT_URL"),
     "Grafana must require an admin password, disable anonymous access, and configure its public root URL",
+)
+require(
+    "OSA_ALERT_WEBHOOK_URL" not in grafana_environment,
+    "The webhook URL must be read from a protected file, not stored in container environment metadata",
+)
+grafana_entrypoint = " ".join(str(item) for item in services["grafana"].get("entrypoint", []))
+require(
+    "osa-grafana-entrypoint.sh" in grafana_entrypoint,
+    "Grafana must load its webhook URL through the secret-reading entrypoint",
+)
+service_secrets = services["grafana"].get("secrets", [])
+require(
+    len(service_secrets) == 1
+    and service_secrets[0].get("source") == "osa_alert_webhook_url"
+    and service_secrets[0].get("target") == "osa_alert_webhook_url",
+    "Only Grafana may mount the protected webhook URL file",
 )
 
 for service in services.values():

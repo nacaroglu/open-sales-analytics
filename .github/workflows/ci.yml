@@ -37,6 +37,7 @@ jobs:
         run: |
           python3 scripts/validate_grafana_dashboard.py
           python3 scripts/test_grafana_alert.py
+          python3 scripts/test_grafana_webhook.py
 
   backend-tests:
     name: Backend (tests, ruff, mypy)
@@ -189,9 +190,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          secret_dir="$(mktemp -d /tmp/osa-webhook-ci.XXXXXX)"
+          trap 'rm -rf "$secret_dir"' EXIT
+          webhook_file="$secret_dir/webhook-url"
+          printf '%s' 'https://hooks.example.invalid/ci-only' > "$webhook_file"
+          sudo chown 472:0 "$webhook_file"
+          chmod 0400 "$webhook_file"
+          export OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file"
+          sudo env OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file" \
+            python3 scripts/validate_alert_webhook_config.py
           env GRAFANA_ADMIN_PASSWORD=ci-config-only \
+            OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file" \
             docker compose -f observability/compose.yaml config --quiet
           env GRAFANA_ADMIN_PASSWORD=ci-config-only \
+            OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file" \
             docker compose -f observability/compose.yaml config --format json |
             python3 scripts/validate_observability_compose.py
       - name: Validate integration Compose configuration

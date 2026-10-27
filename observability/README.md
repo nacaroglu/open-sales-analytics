@@ -99,6 +99,53 @@ or redirect the link. The alert also links to the Git-versioned
 [repeated creation failure runbook](runbooks/osa-repeated-dataset-creation-failures.md),
 which explains how to correlate privacy-safe Loki records with Tempo traces.
 
+### Test webhook delivery
+
+The alert routes directly to the provisioned **OSA Test Webhook** contact point
+(`osa-test-webhook`). No other alert or application notification is routed to
+it. Grafana's webhook receiver sends the alert name/status, bounded rule labels
+and annotations, and standard delivery metadata. It caps each webhook group at
+ten alert instances. The rule annotations contain only the fixed impact text,
+filtered Grafana/runbook links, and privacy-safe Loki/Tempo guidance.
+
+The endpoint is a protected runtime secret file, never a Compose variable or a
+repository file. Create a root-controlled directory outside this checkout, then
+enter the receiver URL silently. The secret file must be owned by Grafana's
+container UID 472 and have mode 0400. Use an HTTPS receiver URL; provider tokens
+may be part of its protected path or query string. Do not use URL user-info.
+Grafana alone joins the dedicated `webhook-egress` network to reach that
+receiver; the Collector, Prometheus, Loki, and Tempo remain on the private
+observability network, and the egress network publishes no ports.
+
+```sh
+secret_dir=/tmp/osa-observability-secrets
+sudo install -d -o root -g root -m 0711 "$secret_dir"
+secret_file="$secret_dir/webhook-url"
+read -rsp 'Test webhook URL: ' webhook_url; printf '\n'
+printf '%s' "$webhook_url" | sudo tee "$secret_file" >/dev/null
+unset webhook_url
+sudo chown 472:0 "$secret_file"
+sudo chmod 0400 "$secret_file"
+export OSA_ALERT_WEBHOOK_URL_FILE="$secret_file"
+scripts/start_observability.sh up --detach
+unset OSA_ALERT_WEBHOOK_URL_FILE
+```
+
+The launcher runs `scripts/validate_alert_webhook_config.py` before Compose and
+prints only generic validation messages, never the endpoint or token. CI uses
+an ephemeral synthetic HTTPS value and static tests; it does not contact a
+webhook, Grafana, or AWS. Do not run `docker compose config` with a real endpoint
+or copy endpoint values into logs, issue comments, shell history, or support
+bundles. The Grafana entrypoint reads the mounted file at startup and removes
+the value from its shell variable before starting Grafana. Grafana's
+provisioned contact-point URL is a protected receiver setting.
+
+To diagnose delivery, inspect **Alerting → Contact points → OSA Test Webhook**
+and Grafana's notification history for receiver status, retry, or timeout
+errors. Check that the protected file still passes preflight and that the host
+can reach the receiver over HTTPS. Share only the receiver UID and generic
+delivery status; redact any provider URL or credentials from detailed errors.
+
 CI runs offline checks for data-source UIDs/endpoints, dashboard rows and
 panels, filters, links, no-data guidance, and the alert's metric expression and
 state transitions. These checks do not require Grafana or an observability
