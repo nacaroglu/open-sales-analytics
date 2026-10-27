@@ -9,6 +9,9 @@ from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/ci.yml")
 MAKEFILE = Path("Makefile")
+FOUNDATION_VALIDATOR = Path("scripts/validate_foundation_template.py")
+APPLICATION_VALIDATOR = Path("scripts/validate_application_template.py")
+MANIFEST_VALIDATOR = Path("scripts/validate_environment_manifests.py")
 REQUIRED_COMMANDS = {
     "backend-tests": (
         "uv run pytest",
@@ -143,7 +146,81 @@ def validate() -> None:
         if behavior not in cleanup_script:
             fail(f"Compose cleanup must keep container/network/volume/temp-data handling ({behavior})")
 
-    print("CI workflow structure and container/Compose coverage validation passed")
+    cloudformation = jobs.get("cloudformation-foundation")
+    if cloudformation is None:
+        fail("the dedicated 'cloudformation-foundation' job is missing")
+    for check in (
+        "Install and verify pinned AWS cfn-validate",
+        "Validate CloudFormation schemas offline",
+        "cfn-validate --strict deploy/cloudformation/osa-foundation.yaml",
+        (
+            "cfn-validate --strict deploy/cloudformation/osa-application.yaml \\\n"
+            "            --exclude-resource-id AppInstance=W9010 \\\n"
+            "            --parameter Environment=development"
+        ),
+        (
+            "cfn-validate --strict deploy/cloudformation/osa-application.yaml \\\n"
+            "            --exclude-resource-id AppInstance=W9010 \\\n"
+            "            --parameter Environment=production"
+        ),
+        "python3 scripts/validate_foundation_template.py",
+        "python3 scripts/validate_application_template.py",
+        "python3 scripts/validate_environment_manifests.py",
+    ):
+        if check not in cloudformation:
+            fail(f"cloudformation-foundation is missing required check {check!r}")
+
+    for integrity_check in (
+        "version=1.14.0",
+        'base="https://github.com/aws-cloudformation/cloudformation-validate/releases/download/${version}"',
+        'curl --fail --silent --show-error --location "$base/$asset.sig" --output "$asset.sig"',
+        'curl --fail --silent --show-error --location "$base/signing-key.pem" --output signing-key.pem',
+        "printf '%s  %s\\n' 'e63674a37a2431a85d637326e959c1717af01b4768734a5cb0bf79ef8652ece2' \"$asset\" | sha256sum --check --strict",
+        "printf '%s  %s\\n' 'f0a7827e53764081deda3d363126e7c67dfb4844bd4db5f2d3fe42c713e064d0' signing-key.pem | sha256sum --check --strict",
+        'openssl dgst -sha256 -verify signing-key.pem -signature "$asset.sig" "$asset"',
+    ):
+        if integrity_check not in cloudformation:
+            fail(f"cloudformation-foundation is missing release integrity check {integrity_check!r}")
+
+    lowered_cloudformation = cloudformation.lower()
+    for forbidden in (
+        "secrets.",
+        "configure-aws-credentials",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+    ):
+        if forbidden in lowered_cloudformation:
+            fail(f"cloudformation-foundation must remain offline/read-only and must not use {forbidden!r}")
+    if re.search(r"\baws\s+(?:cloudformation|ec2|iam|ecr|ssm)\b", lowered_cloudformation):
+        fail("cloudformation-foundation must not invoke AWS resource or identity commands")
+
+    security_markers = {
+        FOUNDATION_VALIDATOR: (
+            "OIDC subject must be exact owner/repository/branch without wildcard",
+            "def exact_trust(",
+            'exact_trust("BuildRole", "github", branch_subject)',
+            "trust must be limited to",
+            "Resource:*",
+            "security groups or ingress rules",
+        ),
+        APPLICATION_VALIDATOR: (
+            "security group must declare exactly HTTP and HTTPS ingress",
+            "for forbidden_port in (22, 4317, 4318)",
+            "outputs must contain only stable non-secret release/runtime verification values",
+        ),
+        MANIFEST_VALIDATOR: (
+            "must resolve to the shared osa-application.yaml template",
+            "development and production must share one template",
+        ),
+    }
+    for path, markers in security_markers.items():
+        validator_source = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in validator_source:
+                fail(f"{path} is missing reviewed infrastructure assertion marker {marker!r}")
+
+    print("CI workflow structure, container/Compose coverage, and CloudFormation security validation passed")
 
 
 if __name__ == "__main__":
