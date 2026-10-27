@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from urllib.parse import urlsplit
 
 DEFAULT_URLS = {
@@ -36,7 +36,7 @@ def request(url: str, payload: dict | None = None) -> dict:
         return json.loads(response.read())
 
 
-def wait_for(label: str, check) -> None:
+def wait_for(label: str, check, diagnostic: Callable[[], str] | None = None) -> None:
     deadline = time.monotonic() + 90
     last_error = "not visible yet"
     while time.monotonic() < deadline:
@@ -47,7 +47,8 @@ def wait_for(label: str, check) -> None:
         except (OSError, ValueError, KeyError, urllib.error.URLError) as exc:
             last_error = type(exc).__name__
         time.sleep(2)
-    raise SystemExit(f"Synthetic {label} route was not confirmed ({last_error}).")
+    detail = f"; last response: {diagnostic()}" if diagnostic is not None else ""
+    raise SystemExit(f"Synthetic {label} route was not confirmed ({last_error}){detail}.")
 
 
 def tcp_endpoint_ready(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -65,6 +66,21 @@ def routing_urls(environ: Mapping[str, str]) -> dict[str, str]:
         name: environ.get(f"OSA_ROUTING_{name.upper()}_URL", default).rstrip("/")
         for name, default in DEFAULT_URLS.items()
     }
+
+
+def synthetic_counter_point(timestamp_ns: int) -> dict:
+    """Build one valid cumulative monotonic Sum data point with fixed attributes."""
+    return {
+        "asInt": "1",
+        "startTimeUnixNano": str(timestamp_ns),
+        "timeUnixNano": str(timestamp_ns + 1),
+        "attributes": [{"key": "marker", "value": {"stringValue": MARKER}}],
+    }
+
+
+def synthetic_counter_query() -> str:
+    """Match the counter name with or without Prometheus' conventional _total suffix."""
+    return '{__name__=~"osa_route_validation(_total)?"}'
 
 
 def prometheus_target_up(result: dict, target: str) -> bool:
@@ -114,18 +130,7 @@ def main() -> None:
                                     "sum": {
                                         "aggregationTemporality": 2,
                                         "isMonotonic": True,
-                                        "dataPoints": [
-                                            {
-                                                "asInt": "1",
-                                                "timeUnixNano": str(time.time_ns()),
-                                                "attributes": [
-                                                    {
-                                                        "key": "marker",
-                                                        "value": {"stringValue": MARKER},
-                                                    }
-                                                ],
-                                            }
-                                        ],
+                                        "dataPoints": [synthetic_counter_point(time.time_ns())],
                                     },
                                 }
                             ],
@@ -183,10 +188,26 @@ def main() -> None:
         },
     )
 
+    last_metric_response = None
+
     def metric_visible() -> bool:
-        query = urllib.parse.urlencode({"query": "osa_route_validation"})
+        nonlocal last_metric_response
+        query = urllib.parse.urlencode({"query": synthetic_counter_query()})
         result = request(f"{urls['prometheus']}/api/v1/query?{query}")
+        last_metric_response = result
         return result.get("status") == "success" and bool(result.get("data", {}).get("result"))
+
+    def metric_timeout_diagnostic() -> str:
+        if last_metric_response is None:
+            return "no Prometheus response"
+        return json.dumps(
+            {
+                key: last_metric_response.get(key)
+                for key in ("status", "data", "errorType", "error")
+                if key in last_metric_response
+            },
+            sort_keys=True,
+        )[:1500]
 
     def log_visible() -> bool:
         query = urllib.parse.urlencode({"query": f'{{service_name="{SERVICE}"}}', "limit": "10"})
@@ -206,7 +227,7 @@ def main() -> None:
         result = request(f"{urls['prometheus']}/api/v1/query?{query}")
         return prometheus_target_up(result, "collector:8888")
 
-    wait_for("metrics → Prometheus", metric_visible)
+    wait_for("metrics → Prometheus", metric_visible, metric_timeout_diagnostic)
     wait_for("logs → Loki", log_visible)
     wait_for("traces → Tempo", trace_visible)
     wait_for("otelcol-internal scrape target → Prometheus", collector_target_up)

@@ -12,6 +12,8 @@ VALIDATOR_SPEC.loader.exec_module(VALIDATOR)
 prometheus_target_up = VALIDATOR.prometheus_target_up
 tcp_endpoint_ready = VALIDATOR.tcp_endpoint_ready
 routing_urls = VALIDATOR.routing_urls
+synthetic_counter_point = VALIDATOR.synthetic_counter_point
+synthetic_counter_query = VALIDATOR.synthetic_counter_query
 
 
 def test_routing_urls_support_compose_internal_service_dns():
@@ -28,6 +30,24 @@ def test_routing_urls_support_compose_internal_service_dns():
         "loki": "http://loki:3100",
         "tempo": "http://tempo:3200",
     }
+
+
+def test_synthetic_counter_point_has_a_cumulative_start_timestamp():
+    assert synthetic_counter_point(1_000_000_000) == {
+        "asInt": "1",
+        "startTimeUnixNano": "1000000000",
+        "timeUnixNano": "1000000001",
+        "attributes": [
+            {
+                "key": "marker",
+                "value": {"stringValue": "osa-route-validation-synthetic"},
+            }
+        ],
+    }
+
+
+def test_synthetic_counter_query_matches_optional_prometheus_total_suffix():
+    assert synthetic_counter_query() == '{__name__=~"osa_route_validation(_total)?"}'
 
 
 def test_prometheus_internal_collector_target_is_up():
