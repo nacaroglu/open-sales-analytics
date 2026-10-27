@@ -33,8 +33,10 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Validate provisioned data sources and OSA Operations dashboard
-        run: python3 scripts/validate_grafana_dashboard.py
+      - name: Validate provisioned data sources, dashboard, and alert
+        run: |
+          python3 scripts/validate_grafana_dashboard.py
+          python3 scripts/test_grafana_alert.py
 
   backend-tests:
     name: Backend (tests, ruff, mypy)
