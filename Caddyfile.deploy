@@ -1,7 +1,7 @@
 {$OSA_HOSTNAME} {
 	@dataset_api {
 		path_regexp dataset_api ^/api/datasets/[A-Za-z0-9_-]{22}(/.*)?$
-		header_regexp bearer Authorization ^Bearer[ \t]+[A-Za-z0-9_-]{43}$
+		header_regexp bearer Authorization ^Bearer[[:blank:]]+[A-Za-z0-9_-]{43}$
 	}
 	handle @dataset_api {
 		reverse_proxy app:8000

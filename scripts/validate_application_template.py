@@ -27,7 +27,7 @@ def normalized(value: str) -> list[str]:
 require(normalized(embedded_caddy) == normalized(caddy_template), "CloudFormation and tracked deployment Caddyfiles must match")
 require(
     "path_regexp dataset_api ^/api/datasets/[A-Za-z0-9_-]{22}(/.*)?$" in caddy_template
-    and r"header_regexp bearer Authorization ^Bearer[ \t]+[A-Za-z0-9_-]{43}$" in caddy_template
+    and "header_regexp bearer Authorization ^Bearer[[:blank:]]+[A-Za-z0-9_-]{43}$" in caddy_template
     and caddy_template.index("handle @dataset_api {") < caddy_template.index("\n\thandle {"),
     "Caddy Basic Auth bypass must require an exact dataset-ID path and Bearer-shaped Authorization header",
 )
