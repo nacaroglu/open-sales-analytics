@@ -149,6 +149,8 @@ def validate() -> None:
     cloudformation = jobs.get("cloudformation-foundation")
     if cloudformation is None:
         fail("the dedicated 'cloudformation-foundation' job is missing")
+    if re.search(r"(?m)^    permissions\s*:", cloudformation):
+        fail("cloudformation-foundation must inherit the workflow's read-only permissions")
     for check in (
         "Install and verify pinned AWS cfn-validate",
         "Validate CloudFormation schemas offline",
