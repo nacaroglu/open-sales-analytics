@@ -17,6 +17,14 @@ def require(condition: bool, message: str) -> None:
 # CloudFormation's generated Caddyfile must stay identical to the runtime template,
 # including the narrow, exact Bearer API bypass matcher.
 caddy_template = Path("Caddyfile.deploy").read_text(encoding="utf-8").strip()
+bearing_header_pattern = next(
+    (
+        line.strip().removeprefix("header_regexp bearer Authorization ").strip("`\"")
+        for line in caddy_template.splitlines()
+        if line.strip().startswith("header_regexp bearer Authorization ")
+    ),
+    None,
+)
 caddy_match = re.search(r"(?ms)^\s+cat > /opt/osa/Caddyfile <<'CADDY'\n(?P<body>.*?)^\s+CADDY$", text)
 require(caddy_match is not None, "CloudFormation must generate the deployment Caddyfile")
 embedded_caddy = textwrap.dedent(caddy_match.group("body")).strip()
@@ -27,7 +35,7 @@ def normalized(value: str) -> list[str]:
 require(normalized(embedded_caddy) == normalized(caddy_template), "CloudFormation and tracked deployment Caddyfiles must match")
 require(
     "path_regexp dataset_api ^/api/datasets/[A-Za-z0-9_-]{22}(/.*)?$" in caddy_template
-    and "header_regexp bearer Authorization ^Bearer[[:blank:]]+[A-Za-z0-9_-]{43}$" in caddy_template
+    and bearing_header_pattern == r"^Bearer[[:blank:]]+[A-Za-z0-9_-]{43}$"
     and caddy_template.index("handle @dataset_api {") < caddy_template.index("\n\thandle {"),
     "Caddy Basic Auth bypass must require an exact dataset-ID path and Bearer-shaped Authorization header",
 )
