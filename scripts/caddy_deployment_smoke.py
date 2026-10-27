@@ -99,7 +99,7 @@ def start_caddy(environment: str, demo_mode: str, auth_block: str, network: str)
         "--publish",
         f"127.0.0.1:{port}:80",
         "--env",
-        "OSA_HOSTNAME=http://localhost",
+        "OSA_HOSTNAME=http://127.0.0.1",
         "--env",
         f"OSA_ENVIRONMENT={environment}",
         "--env",
@@ -126,6 +126,21 @@ def start_caddy(environment: str, demo_mode: str, auth_block: str, network: str)
 
 def stop_caddy(name: str) -> None:
     subprocess.run(["docker", "rm", "--force", name], cwd=ROOT, capture_output=True, check=False)
+
+
+def run_production_browser_journey(caddy_url: str) -> None:
+    environment = os.environ.copy()
+    environment["E2E_BASE_URL"] = caddy_url
+    result = subprocess.run(
+        ["npm", "run", "e2e", "--", "e2e/deployment-demo.spec.ts"],
+        cwd=ROOT / "frontend",
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Production Caddy browser sample journey failed")
 
 
 def verify_development(network: str, auth_block: str) -> None:
@@ -171,6 +186,7 @@ def verify_production(network: str) -> None:
         with urllib.request.urlopen(analytics_request, timeout=5) as result:
             if result.status != 200:
                 raise AssertionError("Sample dataset analytics were not available")
+        run_production_browser_journey(caddy_url)
 
         upload_body = (
             b"--OSA241\r\nContent-Disposition: form-data; name=\"currency\"\r\n\r\nUSD\r\n"
@@ -234,7 +250,7 @@ def main() -> None:
 
     verify_development(network, auth_block)
     verify_production(network)
-    print("Development Caddy challenge, production sample mode, and server-side upload restriction passed.")
+    print("Development Caddy challenge, production browser sample journey, and server-side upload restriction passed.")
 
 
 if __name__ == "__main__":
