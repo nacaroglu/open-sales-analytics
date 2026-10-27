@@ -54,6 +54,13 @@ docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml up -d
 
 For production, set `OSA_ENVIRONMENT=production`, `PUBLIC_DEMO_MODE=true`, and `CADDY_AUTH_BLOCK=''`.
 The password hash is runtime input; do not put credentials or hashes in Compose files, shell history, or CI logs.
+The Caddy entrypoint validates this environment/mode/auth combination before starting its listener: development requires
+`PUBLIC_DEMO_MODE=false` and a non-empty block containing a `basic_auth` directive; production requires
+`PUBLIC_DEMO_MODE=true` and an explicitly empty block. Missing development auth, an empty development block, or a
+production auth block stops Caddy before it binds public ports. The EC2 bootstrap contains only an empty auth placeholder;
+the later #242 SSM integration supplies the development value at runtime. The backend independently rejects uploads in
+public demo mode, so bypassing Caddy or the UI does not enable file uploads. Local and self-hosted runs default to
+`PUBLIC_DEMO_MODE=false` and retain CSV uploads.
 
 
 ## Shared foundation stack

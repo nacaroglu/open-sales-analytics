@@ -660,9 +660,14 @@ jobs:
           assert app["environment"]["PUBLIC_DEMO_MODE"] == "false"
           assert app["restart"] == "unless-stopped"
           assert caddy["image"] == "caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb"
+          assert caddy["entrypoint"] == ["/usr/local/bin/validate-deployment-auth"]
+          assert caddy["command"] == ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
           assert {str(port["published"]) for port in caddy["ports"]} == {"80", "443"}
           assert caddy["environment"]["OSA_HOSTNAME"] == "osa.example.invalid"
+          assert caddy["environment"]["OSA_ENVIRONMENT"] == "development"
+          assert caddy["environment"]["PUBLIC_DEMO_MODE"] == "false"
           assert "basic_auth" in caddy["environment"]["CADDY_AUTH_BLOCK"]
+          assert any(volume["source"].endswith("scripts/validate_deployment_auth.sh") for volume in caddy["volumes"])
           assert caddy["depends_on"]["app"]["condition"] == "service_healthy"
           assert caddy["restart"] == "unless-stopped"
           '
@@ -674,6 +679,8 @@ jobs:
 
           config = json.load(sys.stdin)
           assert config["services"]["app"]["environment"]["PUBLIC_DEMO_MODE"] == "true"
+          assert config["services"]["caddy"]["environment"]["OSA_ENVIRONMENT"] == "production"
+          assert config["services"]["caddy"]["environment"]["PUBLIC_DEMO_MODE"] == "true"
           assert config["services"]["caddy"]["environment"]["CADDY_AUTH_BLOCK"] == ""
           '
           docker run --rm --entrypoint caddy \
@@ -806,6 +813,8 @@ jobs:
         working-directory: frontend
       - name: Run browser tests against the Compose app
         run: make e2e
+      - name: Verify the development and production Caddy auth boundary
+        run: python3 scripts/caddy_deployment_smoke.py
       # Screenshots only. Traces hold every network response, so with CI set Playwright records none
       # (playwright.config.ts). Nothing from the container's /data directory is ever uploaded.
       - name: Upload failure screenshots

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Offline assertions for the parameterized OSA application release contract."""
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 TEMPLATE = Path("deploy/cloudformation/osa-application.yaml")
 text = TEMPLATE.read_text(encoding="utf-8")
@@ -185,6 +185,14 @@ require("caddy:2.10.2-alpine" in instance and "reverse_proxy app:8000" in instan
         and "condition: service_healthy" in instance
         and "restart: unless-stopped" in instance and "Restart=always" in instance,
         "Caddy must be pinned, proxy the supplied hostname, redirect HTTP, and wait for a healthy app")
+require(
+    "{$CADDY_AUTH_BLOCK}" in instance
+    and re.findall(r"(?m)^\s*CADDY_AUTH_BLOCK=(.*)$", instance) == [""]
+    and instance.count("basic_auth") == 1
+    and '*"basic_auth"*)' in instance
+    and not re.search(r"(?m)^\s*basic_auth\s*\{", instance),
+    "the EC2 runtime must use an empty non-secret auth placeholder and reject a dev deployment without runtime Basic Auth",
+)
 require("AWS::EC2::EIP" in resource_blocks["AppElasticIp"]
         and "Domain: vpc" in resource_blocks["AppElasticIp"]
         and "InstanceId: !Ref AppInstance" in resource_blocks["AppElasticIpAssociation"]
@@ -199,7 +207,7 @@ require(
             for name in environment_assignments),
     "user data must not assign secret or credential values",
 )
-for forbidden in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "aws ecr get-login-password", "docker login", "basic_auth"):
+for forbidden in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "aws ecr get-login-password", "docker login"):
     require(forbidden.lower() not in instance.lower(), f"user data must not contain credentials or out-of-scope auth config ({forbidden})")
 
 outputs = re.search(r"(?ms)^Outputs:\n(?P<body>.*)\Z", text)
