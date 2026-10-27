@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from scripts.compose_secret_contract import grafana_is_only_secret_consumer  # noqa: E402
 from scripts.validate_alert_webhook_config import validate_secret_file, validate_webhook_url  # noqa: E402
 
 CONTACT_POINT = ROOT / "observability/provisioning/alerting/osa-test-webhook.json"
@@ -20,6 +21,7 @@ ALERT_RULE = ROOT / "observability/provisioning/alerting/osa-repeated-dataset-fa
 PREFLIGHT = ROOT / "scripts/validate_alert_webhook_config.py"
 COMPOSE = ROOT / "observability/compose.yaml"
 ENTRYPOINT = ROOT / "observability/grafana-entrypoint.sh"
+RENDERED_SECRET_FIXTURE = ROOT / "scripts/fixtures/compose-rendered-webhook-secret.json"
 
 
 class GrafanaWebhookContractTests(unittest.TestCase):
@@ -91,6 +93,25 @@ class GrafanaWebhookContractTests(unittest.TestCase):
         self.assertIn("/run/secrets/osa_alert_webhook_url", entrypoint_text)
         self.assertIn("export OSA_ALERT_WEBHOOK_URL", entrypoint_text)
         self.assertIn("unset webhook_url", entrypoint_text)
+
+    def test_rendered_compose_secret_fixture_allows_only_grafana_consumer(self) -> None:
+        rendered_services = json.loads(RENDERED_SECRET_FIXTURE.read_text(encoding="utf-8"))
+        self.assertTrue(grafana_is_only_secret_consumer(rendered_services, "osa_alert_webhook_url"))
+        self.assertTrue(
+            grafana_is_only_secret_consumer(
+                {
+                    "grafana": {"secrets": ["osa_alert_webhook_url"]},
+                    "collector": {"secrets": []},
+                },
+                "osa_alert_webhook_url",
+            )
+        )
+        rendered_services["collector"]["secrets"] = [
+            {"source": "osa_alert_webhook_url", "target": "osa_alert_webhook_url"}
+        ]
+        self.assertFalse(
+            grafana_is_only_secret_consumer(rendered_services, "osa_alert_webhook_url")
+        )
 
     def test_missing_preflight_configuration_reports_action_without_echoing_values(self) -> None:
         marker = "PRIVATE_WEBHOOK_MARKER"

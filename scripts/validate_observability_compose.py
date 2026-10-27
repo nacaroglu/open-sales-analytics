@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from compose_secret_contract import grafana_is_only_secret_consumer
+
 
 def fail(message: str) -> None:
     print(f"::error::{message}", file=sys.stderr)
@@ -158,12 +160,9 @@ require(
     "osa-grafana-entrypoint.sh" in grafana_entrypoint,
     "Grafana must load its webhook URL through the secret-reading entrypoint",
 )
-service_secrets = services["grafana"].get("secrets", [])
 require(
-    len(service_secrets) == 1
-    and service_secrets[0].get("source") == "osa_alert_webhook_url"
-    and service_secrets[0].get("target") == "osa_alert_webhook_url",
-    "Only Grafana may mount the protected webhook URL file",
+    grafana_is_only_secret_consumer(services, "osa_alert_webhook_url"),
+    "Grafana alone must mount the protected webhook URL secret",
 )
 
 for service in services.values():
