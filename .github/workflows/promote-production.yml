@@ -97,7 +97,7 @@ jobs:
           role-to-assume: ${{ vars.OSA_PROD_PROMOTION_ROLE_ARN }}
           aws-region: ${{ vars.OSA_AWS_REGION }}
           role-session-name: osa-prod-promote-${{ github.run_id }}
-      - name: Promote the dev digest without rebuilding
+      - name: Promote, verify production, and restore the prior release on failure
         env:
           AWS_REGION: ${{ vars.OSA_AWS_REGION }}
           ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}

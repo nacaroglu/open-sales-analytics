@@ -7,11 +7,16 @@ import argparse
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "deploy/cloudformation/osa-application.yaml"
@@ -20,6 +25,16 @@ REPO_RE = re.compile(
 )
 DIGEST_RE = re.compile(r"^[a-f0-9]{64}$")
 VERSION_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}$")
+HOST_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.I
+)
+DATASET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{22}$")
+EXPECTED_SAMPLE = {"gross_sales": "675816.7000", "orders": 10000, "units_sold": 24380}
+EXPECTED_SAMPLE_ROWS = 14397
+EXPECTED_SAMPLE_DATES = {"min": "2024-01-01", "max": "2025-12-31"}
+VERIFY_TIMEOUT_SECONDS = 300
+HTTP_TIMEOUT_SECONDS = 10
+STACK_SETTLEMENT_TIMEOUT_SECONDS = 600
 ROLE_RE = re.compile(
     r"^arn:(?:aws|aws-us-gov|aws-cn):iam::(?P<account>\d{12}):role/osa-foundation/(?P<role>osa-foundation-osa-production-source-read|osa-foundation-osa-prod-promotion|osa-foundation-osa-prod-application-execution)$"
 )
@@ -88,7 +103,12 @@ def parse_release(stdout: str, stack: str, repository: str) -> Release:
             len(stacks) != 1
             or stacks[0].get("StackName") != stack
             or stacks[0].get("StackStatus")
-            not in {"CREATE_COMPLETE", "UPDATE_COMPLETE", "IMPORT_COMPLETE"}
+            not in {
+                "CREATE_COMPLETE",
+                "UPDATE_COMPLETE",
+                "IMPORT_COMPLETE",
+                "UPDATE_ROLLBACK_COMPLETE",
+            }
         ):
             raise ValueError
         outputs = {item["OutputKey"]: item["OutputValue"] for item in stacks[0]["Outputs"]}
@@ -138,6 +158,66 @@ def describe(
     return parse_release(out, stack, config.repository)
 
 
+def wait_for_stack_settlement(
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    config: Config,
+    *,
+    timeout_seconds: float = STACK_SETTLEMENT_TIMEOUT_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Wait until a failed CloudFormation update finishes its automatic rollback."""
+    complete = {"CREATE_COMPLETE", "UPDATE_COMPLETE", "IMPORT_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"}
+    failed = {"UPDATE_ROLLBACK_FAILED", "ROLLBACK_FAILED", "CREATE_FAILED"}
+    in_progress = {
+        "UPDATE_FAILED",
+        "CREATE_IN_PROGRESS",
+        "UPDATE_IN_PROGRESS",
+        "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS",
+        "UPDATE_ROLLBACK_IN_PROGRESS",
+        "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS",
+        "ROLLBACK_IN_PROGRESS",
+        "IMPORT_IN_PROGRESS",
+    }
+    deadline = monotonic() + timeout_seconds
+    while True:
+        raw = run(
+            runner,
+            [
+                "aws",
+                "cloudformation",
+                "describe-stacks",
+                "--stack-name",
+                "osa-prod",
+                "--region",
+                config.region,
+                "--output",
+                "json",
+            ],
+            "osa-prod rollback settlement lookup",
+        )
+        try:
+            payload = json.loads(raw)
+            stacks = payload["Stacks"]
+            status = stacks[0]["StackStatus"] if len(stacks) == 1 else ""
+        except (KeyError, TypeError, json.JSONDecodeError):
+            raise PromotionError(
+                "osa-prod stack status is missing or malformed during rollback."
+            ) from None
+        if status in complete:
+            return
+        if status in failed:
+            raise PromotionError(
+                "CloudFormation could not complete its automatic production rollback."
+            )
+        remaining = deadline - monotonic()
+        if status not in in_progress:
+            raise PromotionError("osa-prod entered an unexpected status during rollback.")
+        if remaining <= 0:
+            raise PromotionError("Timed out waiting for the production stack update to settle.")
+        sleep(min(5.0, remaining))
+
+
 def update_command(config: Config, release: Release) -> list[str]:
     return [
         "aws",
@@ -163,16 +243,174 @@ def update_command(config: Config, release: Release) -> list[str]:
     ]
 
 
-def write_summary(source: Release, previous: Release, env: dict[str, str]) -> None:
+def write_summary(
+    source: Release,
+    previous: Release,
+    env: dict[str, str],
+    *,
+    verification: str,
+    rollback: str,
+) -> None:
     path = env.get("GITHUB_STEP_SUMMARY")
     if path:
-        with Path(path).open("a", encoding="utf-8") as stream:
-            stream.write(
-                "## Production promotion\n\n| Release | Digest | Version |\n|---|---|---|\n"
+        try:
+            with Path(path).open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "## Production promotion\n\n| Release | Digest | Version |\n|---|---|---|\n"
+                )
+                stream.write(f"| Promoted release | {source.digest} | {source.version} |\n")
+                stream.write(f"| Previous production | {previous.digest} | {previous.version} |\n")
+                stream.write(f"\n- Production verification: {verification}\n")
+                stream.write(f"- Rollback: {rollback}\n")
+        except OSError as exc:
+            raise PromotionError(
+                f"Unable to write promotion summary ({type(exc).__name__})."
+            ) from None
+
+
+def _http_request(
+    url: str,
+    method: str,
+    headers: dict[str, str],
+    body: bytes | None,
+    timeout: float,
+    *,
+    opener: Callable[..., Any],
+) -> tuple[int, bytes]:
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with opener(request, timeout=timeout, context=ssl.create_default_context()) as response:
+            return int(response.status), response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, b""
+    except (OSError, TimeoutError, urllib.error.URLError) as exc:
+        raise PromotionError(f"Production HTTPS request failed ({type(exc).__name__}).") from None
+
+
+def _json_body(status: int, body: bytes, expected_status: int, label: str) -> dict:
+    if status != expected_status:
+        raise PromotionError(f"{label} returned HTTP {status}; expected {expected_status}.")
+    try:
+        value = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise PromotionError(f"{label} returned malformed JSON.") from None
+    if not isinstance(value, dict):
+        raise PromotionError(f"{label} returned malformed JSON.")
+    return value
+
+
+def verify_production(
+    config: Config,
+    release: Release,
+    *,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+    timeout_seconds: float = VERIFY_TIMEOUT_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Wait for the public production health contract and verify its sample analytics path."""
+    if not HOST_RE.fullmatch(config.hostname):
+        raise PromotionError("Production hostname is missing or malformed.")
+    base_url = f"https://{config.hostname}"
+    deadline = monotonic() + timeout_seconds
+    while True:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise PromotionError("Production readiness timed out.")
+        try:
+            status, body = _http_request(
+                f"{base_url}/health/ready",
+                "GET",
+                {},
+                None,
+                min(HTTP_TIMEOUT_SECONDS, remaining),
+                opener=opener,
             )
-            stream.write(f"| Dev source | {source.digest} | {source.version} |\n")
-            stream.write(f"| Production target | {source.digest} | {source.version} |\n")
-            stream.write(f"| Previous production | {previous.digest} | {previous.version} |\n")
+            readiness = _json_body(status, body, 200, "Production readiness endpoint")
+            if (
+                readiness.get("status") == "ready"
+                and readiness.get("environment") == "production"
+                and readiness.get("version") == release.version
+            ):
+                break
+            # The previous instance may still answer while CloudFormation replaces it.
+        except PromotionError:
+            pass
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise PromotionError("Production readiness timed out.")
+        sleep(min(2.0, remaining))
+
+    status, body = _http_request(
+        f"{base_url}/api/datasets/sample",
+        "POST",
+        {},
+        b"",
+        HTTP_TIMEOUT_SECONDS,
+        opener=opener,
+    )
+    created = _json_body(status, body, 201, "Production sample creation")
+    dataset_id = created.get("dataset_id")
+    token = created.get("token")
+    if not isinstance(dataset_id, str) or not DATASET_ID_RE.fullmatch(dataset_id):
+        raise PromotionError("Production sample response omitted a valid dataset ID.")
+    if not isinstance(token, str) or not token:
+        raise PromotionError("Production sample response omitted its access token.")
+    print(f"::add-mask::{token}", flush=True)
+    print(f"::add-mask::Bearer {token}", flush=True)
+
+    operation_error: PromotionError | None = None
+    try:
+        metadata = created.get("meta")
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("currency") != "USD"
+            or metadata.get("date_range") != EXPECTED_SAMPLE_DATES
+            or metadata.get("row_count") != EXPECTED_SAMPLE_ROWS
+            or created.get("warnings") != []
+        ):
+            raise PromotionError("Production sample metadata does not match the bundled sample.")
+        status, analytics_body = _http_request(
+            f"{base_url}/api/datasets/{dataset_id}/analytics",
+            "GET",
+            {"Authorization": f"Bearer {token}"},
+            None,
+            HTTP_TIMEOUT_SECONDS,
+            opener=opener,
+        )
+        analytics = _json_body(status, analytics_body, 200, "Production sample analytics")
+        kpis = analytics.get("kpis")
+        if (
+            not isinstance(kpis, dict)
+            or any(kpis.get(key) != value for key, value in EXPECTED_SAMPLE.items())
+            or not isinstance(analytics.get("trend"), list)
+            or not analytics["trend"]
+            or not isinstance(analytics.get("top_products"), list)
+            or not analytics["top_products"]
+        ):
+            raise PromotionError("Production sample analytics do not match the bundled sample.")
+    except PromotionError as exc:
+        operation_error = exc
+
+    try:
+        status, _ = _http_request(
+            f"{base_url}/api/datasets/{dataset_id}",
+            "DELETE",
+            {"Authorization": f"Bearer {token}"},
+            None,
+            HTTP_TIMEOUT_SECONDS,
+            opener=opener,
+        )
+        if status != 204:
+            raise PromotionError(f"Production temporary sample cleanup returned HTTP {status}.")
+    except PromotionError as cleanup_error:
+        if operation_error is not None:
+            raise PromotionError(
+                f"{operation_error}; production temporary sample cleanup also failed."
+            ) from None
+        raise cleanup_error
+    if operation_error is not None:
+        raise operation_error
 
 
 def promote(
@@ -180,27 +418,74 @@ def promote(
     source: Release,
     runner: Callable[..., subprocess.CompletedProcess[str]],
     env: dict[str, str],
+    verifier: Callable[[Config, Release], None] = verify_production,
 ) -> Release:
     validate_config(config)
     if not DIGEST_RE.fullmatch(source.digest) or not VERSION_RE.fullmatch(source.version):
         raise PromotionError("Development release metadata failed validation.")
     previous = describe(runner, "osa-prod", config)
-    write_summary(source, previous, env)
-    run(runner, update_command(config, source), "osa-prod update")
-    run(
-        runner,
-        [
-            "aws",
-            "cloudformation",
-            "wait",
-            "stack-update-complete",
-            "--stack-name",
-            "osa-prod",
-            "--region",
-            config.region,
-        ],
-        "osa-prod update wait",
-    )
+    try:
+        run(runner, update_command(config, source), "osa-prod update")
+        try:
+            run(
+                runner,
+                [
+                    "aws",
+                    "cloudformation",
+                    "wait",
+                    "stack-update-complete",
+                    "--stack-name",
+                    "osa-prod",
+                    "--region",
+                    config.region,
+                ],
+                "osa-prod update wait",
+            )
+        except PromotionError:
+            wait_for_stack_settlement(runner, config)
+            raise
+        if describe(runner, "osa-prod", config) != source:
+            raise PromotionError("osa-prod release metadata does not match the promoted release.")
+        verifier(config, source)
+        write_summary(source, previous, env, verification="PASS", rollback="not required")
+    except PromotionError as promotion_error:
+        try:
+            current = describe(runner, "osa-prod", config)
+            if current != previous:
+                run(runner, update_command(config, previous), "osa-prod rollback update")
+                run(
+                    runner,
+                    [
+                        "aws",
+                        "cloudformation",
+                        "wait",
+                        "stack-update-complete",
+                        "--stack-name",
+                        "osa-prod",
+                        "--region",
+                        config.region,
+                    ],
+                    "osa-prod rollback wait",
+                )
+            if describe(runner, "osa-prod", config) != previous:
+                raise PromotionError(
+                    "Restored production digest or version does not match the previous release."
+                )
+            verifier(config, previous)
+            if describe(runner, "osa-prod", config) != previous:
+                raise PromotionError("Production release changed during rollback verification.")
+            write_summary(source, previous, env, verification="FAIL", rollback="PASS")
+        except PromotionError as rollback_error:
+            try:
+                write_summary(source, previous, env, verification="FAIL", rollback="FAILED")
+            except PromotionError:
+                pass
+            raise PromotionError(
+                f"{promotion_error}; production rollback failed: {rollback_error}"
+            ) from None
+        raise PromotionError(
+            f"{promotion_error}; previous production release was restored and verified."
+        ) from None
     return previous
 
 

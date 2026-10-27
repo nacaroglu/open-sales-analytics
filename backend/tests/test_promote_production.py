@@ -100,20 +100,38 @@ def test_missing_or_malformed_dev_metadata_is_rejected(payload: str, repository:
 
 def test_promotion_uses_only_the_dev_digest_and_never_builds_pushes_or_retags(tmp_path: Path):
     commands: list[list[str]] = []
+    current = PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
 
     def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
+        nonlocal current
         args = list(command)
         commands.append(args)
         if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
             return subprocess.CompletedProcess(
-                args, 0, stdout=describe_json("osa-prod", OLD_DIGEST, OLD_VERSION)
+                args, 0, stdout=describe_json("osa-prod", current.digest, current.version)
             )
+        if args[:3] == ["aws", "cloudformation", "update-stack"]:
+            digest = next(
+                item.split(",ParameterValue=", 1)[1]
+                for item in args
+                if item.startswith("ParameterKey=ImageDigest,")
+            )
+            version = next(
+                item.split(",ParameterValue=", 1)[1]
+                for item in args
+                if item.startswith("ParameterKey=ReleaseVersion,")
+            )
+            current = PROMOTION.Release(digest, version)
         return subprocess.CompletedProcess(args, 0, stdout="")
 
     summary = tmp_path / "summary.md"
     source = PROMOTION.Release(DIGEST, VERSION)
     previous = PROMOTION.promote(
-        config(), source, runner=runner, env={"GITHUB_STEP_SUMMARY": str(summary)}
+        config(),
+        source,
+        runner=runner,
+        env={"GITHUB_STEP_SUMMARY": str(summary)},
+        verifier=lambda _config, _release: None,
     )
 
     assert previous == PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
@@ -130,7 +148,6 @@ def test_promotion_uses_only_the_dev_digest_and_never_builds_pushes_or_retags(tm
         )
         for command in commands
     )
-    assert "osa-prod update wait" not in summary.read_text(encoding="utf-8")
     contents = summary.read_text(encoding="utf-8")
     assert (
         DIGEST in contents
@@ -138,6 +155,223 @@ def test_promotion_uses_only_the_dev_digest_and_never_builds_pushes_or_retags(tm
         and OLD_DIGEST in contents
         and OLD_VERSION in contents
     )
+    assert "Production verification: PASS" in contents
+    assert "Rollback: not required" in contents
+
+
+def test_failed_production_verification_restores_and_verifies_previous_release(tmp_path: Path):
+    current = PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
+    commands: list[list[str]] = []
+
+    def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
+        nonlocal current
+        args = list(command)
+        commands.append(args)
+        if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
+            return subprocess.CompletedProcess(
+                args, 0, stdout=describe_json("osa-prod", current.digest, current.version)
+            )
+        if args[:3] == ["aws", "cloudformation", "update-stack"]:
+            digest = next(
+                item.split(",ParameterValue=", 1)[1]
+                for item in args
+                if item.startswith("ParameterKey=ImageDigest,")
+            )
+            version = next(
+                item.split(",ParameterValue=", 1)[1]
+                for item in args
+                if item.startswith("ParameterKey=ReleaseVersion,")
+            )
+            current = PROMOTION.Release(digest, version)
+        return subprocess.CompletedProcess(args, 0, stdout="")
+
+    verified: list[PROMOTION.Release] = []
+
+    def verifier(_config, release):
+        verified.append(release)
+        if release.digest == DIGEST:
+            raise PROMOTION.PromotionError("Production sample analytics verification failed.")
+
+    summary = tmp_path / "summary.md"
+    with pytest.raises(PROMOTION.PromotionError, match="restored and verified"):
+        PROMOTION.promote(
+            config(),
+            PROMOTION.Release(DIGEST, VERSION),
+            runner=runner,
+            verifier=verifier,
+            env={"GITHUB_STEP_SUMMARY": str(summary)},
+        )
+
+    updates = [
+        command for command in commands if command[:3] == ["aws", "cloudformation", "update-stack"]
+    ]
+    assert len(updates) == 2
+    assert f"ParameterKey=ImageDigest,ParameterValue={OLD_DIGEST}" in updates[1]
+    assert f"ParameterKey=ReleaseVersion,ParameterValue={OLD_VERSION}" in updates[1]
+    assert current == PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
+    assert verified == [
+        PROMOTION.Release(DIGEST, VERSION),
+        PROMOTION.Release(OLD_DIGEST, OLD_VERSION),
+    ]
+    contents = summary.read_text(encoding="utf-8")
+    assert "Production verification: FAIL" in contents
+    assert "Rollback: PASS" in contents
+    assert OLD_DIGEST in contents and DIGEST in contents
+
+
+def test_failed_rollback_verification_is_reported_as_rollback_failure(tmp_path: Path):
+    current = PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
+
+    def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
+        nonlocal current
+        args = list(command)
+        if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
+            return subprocess.CompletedProcess(
+                args, 0, stdout=describe_json("osa-prod", current.digest, current.version)
+            )
+        if args[:3] == ["aws", "cloudformation", "update-stack"]:
+            digest = next(
+                item.split(",ParameterValue=", 1)[1]
+                for item in args
+                if item.startswith("ParameterKey=ImageDigest,")
+            )
+            version = next(
+                item.split(",ParameterValue=", 1)[1]
+                for item in args
+                if item.startswith("ParameterKey=ReleaseVersion,")
+            )
+            current = PROMOTION.Release(digest, version)
+        return subprocess.CompletedProcess(args, 0, stdout="")
+
+    def verifier(_config, _release):
+        raise PROMOTION.PromotionError("Production readiness verification failed.")
+
+    summary = tmp_path / "summary.md"
+    with pytest.raises(PROMOTION.PromotionError, match="rollback failed"):
+        PROMOTION.promote(
+            config(),
+            PROMOTION.Release(DIGEST, VERSION),
+            runner=runner,
+            verifier=verifier,
+            env={"GITHUB_STEP_SUMMARY": str(summary)},
+        )
+
+    assert current == PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
+    assert "Rollback: FAILED" in summary.read_text(encoding="utf-8")
+
+
+def test_invalid_previous_production_release_stops_before_update():
+    commands: list[list[str]] = []
+
+    def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
+        args = list(command)
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="{}")
+
+    with pytest.raises(PROMOTION.PromotionError, match="osa-prod release metadata"):
+        PROMOTION.promote(
+            config(),
+            PROMOTION.Release(DIGEST, VERSION),
+            runner=runner,
+            verifier=lambda _config, _release: None,
+            env={},
+        )
+
+    assert len(commands) == 1
+    assert commands[0][:3] == ["aws", "cloudformation", "describe-stacks"]
+
+
+def test_production_verifier_checks_readiness_sample_analytics_and_cleanup(capsys):
+    dataset_id = "A" * 22
+    token = "secret-smoke-token"
+    responses = [
+        (200, {"status": "ready", "environment": "production", "version": OLD_VERSION}),
+        (200, {"status": "ready", "environment": "production", "version": VERSION}),
+        (
+            201,
+            {
+                "dataset_id": dataset_id,
+                "token": token,
+                "meta": {
+                    "currency": "USD",
+                    "date_range": PROMOTION.EXPECTED_SAMPLE_DATES,
+                    "row_count": PROMOTION.EXPECTED_SAMPLE_ROWS,
+                },
+                "warnings": [],
+            },
+        ),
+        (
+            200,
+            {
+                "kpis": PROMOTION.EXPECTED_SAMPLE,
+                "trend": [{"date": "2024-01-01"}],
+                "top_products": [{"product_id": "p1"}],
+            },
+        ),
+        (204, None),
+    ]
+    requests = []
+
+    class Response:
+        def __init__(self, status: int, body: dict | None):
+            self.status = status
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"" if self.body is None else json.dumps(self.body).encode()
+
+    def opener(request, **_kwargs):
+        requests.append(request)
+        status, body = responses.pop(0)
+        return Response(status, body)
+
+    PROMOTION.verify_production(
+        config(),
+        PROMOTION.Release(DIGEST, VERSION),
+        opener=opener,
+        timeout_seconds=1,
+        sleep=lambda _duration: None,
+    )
+
+    assert [request.method for request in requests] == ["GET", "GET", "POST", "GET", "DELETE"]
+    assert requests[0].full_url == "https://sales.example.com/health/ready"
+    assert requests[2].full_url == "https://sales.example.com/api/datasets/sample"
+    assert requests[2].get_header("Authorization") is None
+    assert requests[3].get_header("Authorization") == f"Bearer {token}"
+    assert requests[4].get_header("Authorization") == f"Bearer {token}"
+    assert token in capsys.readouterr().out
+
+
+def test_failed_update_wait_polls_until_cloudformation_rollback_is_complete():
+    statuses = ["UPDATE_ROLLBACK_IN_PROGRESS", "UPDATE_ROLLBACK_COMPLETE"]
+    now = 0.0
+
+    def monotonic() -> float:
+        return now
+
+    def sleep(duration: float) -> None:
+        nonlocal now
+        now += duration
+
+    def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
+        args = list(command)
+        assert args[:3] == ["aws", "cloudformation", "describe-stacks"]
+        status = statuses.pop(0)
+        payload = {"Stacks": [{"StackName": "osa-prod", "StackStatus": status}]}
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps(payload))
+
+    PROMOTION.wait_for_stack_settlement(
+        runner, config(), timeout_seconds=10, monotonic=monotonic, sleep=sleep
+    )
+
+    assert statuses == []
+    assert now == 5.0
 
 
 def test_invalid_source_release_fails_before_any_aws_command():

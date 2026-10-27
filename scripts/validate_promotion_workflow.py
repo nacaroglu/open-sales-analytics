@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 WORKFLOW = Path(".github/workflows/promote-production.yml")
+PROMOTION_SCRIPT = Path("scripts/promote_production.py")
 
 
 def fail(message: str) -> None:
@@ -26,6 +27,7 @@ def section(source: str, name: str) -> str:
 
 def validate(source: str | None = None) -> None:
     text = WORKFLOW.read_text(encoding="utf-8") if source is None else source
+    promotion = PROMOTION_SCRIPT.read_text(encoding="utf-8")
     if not re.search(r"(?ms)^on:\s*\n\s+workflow_dispatch:\s*(?:\n|$)", text):
         fail("only a manual workflow_dispatch trigger is allowed")
     if "inputs:" in text or "inputs." in text:
@@ -83,6 +85,17 @@ def validate(source: str | None = None) -> None:
     )
     if any(marker in text.lower() for marker in forbidden):
         fail("workflow must not use long-lived keys or build, push, or retag images")
+    rollback_contract = (
+        "verifier(config, source)",
+        "update_command(config, previous)",
+        'verification="FAIL", rollback="PASS"',
+        'verification="FAIL", rollback="FAILED"',
+        'raise PromotionError("osa-prod release metadata does not match the promoted release.")',
+    )
+    if any(marker not in promotion for marker in rollback_contract):
+        fail(
+            "promotion code must verify the production release and report digest-pinned rollback outcomes"
+        )
 
 
 if __name__ == "__main__":
