@@ -135,3 +135,11 @@ def test_publish_rejects_malformed_configuration_before_commands(
 
     with pytest.raises(PublishError):
         publish_image(
+            repository_uri=repository_uri,
+            version=version,
+            region=region,
+            output_path=tmp_path / "github-output",
+            runner=runner,
+        )
+
+    assert calls == []
