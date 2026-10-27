@@ -364,6 +364,8 @@ jobs:
     name: Container (build, smoke, browser tests)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      release-version: ${{ steps.release-version.outputs.version }}
     env:
       COMPOSE_PROJECT_NAME: osa-browser-ci-${{ github.run_id }}
       OSA_PORT: "8000"
@@ -739,8 +741,10 @@ jobs:
             exit 1
           fi
       - name: Build image
+        id: release-version
         run: |
-          version="$(date -u +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
+          version="$(python3 backend/app/release_version.py "$(git rev-parse HEAD)")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           docker build --build-arg OSA_VERSION="$version" -t open-sales-analytics .
           label="$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.version" }}' open-sales-analytics)"
           test "$label" = "$version"
