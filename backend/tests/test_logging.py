@@ -104,6 +104,7 @@ def test_encoded_newline_and_marker_in_path_stay_out_of_request_log(client, log)
     text = log.read()
     assert len(text.splitlines()) == 1
     entry = json.loads(text)
+    # Request logs use the normalized route template, never the raw path.
     assert entry["route"] == "/api/datasets/{id}"
     assert "MARKER_PRIVATE_ID" not in text
     assert "path" not in entry
