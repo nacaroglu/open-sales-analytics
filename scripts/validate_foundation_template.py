@@ -1177,6 +1177,19 @@ for role_name, environment, prefix, parameter_env in (
 ):
     expected = env_policy(environment, prefix, parameter_env)
     if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        expected[f"ManageOsa{'Dev' if parameter_env == 'dev' else 'Prod'}InstanceProfile"] = (
+            {
+                "iam:AddRoleToInstanceProfile",
+                "iam:CreateInstanceProfile",
+                "iam:DeleteInstanceProfile",
+                "iam:GetInstanceProfile",
+                "iam:RemoveRoleFromInstanceProfile",
+                "iam:TagInstanceProfile",
+                "iam:UntagInstanceProfile",
+            },
+            [iam_arn(f"instance-profile/{environment}/*")],
+            [],
+        )
         expected[f"ManageOsa{'Dev' if parameter_env == 'dev' else 'Prod'}ReleaseImageParameter"] = (
             {
                 "ssm:AddTagsToResource",

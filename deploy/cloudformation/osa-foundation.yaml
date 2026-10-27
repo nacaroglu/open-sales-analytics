@@ -729,6 +729,17 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
+              - Sid: ManageOsaDevInstanceProfile
+                Effect: Allow
+                Action:
+                  - iam:AddRoleToInstanceProfile
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:TagInstanceProfile
+                  - iam:UntagInstanceProfile
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/osa-dev/*"
               - Sid: ManageOsaDevReleaseImageParameter
                 Effect: Allow
                 Action:
@@ -891,6 +902,17 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
+              - Sid: ManageOsaProdInstanceProfile
+                Effect: Allow
+                Action:
+                  - iam:AddRoleToInstanceProfile
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:TagInstanceProfile
+                  - iam:UntagInstanceProfile
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/osa-prod/*"
               - Sid: ManageOsaProdReleaseImageParameter
                 Effect: Allow
                 Action:

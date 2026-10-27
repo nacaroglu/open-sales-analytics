@@ -93,14 +93,23 @@ jobs:
         run: |
           set -euo pipefail
           cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
+          # W9010 reports the CLI's required sample AmiId override as a literal; the static validator asserts ImageId: !Ref AmiId.
           cfn-validate --strict deploy/cloudformation/osa-application.yaml \
+            --exclude-resource-id AppInstance=W9010 \
             --parameter Environment=development \
             --parameter ImageDigest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            --parameter ReleaseVersion=20261026-dev
+            --parameter ReleaseVersion=20261026-dev \
+            --parameter AmiId=ami-0123456789abcdef0 \
+            --parameter InstanceType=t3.small \
+            --parameter PublicHostname=dev.example.com
           cfn-validate --strict deploy/cloudformation/osa-application.yaml \
+            --exclude-resource-id AppInstance=W9010 \
             --parameter Environment=production \
             --parameter ImageDigest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
-            --parameter ReleaseVersion=20261026-prod
+            --parameter ReleaseVersion=20261026-prod \
+            --parameter AmiId=ami-0123456789abcdef0 \
+            --parameter InstanceType=t3.small \
+            --parameter PublicHostname=prod.example.com
       - name: Check foundation, application, and environment manifest invariants
         run: |
           python3 scripts/validate_foundation_template.py
