@@ -41,20 +41,46 @@ def run(command: list[str], *, env: dict[str, str] | None = None) -> str:
 
 
 def response(
-    url: str, *, auth: tuple[str, str] | None = None, body: bytes | None = None
+    url: str,
+    *,
+    auth: tuple[str, str] | None = None,
+    authorization: str | None = None,
+    body: bytes | None = None,
+    method: str | None = None,
 ) -> tuple[int, bytes]:
     headers = {}
     if auth is not None:
         credentials = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
         headers["Authorization"] = f"Basic {credentials}"
+    if authorization is not None:
+        headers["Authorization"] = authorization
     if body is not None:
         headers["Content-Type"] = "multipart/form-data; boundary=OSA241"
-    request = urllib.request.Request(url, data=body, headers=headers)
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=3) as result:
             return result.status, result.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()
+
+
+def assert_basic_challenge(
+    url: str,
+    *,
+    authorization: str,
+    method: str = "GET",
+    body: bytes | None = None,
+) -> None:
+    request = urllib.request.Request(
+        url, data=body, headers={"Authorization": authorization}, method=method
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as result:
+            raise AssertionError(f"Expected Caddy Basic Auth challenge, received HTTP {result.status}")
+    except urllib.error.HTTPError as error:
+        challenge = error.headers.get("WWW-Authenticate", "")
+        if error.code != 401 or not challenge.startswith("Basic"):
+            raise AssertionError("Request did not receive the Caddy Basic Auth challenge") from None
 
 
 def wait_for_status(url: str, expected: int, *, auth: tuple[str, str] | None = None) -> None:
@@ -146,13 +172,64 @@ def run_production_browser_journey(caddy_url: str) -> None:
 
 def verify_development(network: str, auth_block: str) -> None:
     name, caddy_url = start_caddy("development", "false", auth_block, network)
+    sample_id = None
+    sample_token = None
     try:
         wait_for_status(f"{caddy_url}/", 401)
-        wait_for_status(f"{caddy_url}/api/health", 401)
+        wait_for_status(f"{caddy_url}/health/ready", 401)
+        wait_for_status(f"{caddy_url}/api/datasets/sample", 401)
+        bearer_header = f"Bearer {'x' * 43}"
+        assert_basic_challenge(
+            f"{caddy_url}/api/datasets/sample", authorization=bearer_header, method="POST", body=b""
+        )
+        assert_basic_challenge(f"{caddy_url}/", authorization=bearer_header)
+        assert_basic_challenge(f"{caddy_url}/assets/app.js", authorization=bearer_header)
+        assert_basic_challenge(
+            f"{caddy_url}/api/datasets/not-a-token/analytics", authorization=bearer_header
+        )
+        assert_basic_challenge(
+            f"{caddy_url}/api/datasets/abcdefghijklmnopqrstuv.extra/analytics",
+            authorization=bearer_header,
+        )
         wait_for_status(f"{caddy_url}/", 200, auth=("ci-user", "ci-only"))
         wait_for_status(f"{caddy_url}/api/health", 200, auth=("ci-user", "ci-only"))
+        status, sample = response(
+            f"{caddy_url}/api/datasets/sample", auth=("ci-user", "ci-only"), body=b"", method="POST"
+        )
+        if status != 201:
+            raise AssertionError("Basic-authenticated dev sample creation was rejected")
+        sample_values = json.loads(sample)
+        sample_id = sample_values["dataset_id"]
+        sample_token = sample_values["token"]
+        invalid = urllib.request.Request(
+            f"{caddy_url}/api/datasets/{sample_id}/analytics",
+            headers={"Authorization": f"Bearer {'x' * 43}"},
+        )
+        try:
+            urllib.request.urlopen(invalid, timeout=3)
+        except urllib.error.HTTPError as error:
+            if error.code != 401 or not error.headers.get("WWW-Authenticate", "").startswith("Bearer"):
+                raise AssertionError("Bearer dataset API request did not reach application token validation") from None
+        else:
+            raise AssertionError("Invalid dataset bearer token was accepted")
+        status, analytics = response(
+            f"{caddy_url}/api/datasets/{sample_id}/analytics",
+            authorization=f"Bearer {sample_token}",
+        )
+        if status != 200 or not json.loads(analytics).get("kpis"):
+            raise AssertionError("Valid bearer dataset API request did not reach the application")
     finally:
+        cleanup_status = 0
+        if sample_id and sample_token:
+            status, _ = response(
+                f"{caddy_url}/api/datasets/{sample_id}",
+                authorization=f"Bearer {sample_token}",
+                method="DELETE",
+            )
+            cleanup_status = 0 if status == 204 else 1
         stop_caddy(name)
+        if cleanup_status:
+            raise AssertionError("Temporary Caddy smoke dataset cleanup failed")
 
 
 def verify_production(network: str) -> None:
