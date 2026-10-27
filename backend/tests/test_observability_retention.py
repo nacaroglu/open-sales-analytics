@@ -23,6 +23,24 @@ def test_configured_backends_have_seven_day_retention_and_bounded_limits():
     assert validate_backend_configs(ROOT / "observability") == []
 
 
+def test_tempo_3x_config_rejects_removed_ingester_and_compactor_sections(tmp_path):
+    for config in ("compose.yaml", "prometheus.yaml", "loki.yaml", "tempo.yaml"):
+        copyfile(ROOT / "observability" / config, tmp_path / config)
+    tempo = tmp_path / "tempo.yaml"
+    valid_tempo = tempo.read_text(encoding="utf-8")
+    for removed_section in (
+        "ingester",
+        "ingester_client",
+        "compactor",
+        "metrics_generator_client",
+    ):
+        tempo.write_text(
+            f"{removed_section}:\n  removed_option: true\n" + valid_tempo, encoding="utf-8"
+        )
+        errors = validate_backend_configs(tmp_path)
+        assert any("removed Tempo 3.x configuration" in error for error in errors)
+
+
 def test_data_older_than_seven_days_is_expired_but_boundary_data_remains():
     now = datetime(2026, 10, 27, 12, tzinfo=UTC)
     assert RETENTION_WINDOW == timedelta(days=7)

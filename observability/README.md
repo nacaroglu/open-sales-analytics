@@ -33,8 +33,10 @@ docker compose -f observability/compose.yaml logs --follow
 Prometheus retains samples for at most seven days and also applies a 10 GB TSDB
 size cap. Loki's compactor deletes log data after 168 hours; its ingestion rate
 is limited to 4 MB/s with a 6 MB burst, at most 5,000 streams, and a 256 KB
-maximum line. Tempo retains blocks for 168 hours, caps compacted blocks at 1 GiB,
-limits ingestion to 1 MiB/s with a 2 MiB burst, and rejects traces over 5 MB.
+maximum line. Tempo 3.x's backend scheduler retains blocks for 168 hours; its
+config does not use the removed ingester or compactor modules. Tempo caps
+compacted blocks at 1 GiB, limits ingestion to 1 MiB/s with a 2 MiB burst, and
+rejects traces over 5 MB.
 All three use local filesystem storage. There are no object-store, snapshot,
 backup, or archive destinations.
 

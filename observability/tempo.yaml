@@ -10,11 +10,6 @@ distributor:
         http:
           endpoint: 0.0.0.0:4318
 
-ingester:
-  max_block_bytes: 52428800
-  max_block_duration: 5m
-  trace_idle_period: 10s
-
 storage:
   trace:
     backend: local

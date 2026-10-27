@@ -60,6 +60,10 @@ def validate_backend_configs(config_dir: Path) -> list[str]:
     _require(tempo, r"burst_size_bytes:\s*2097152\b", "Tempo ingestion burst cap", errors)
     _require(tempo, r"max_bytes_per_trace:\s*5000000\b", "Tempo trace size cap", errors)
     _require(compose, r"tempo-data:/var/tempo\b", "Tempo bounded persistent data path", errors)
+    if re.search(
+        r"(?m)^(?:ingester|ingester_client|compactor|metrics_generator_client):\s*$", tempo
+    ):
+        errors.append("Tempo config contains removed Tempo 3.x configuration")
 
     aws_compose_path = config_dir / "compose.aws.yaml"
     if aws_compose_path.exists():
