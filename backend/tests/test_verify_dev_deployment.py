@@ -352,14 +352,86 @@ def test_readiness_timeout_is_bounded():
 def test_summary_contains_release_identity_and_no_secret_or_token(tmp_path: Path):
     summary = tmp_path / "summary.md"
 
-    VERIFY.write_summary(summary, HOST, DIGEST, VERSION)
+    VERIFY.write_summary(
+        summary,
+        DIGEST,
+        VERSION,
+        readiness="PASS",
+        smoke="PASS",
+        cleanup="PASS",
+        failure_stage=None,
+    )
 
     content = summary.read_text(encoding="utf-8")
-    assert "Result: PASS" in content
+    assert "Environment: development" in content
+    assert f"Image tag: `{VERSION}`" in content
+    assert f"Release version: `{VERSION}`" in content
     assert DIGEST in content
-    assert VERSION in content
+    assert "CloudFormation deployment: PASS" in content
+    assert "Readiness: PASS" in content
+    assert "Sample analytics smoke: PASS" in content
+    assert "Temporary sample cleanup: PASS" in content
+    assert "Result: PASS" in content
+    assert HOST not in content
     assert PASSWORD not in content
     assert TOKEN not in content
+
+
+def test_failure_summary_identifies_stage_and_cleanup_without_infrastructure_values(tmp_path: Path):
+    summary = tmp_path / "summary.md"
+
+    VERIFY.write_summary(
+        summary,
+        DIGEST,
+        VERSION,
+        readiness="PASS",
+        smoke="FAIL",
+        cleanup="PASS",
+        failure_stage="Sample analytics smoke",
+    )
+
+    content = summary.read_text(encoding="utf-8")
+    assert "Sample analytics smoke: FAIL" in content
+    assert "Failure stage: Sample analytics smoke" in content
+    assert "Temporary sample cleanup: PASS" in content
+    assert "Result: FAIL" in content
+    for marker in (PASSWORD, TOKEN, CREDENTIAL, HOST, "10.0.0.5", "123456789012"):
+        assert marker not in content
+
+
+def test_verification_main_writes_failure_evidence_without_error_details(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    summary = tmp_path / "summary.md"
+    for key, value in {
+        "AWS_REGION": REGION,
+        "OSA_DEV_HOSTNAME": HOST,
+        "EXPECTED_IMAGE_DIGEST": DIGEST,
+        "EXPECTED_RELEASE_VERSION": VERSION,
+        "GITHUB_STEP_SUMMARY": str(summary),
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(sys, "argv", ["verify_dev_deployment.py"])
+
+    def fail_verification(_inputs, *, summary_path):
+        assert summary_path == summary
+        raise VERIFY.VerificationError(
+            "Development readiness timed out; credential-marker",
+            stage="Development readiness",
+        )
+
+    monkeypatch.setattr(VERIFY, "verify_deployment", fail_verification)
+
+    assert VERIFY.main() == 1
+    assert "credential-marker" in capsys.readouterr().err
+    content = summary.read_text(encoding="utf-8")
+    assert "CloudFormation deployment: PASS" in content
+    assert "Readiness: FAIL" in content
+    assert "Sample analytics smoke: NOT RUN" in content
+    assert "Temporary sample cleanup: NOT RUN" in content
+    assert "Failure stage: Development readiness" in content
+    for marker in ("credential-marker", HOST, "123456789012", TOKEN, PASSWORD):
+        assert marker not in content
 
 
 def test_input_validation_rejects_malformed_hostname_digest_and_version():

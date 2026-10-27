@@ -156,7 +156,13 @@ def test_promotion_uses_only_the_dev_digest_and_never_builds_pushes_or_retags(tm
         and OLD_VERSION in contents
     )
     assert "Production verification: PASS" in contents
+    assert "Environment: production" in contents
+    assert f"Image tag: `{VERSION}`" in contents
+    assert "Readiness: PASS" in contents
+    assert "Sample analytics smoke: PASS" in contents
     assert "Rollback: not required" in contents
+    for marker in ("123456789012", "sales.example.com", "password-marker", "token-marker"):
+        assert marker not in contents
 
 
 def test_failed_production_verification_restores_and_verifies_previous_release(tmp_path: Path):
@@ -215,6 +221,9 @@ def test_failed_production_verification_restores_and_verifies_previous_release(t
     ]
     contents = summary.read_text(encoding="utf-8")
     assert "Production verification: FAIL" in contents
+    assert "Readiness: PASS" in contents
+    assert "Sample analytics smoke: FAIL" in contents
+    assert "Failure stage: Sample analytics smoke" in contents
     assert "Rollback: PASS" in contents
     assert OLD_DIGEST in contents and DIGEST in contents
 
@@ -258,6 +267,10 @@ def test_failed_rollback_verification_is_reported_as_rollback_failure(tmp_path: 
 
     assert current == PROMOTION.Release(OLD_DIGEST, OLD_VERSION)
     assert "Rollback: FAILED" in summary.read_text(encoding="utf-8")
+    failure_summary = summary.read_text(encoding="utf-8")
+    assert "Failure stage: Production readiness" in failure_summary
+    assert "Readiness: FAIL" in failure_summary
+    assert "Sample analytics smoke: NOT RUN" in failure_summary
 
 
 def test_invalid_previous_production_release_stops_before_update():
@@ -279,6 +292,33 @@ def test_invalid_previous_production_release_stops_before_update():
 
     assert len(commands) == 1
     assert commands[0][:3] == ["aws", "cloudformation", "describe-stacks"]
+
+
+def test_invalid_previous_release_is_reported_without_attempting_an_update(tmp_path: Path):
+    commands: list[list[str]] = []
+
+    def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
+        args = list(command)
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="{}")
+
+    summary = tmp_path / "summary.md"
+    with pytest.raises(PROMOTION.PromotionError, match="osa-prod release metadata"):
+        PROMOTION.promote(
+            config(),
+            PROMOTION.Release(DIGEST, VERSION),
+            runner=runner,
+            env={"GITHUB_STEP_SUMMARY": str(summary)},
+            verifier=lambda _config, _release: None,
+        )
+
+    assert len(commands) == 1
+    assert commands[0][:3] == ["aws", "cloudformation", "describe-stacks"]
+    content = summary.read_text(encoding="utf-8")
+    assert "Previous production digest: `unavailable`" in content
+    assert "Failure stage: Prior production metadata lookup" in content
+    assert "Rollback: NOT RUN" in content
+    assert "Result: FAIL" in content
 
 
 def test_production_verifier_checks_readiness_sample_analytics_and_cleanup(capsys):
