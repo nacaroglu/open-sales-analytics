@@ -219,3 +219,7 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+### 可观测性堆栈
+
+在 foundation 之后、应用堆栈之前部署 `osa-observability`。dev 和 prod 堆栈会导入 Collector 安全组 ID，并分别管理仅以本应用安全组为来源的私有 OTLP 入站规则。删除时先删除应用堆栈，再删除 observability，最后删除 foundation。Collector 私有端点和安全组 ID 会导出；OTLP 认证令牌保存在各自环境的 SSM `SecureString` 参数中。

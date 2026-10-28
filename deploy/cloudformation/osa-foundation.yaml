@@ -1194,10 +1194,21 @@ Resources:
               - Sid: PassOnlyOsaEc2InstanceRole
                 Effect: Allow
                 Action: iam:PassRole
-                Resource: !GetAtt Ec2InstanceRole.Arn
+                Resource: !GetAtt ObservabilityEc2InstanceRole.Arn
                 Condition:
                   StringEquals:
                     iam:PassedToService: ec2.amazonaws.com
+              - Sid: ManageOsaObservabilityInstanceProfile
+                Effect: Allow
+                Action:
+                  - iam:AddRoleToInstanceProfile
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:TagInstanceProfile
+                  - iam:UntagInstanceProfile
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/osa-observability/*"
               - Sid: ReadOsaObservabilityParameters
                 Effect: Allow
                 Action: ssm:GetParameters
@@ -1300,6 +1311,57 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
                 Resource: !GetAtt Repository.Arn
+              - Sid: SessionManagerInstanceRegistration
+                Effect: Allow
+                Action: ssm:UpdateInstanceInformation
+                Resource: "*"
+              - Sid: SessionManagerChannels
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+      Tags:
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: !Ref AWS::StackName
+
+  ObservabilityEc2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ec2-observability"
+      Path: !Sub "/${AWS::StackName}/"
+      Description: Observability EC2 may use Session Manager and read its Grafana admin SecureString.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Ec2ServiceOnly
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadOnlyGrafanaAdminSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadGrafanaAdminSecret
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/observability/grafana/admin-password"
+              - Sid: DecryptGrafanaAdminSecretThroughSsm
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
+                    kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/observability/grafana/admin-password"
+                  ForAnyValue:StringEquals:
+                    kms:ResourceAliases: alias/aws/ssm
               - Sid: SessionManagerInstanceRegistration
                 Effect: Allow
                 Action: ssm:UpdateInstanceInformation
@@ -1440,3 +1502,8 @@ Outputs:
     Value: !Ref DevCaddyAuthEc2InstanceRole
     Export:
       Name: !Sub "${AWS::StackName}-DevCaddyAuthEc2InstanceRoleName"
+  ObservabilityEc2InstanceRoleName:
+    Description: Observability-only EC2 role allowed to read the Grafana admin SecureString.
+    Value: !Ref ObservabilityEc2InstanceRole
+    Export:
+      Name: !Sub "${AWS::StackName}-ObservabilityEc2InstanceRoleName"

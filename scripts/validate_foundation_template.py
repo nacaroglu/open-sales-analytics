@@ -365,6 +365,7 @@ required_roles = {
     "ObservabilityExecutionRole",
     "Ec2InstanceRole",
     "DevCaddyAuthEc2InstanceRole",
+    "ObservabilityEc2InstanceRole",
 }
 for role_name in required_roles:
     require(
@@ -455,6 +456,7 @@ for role_name in (
     exact_trust(role_name, "cloudformation.amazonaws.com")
 exact_trust("Ec2InstanceRole", "ec2.amazonaws.com")
 exact_trust("DevCaddyAuthEc2InstanceRole", "ec2.amazonaws.com")
+exact_trust("ObservabilityEc2InstanceRole", "ec2.amazonaws.com")
 
 build_statements = policy_statements("BuildRole")
 require(
@@ -567,7 +569,11 @@ for role_name, environment, sid_prefix in environment_roles:
             and "parameter/osa/prod/*" not in parameter_statement,
             f"{role_name} SSM access must be limited to its exact release metadata parameter ARN",
         )
-    instance_role_name = "DevCaddyAuthEc2InstanceRole" if environment == "osa-dev" else "Ec2InstanceRole"
+    instance_role_name = (
+        "DevCaddyAuthEc2InstanceRole" if environment == "osa-dev"
+        else "ObservabilityEc2InstanceRole" if environment == "osa-observability"
+        else "Ec2InstanceRole"
+    )
     require(
         "iam:PassRole" in role_body(role_name)
         and f"Resource: !GetAtt {instance_role_name}.Arn" in role_body(role_name)
@@ -627,6 +633,8 @@ expected_wildcards = {
     ("DevCaddyAuthEc2InstanceRole", "EcrAuthorizationToken"),
     ("DevCaddyAuthEc2InstanceRole", "SessionManagerInstanceRegistration"),
     ("DevCaddyAuthEc2InstanceRole", "SessionManagerChannels"),
+    ("ObservabilityEc2InstanceRole", "SessionManagerInstanceRegistration"),
+    ("ObservabilityEc2InstanceRole", "SessionManagerChannels"),
 }
 actual_wildcards: set[tuple[str, str]] = set()
 for role_name, (resource_type, _) in resources.items():
@@ -650,6 +658,7 @@ for output_name, role_name in (
     ("ObservabilityExecutionRoleArn", "ObservabilityExecutionRole"),
     ("Ec2InstanceRoleArn", "Ec2InstanceRole"),
     ("DevCaddyAuthEc2InstanceRoleName", "DevCaddyAuthEc2InstanceRole"),
+    ("ObservabilityEc2InstanceRoleName", "ObservabilityEc2InstanceRole"),
 ):
     output = re.search(
         rf"(?ms)^  {output_name}:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
@@ -658,8 +667,8 @@ for output_name, role_name in (
     require(
         output is not None
         and (f"Value: !GetAtt {role_name}.Arn" in output.group("body")
-             if output_name != "DevCaddyAuthEc2InstanceRoleName"
-             else "Value: !Ref DevCaddyAuthEc2InstanceRole" in output.group("body"))
+             if output_name.endswith("Arn")
+             else f"Value: !Ref {role_name}" in output.group("body"))
         and f'{dollar}{{AWS::StackName}}-{output_name}' in output.group("body"),
         f"{output_name} must expose a stable stack-qualified export for {role_name}",
     )
@@ -674,6 +683,7 @@ for role_name in (
     "ObservabilityExecutionRole",
     "Ec2InstanceRole",
     "DevCaddyAuthEc2InstanceRole",
+    "ObservabilityEc2InstanceRole",
 ):
     require(role_name.lower() in doc, f"README must document the purpose of {role_name}")
 for phrase in (
@@ -1260,7 +1270,13 @@ def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[st
         ),
         "PassOnlyOsaEc2InstanceRole": (
             {"iam:PassRole"},
-            ["!GetAtt DevCaddyAuthEc2InstanceRole.Arn" if environment == "osa-dev" else "!GetAtt Ec2InstanceRole.Arn"],
+            [
+                "!GetAtt DevCaddyAuthEc2InstanceRole.Arn"
+                if environment == "osa-dev"
+                else "!GetAtt ObservabilityEc2InstanceRole.Arn"
+                if environment == "osa-observability"
+                else "!GetAtt Ec2InstanceRole.Arn"
+            ],
             equals("iam:PassedToService: ec2.amazonaws.com"),
         ),
     }
@@ -1300,6 +1316,19 @@ for role_name, environment, prefix, parameter_env in (
     if role_name == "ObservabilityExecutionRole":
         expected.update(
             {
+                "ManageOsaObservabilityInstanceProfile": (
+                    {
+                        "iam:AddRoleToInstanceProfile",
+                        "iam:CreateInstanceProfile",
+                        "iam:DeleteInstanceProfile",
+                        "iam:GetInstanceProfile",
+                        "iam:RemoveRoleFromInstanceProfile",
+                        "iam:TagInstanceProfile",
+                        "iam:UntagInstanceProfile",
+                    },
+                    [iam_arn("instance-profile/osa-observability/*")],
+                    [],
+                ),
                 "ReadOsaObservabilityParameters": (
                     {"ssm:GetParameters"},
                     [ssm_parameter_arn("osa/observability/*")],
@@ -1351,6 +1380,38 @@ assert_exact_policy(
             },
             ["!GetAtt Repository.Arn"],
             [],
+        ),
+        "SessionManagerInstanceRegistration": ({"ssm:UpdateInstanceInformation"}, ['"*"'], []),
+        "SessionManagerChannels": (
+            {
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+            },
+            ['"*"'],
+            [],
+        ),
+    },
+)
+assert_exact_policy(
+    "ObservabilityEc2InstanceRole",
+    {
+        "ReadGrafanaAdminSecret": (
+            {"ssm:GetParameter"},
+            [ssm_parameter_arn("osa/observability/grafana/admin-password")],
+            [],
+        ),
+        "DecryptGrafanaAdminSecretThroughSsm": (
+            {"kms:Decrypt"},
+            [f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'],
+            [
+                "StringEquals:",
+                f"kms:ViaService: !Sub \"ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}\"",
+                f"kms:EncryptionContext:PARAMETER_ARN: !Sub \"arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/observability/grafana/admin-password\"",
+                "ForAnyValue:StringEquals:",
+                "kms:ResourceAliases: alias/aws/ssm",
+            ],
         ),
         "SessionManagerInstanceRegistration": ({"ssm:UpdateInstanceInformation"}, ['"*"'], []),
         "SessionManagerChannels": (

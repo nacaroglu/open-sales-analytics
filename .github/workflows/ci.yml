@@ -113,6 +113,12 @@ jobs:
         run: |
           set -euo pipefail
           cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
+          cfn-validate --strict deploy/cloudformation/osa-observability.yaml \
+            --parameter AmiId=ami-0123456789abcdef0 \
+            --parameter InstanceType=t3.small \
+            --parameter GrafanaHostname=grafana.example.com \
+            --parameter GrafanaAdminParameterName=/osa/observability/grafana/admin-password \
+            --parameter ObservabilityConfigRevision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           # W9010 reports the CLI's required sample AmiId override as a literal; the static validator asserts ImageId: !Ref AmiId.
           cfn-validate --strict deploy/cloudformation/osa-application.yaml \
             --exclude-resource-id AppInstance=W9010 \
@@ -134,6 +140,7 @@ jobs:
         run: |
           python3 scripts/validate_foundation_template.py
           python3 scripts/validate_application_template.py
+          python3 scripts/validate_observability_template.py
           python3 scripts/validate_environment_manifests.py
           python3 scripts/validate_promotion_workflow.py
           python3 scripts/validate_deployment_evidence.py

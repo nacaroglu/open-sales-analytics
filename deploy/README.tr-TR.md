@@ -227,3 +227,7 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+### Gözlemlenebilirlik yığını
+
+`osa-observability` yığınını foundation'dan sonra ve uygulama yığınlarından önce dağıtın. Dev ve prod uygulama yığınları Collector güvenlik grubu kimliğini içe aktarır ve yalnızca kendi uygulama güvenlik gruplarından özel OTLP erişim kuralını yönetir. Silme sırasında önce uygulama yığınlarını, sonra observability yığınını, en son foundation'ı kaldırın. Collector özel uç noktası ve güvenlik grubu kimliği dışa aktarılır; OTLP kimlik doğrulama belirteçleri ortamlarına ait SSM `SecureString` parametrelerinde tutulur.
