@@ -17,3 +17,19 @@ storage:
       path: /var/tempo/wal
     local:
       path: /var/tempo/blocks
+
+backend_worker:
+  compaction:
+    block_retention: 168h
+    max_block_bytes: 1073741824
+
+overrides:
+  defaults:
+    compaction:
+      block_retention: 168h
+    ingestion:
+      rate_strategy: local
+      rate_limit_bytes: 1048576
+      burst_size_bytes: 2097152
+    global:
+      max_bytes_per_trace: 5000000

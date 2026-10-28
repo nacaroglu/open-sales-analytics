@@ -23,3 +23,18 @@ schema_config:
       index:
         prefix: index_
         period: 24h
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  delete_request_store: filesystem
+
+limits_config:
+  retention_period: 168h
+  max_query_lookback: 168h
+  ingestion_rate_mb: 4
+  ingestion_burst_size_mb: 6
+  max_global_streams_per_user: 5000
+  max_line_size: 256KB
