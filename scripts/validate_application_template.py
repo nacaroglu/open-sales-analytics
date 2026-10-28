@@ -27,36 +27,7 @@ def normalized(value: str) -> list[str]:
 require(normalized(embedded_caddy) == normalized(caddy_template), "CloudFormation and tracked deployment Caddyfiles must match")
 require(
     "path_regexp dataset_api ^/api/datasets/[A-Za-z0-9_-]{22}(/.*)?$" in caddy_template
-    and "header_regexp bearer Authorization `^Bearer[[:blank:]]+[A-Za-z0-9_-]{43}#!/usr/bin/env python3
-"""Offline assertions for the parameterized OSA application release contract."""
-import re
-import sys
-import textwrap
-from pathlib import Path
-
-TEMPLATE = Path("deploy/cloudformation/osa-application.yaml")
-text = TEMPLATE.read_text(encoding="utf-8")
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        print(f"::error::{message}", file=sys.stderr)
-        raise SystemExit(1)
-
-
-# CloudFormation's generated Caddyfile must stay identical to the runtime template,
-# including the narrow, exact Bearer API bypass matcher.
-caddy_template = Path("Caddyfile.deploy").read_text(encoding="utf-8").strip()
-caddy_match = re.search(r"(?ms)^\s+cat > /opt/osa/Caddyfile <<'CADDY'\n(?P<body>.*?)^\s+CADDY$", text)
-require(caddy_match is not None, "CloudFormation must generate the deployment Caddyfile")
-embedded_caddy = textwrap.dedent(caddy_match.group("body")).strip()
-embedded_caddy = embedded_caddy[embedded_caddy.rindex("{$PUBLIC_HOSTNAME} {"):]
-embedded_caddy = embedded_caddy.replace("{$PUBLIC_HOSTNAME}", "{$OSA_HOSTNAME}")
-def normalized(value: str) -> list[str]:
-    return [line.strip() for line in value.splitlines() if line.strip()]
-require(normalized(embedded_caddy) == normalized(caddy_template), "CloudFormation and tracked deployment Caddyfiles must match")
-require(
-    "path_regexp dataset_api ^/api/datasets/[A-Za-z0-9_-]{22}(/.*)?$" in caddy_template
-    and " in caddy_template
+    and "header_regexp bearer Authorization " + "`" + "^Bearer[[:blank:]]+[A-Za-z0-9_-]{43}$" + "`" in caddy_template
     and caddy_template.index("handle @dataset_api {") < caddy_template.index("\n\thandle {"),
     "Caddy Basic Auth bypass must require an exact dataset-ID path and Bearer-shaped Authorization header",
 )
