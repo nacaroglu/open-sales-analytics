@@ -195,6 +195,35 @@ The Caddy Basic Auth exception applies only to `/api/datasets/` paths with a 22-
 
 To add or rotate the dedicated smoke user without replacing the existing human user, run this in a private terminal with shell tracing disabled. It retrieves the existing auth block into a shell variable without printing it, appends one bcrypt entry, and writes both SecureStrings from mode-restricted temporary files. Choose a username not already in the block. The password is entered silently; use the same username and password for both parameters.
 
+
+### オブザーバビリティスタック
+
+`osa-observability` スタックは foundation の後、アプリケーションスタックの前にデプロイします。dev と prod の各スタックは Collector のセキュリティグループ ID をインポートし、それぞれ自分のアプリケーション用セキュリティグループだけを送信元とするプライベート OTLP 受信ルールを管理します。削除時はアプリケーションスタック、observability、foundation の順に削除してください。Collector のプライベートエンドポイントとセキュリティグループ ID はエクスポートされ、OTLP 認証トークンは各環境の SSM `SecureString` パラメータに保存されます。
+
+Set the Grafana admin password in the environment's SSM SecureString parameter before deployment:
+
+```sh
+read -rsp 'Grafana admin password: ' grafana_password; printf '\n'
+aws ssm put-parameter --name /osa/observability/grafana/admin-password \
+  --type SecureString --value "$grafana_password" --overwrite >/dev/null
+unset grafana_password
+```
+
+Deploy using the pinned config commit and region-specific Amazon Linux 2023 AMI:
+
+```sh
+aws cloudformation deploy --region "$REGION" --stack-name osa-observability \
+  --template-file deploy/cloudformation/osa-observability.yaml \
+  --capabilities CAPABILITY_IAM \
+  --role-arn "$OSA_OBSERVABILITY_EXECUTION_ROLE_ARN" \
+  --parameter-overrides AmiId="$OSA_AMI_ID" InstanceType=t3.small \
+    GrafanaHostname="$OSA_GRAFANA_HOSTNAME" \
+    GrafanaAdminParameterName=/osa/observability/grafana/admin-password \
+    ObservabilityConfigRevision="$OSA_CONFIG_REVISION"
+aws cloudformation describe-stacks --region "$REGION" --stack-name osa-observability \
+  --query 'Stacks[0].Outputs'
+```
+
 ```sh
 set +x
 umask 077
@@ -220,6 +249,4 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
 
-### オブザーバビリティスタック
-
-`osa-observability` スタックは foundation の後、アプリケーションスタックの前にデプロイします。dev と prod の各スタックは Collector のセキュリティグループ ID をインポートし、それぞれ自分のアプリケーション用セキュリティグループだけを送信元とするプライベート OTLP 受信ルールを管理します。削除時はアプリケーションスタック、observability、foundation の順に削除してください。Collector のプライベートエンドポイントとセキュリティグループ ID はエクスポートされ、OTLP 認証トークンは各環境の SSM `SecureString` パラメータに保存されます。
+技術名とパラメーターは原文どおりに保持します。スタック `osa-foundation`、出力 `osa-foundation-ObservabilityEc2InstanceRoleName`、パラメーター `/osa/observability/grafana/admin-password`、KMS キーエイリアス `alias/aws/ssm` と実行時の復号条件 `alias/aws/ssm`、スタック `osa-dev` と `osa-prod`、オプション `--role-arn`、パラメーター型 `SecureString`、出力 `ObservabilityExecutionRoleArn` と `ObservabilityEc2InstanceRoleName`、インポートする `CollectorSecurityGroupId` とエクスポートする `CollectorSecurityGroupId`、`CollectorPrivateEndpoint`、パラメーター `GrafanaHostname` と設定項目 `GrafanaHostname`、`GrafanaPublicIp`、`GF_SERVER_ROOT_URL`、シークレットのパス `/run`、および旧テンプレート `cloudformation-foundation`。

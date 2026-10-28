@@ -203,6 +203,35 @@ The Caddy Basic Auth exception applies only to `/api/datasets/` paths with a 22-
 
 To add or rotate the dedicated smoke user without replacing the existing human user, run this in a private terminal with shell tracing disabled. It retrieves the existing auth block into a shell variable without printing it, appends one bcrypt entry, and writes both SecureStrings from mode-restricted temporary files. Choose a username not already in the block. The password is entered silently; use the same username and password for both parameters.
 
+
+### Observability-Stack
+
+Stellen Sie den Stack `osa-observability` nach foundation und vor den Anwendungs-Stacks bereit. Die Dev- und Prod-Stacks importieren die Collector-Sicherheitsgruppen-ID und verwalten jeweils nur die private OTLP-Regel, deren Quelle ihre eigene Anwendungssicherheitsgruppe ist. Löschen Sie zuerst die Anwendungs-Stacks, dann den Observability-Stack und zuletzt foundation. Der private Collector-Endpunkt und die Sicherheitsgruppen-ID werden exportiert; OTLP-Authentifizierungstoken liegen in SSM-`SecureString`-Parametern ihrer jeweiligen Umgebung.
+
+Set the Grafana admin password in the environment's SSM SecureString parameter before deployment:
+
+```sh
+read -rsp 'Grafana admin password: ' grafana_password; printf '\n'
+aws ssm put-parameter --name /osa/observability/grafana/admin-password \
+  --type SecureString --value "$grafana_password" --overwrite >/dev/null
+unset grafana_password
+```
+
+Deploy using the pinned config commit and region-specific Amazon Linux 2023 AMI:
+
+```sh
+aws cloudformation deploy --region "$REGION" --stack-name osa-observability \
+  --template-file deploy/cloudformation/osa-observability.yaml \
+  --capabilities CAPABILITY_IAM \
+  --role-arn "$OSA_OBSERVABILITY_EXECUTION_ROLE_ARN" \
+  --parameter-overrides AmiId="$OSA_AMI_ID" InstanceType=t3.small \
+    GrafanaHostname="$OSA_GRAFANA_HOSTNAME" \
+    GrafanaAdminParameterName=/osa/observability/grafana/admin-password \
+    ObservabilityConfigRevision="$OSA_CONFIG_REVISION"
+aws cloudformation describe-stacks --region "$REGION" --stack-name osa-observability \
+  --query 'Stacks[0].Outputs'
+```
+
 ```sh
 set +x
 umask 077
@@ -228,6 +257,4 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
 
-### Observability-Stack
-
-Stellen Sie den Stack `osa-observability` nach foundation und vor den Anwendungs-Stacks bereit. Die Dev- und Prod-Stacks importieren die Collector-Sicherheitsgruppen-ID und verwalten jeweils nur die private OTLP-Regel, deren Quelle ihre eigene Anwendungssicherheitsgruppe ist. Löschen Sie zuerst die Anwendungs-Stacks, dann den Observability-Stack und zuletzt foundation. Der private Collector-Endpunkt und die Sicherheitsgruppen-ID werden exportiert; OTLP-Authentifizierungstoken liegen in SSM-`SecureString`-Parametern ihrer jeweiligen Umgebung.
+Technische Namen und Parameter bleiben wie in der Quelle unverändert: Stack `osa-foundation`; Ausgabe `osa-foundation-ObservabilityEc2InstanceRoleName`; Parameter `/osa/observability/grafana/admin-password`; KMS-Schlüsselalias `alias/aws/ssm` und Laufzeit-Entschlüsselungsbedingung `alias/aws/ssm`; Stacks `osa-dev` und `osa-prod`; Option `--role-arn`; Parametertyp `SecureString`; Ausgaben `ObservabilityExecutionRoleArn` und `ObservabilityEc2InstanceRoleName`; importierte `CollectorSecurityGroupId` und exportierte `CollectorSecurityGroupId`; `CollectorPrivateEndpoint`; Parameter `GrafanaHostname` und Konfigurationsfeld `GrafanaHostname`; `GrafanaPublicIp`; `GF_SERVER_ROOT_URL`; Geheimnispfad `/run`; sowie die ältere Vorlage `cloudformation-foundation`.

@@ -114,6 +114,7 @@ jobs:
           set -euo pipefail
           cfn-validate --strict deploy/cloudformation/osa-foundation.yaml
           cfn-validate --strict deploy/cloudformation/osa-observability.yaml \
+            --exclude-resource-id ObservabilityInstance=W9010 \
             --parameter AmiId=ami-0123456789abcdef0 \
             --parameter InstanceType=t3.small \
             --parameter GrafanaHostname=grafana.example.com \

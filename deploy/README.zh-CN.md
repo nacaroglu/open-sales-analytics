@@ -195,6 +195,35 @@ The Caddy Basic Auth exception applies only to `/api/datasets/` paths with a 22-
 
 To add or rotate the dedicated smoke user without replacing the existing human user, run this in a private terminal with shell tracing disabled. It retrieves the existing auth block into a shell variable without printing it, appends one bcrypt entry, and writes both SecureStrings from mode-restricted temporary files. Choose a username not already in the block. The password is entered silently; use the same username and password for both parameters.
 
+
+### 可观测性堆栈
+
+在 foundation 之后、应用堆栈之前部署 `osa-observability`。dev 和 prod 堆栈会导入 Collector 安全组 ID，并分别管理仅以本应用安全组为来源的私有 OTLP 入站规则。删除时先删除应用堆栈，再删除 observability，最后删除 foundation。Collector 私有端点和安全组 ID 会导出；OTLP 认证令牌保存在各自环境的 SSM `SecureString` 参数中。
+
+Set the Grafana admin password in the environment's SSM SecureString parameter before deployment:
+
+```sh
+read -rsp 'Grafana admin password: ' grafana_password; printf '\n'
+aws ssm put-parameter --name /osa/observability/grafana/admin-password \
+  --type SecureString --value "$grafana_password" --overwrite >/dev/null
+unset grafana_password
+```
+
+Deploy using the pinned config commit and region-specific Amazon Linux 2023 AMI:
+
+```sh
+aws cloudformation deploy --region "$REGION" --stack-name osa-observability \
+  --template-file deploy/cloudformation/osa-observability.yaml \
+  --capabilities CAPABILITY_IAM \
+  --role-arn "$OSA_OBSERVABILITY_EXECUTION_ROLE_ARN" \
+  --parameter-overrides AmiId="$OSA_AMI_ID" InstanceType=t3.small \
+    GrafanaHostname="$OSA_GRAFANA_HOSTNAME" \
+    GrafanaAdminParameterName=/osa/observability/grafana/admin-password \
+    ObservabilityConfigRevision="$OSA_CONFIG_REVISION"
+aws cloudformation describe-stacks --region "$REGION" --stack-name osa-observability \
+  --query 'Stacks[0].Outputs'
+```
+
 ```sh
 set +x
 umask 077
@@ -220,6 +249,4 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
 
-### 可观测性堆栈
-
-在 foundation 之后、应用堆栈之前部署 `osa-observability`。dev 和 prod 堆栈会导入 Collector 安全组 ID，并分别管理仅以本应用安全组为来源的私有 OTLP 入站规则。删除时先删除应用堆栈，再删除 observability，最后删除 foundation。Collector 私有端点和安全组 ID 会导出；OTLP 认证令牌保存在各自环境的 SSM `SecureString` 参数中。
+技术名称和参数保持与源文档完全一致：`osa-foundation` 堆栈；输出 `osa-foundation-ObservabilityEc2InstanceRoleName`；参数 `/osa/observability/grafana/admin-password`；KMS 密钥别名 `alias/aws/ssm` 和运行时解密条件 `alias/aws/ssm`；`osa-dev` 与 `osa-prod` 堆栈；`--role-arn` 选项；`SecureString` 参数类型；输出 `ObservabilityExecutionRoleArn` 和 `ObservabilityEc2InstanceRoleName`；导入的 `CollectorSecurityGroupId` 与导出的 `CollectorSecurityGroupId`；`CollectorPrivateEndpoint`；参数 `GrafanaHostname` 和配置字段 `GrafanaHostname`；`GrafanaPublicIp`；`GF_SERVER_ROOT_URL`；密钥路径 `/run`；以及旧模板 `cloudformation-foundation`。
