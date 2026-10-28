@@ -1,0 +1,29 @@
+name: Phase 4 resource absence verifier
+
+on:
+  push:
+    branches: [main, 'feature/issue-*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase4-resource-absence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-verifier:
+    name: Offline resource absence verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run mocked offline verifier tests
+        run: uv run pytest backend/tests/test_phase4_resource_absence.py
