@@ -231,3 +231,27 @@ The update preserves all existing auth-block lines and adds only the dedicated s
 ### Gözlemlenebilirlik yığını
 
 `osa-observability` yığınını foundation'dan sonra ve uygulama yığınlarından önce dağıtın. Dev ve prod uygulama yığınları Collector güvenlik grubu kimliğini içe aktarır ve yalnızca kendi uygulama güvenlik gruplarından özel OTLP erişim kuralını yönetir. Silme sırasında önce uygulama yığınlarını, sonra observability yığınını, en son foundation'ı kaldırın. Collector özel uç noktası ve güvenlik grubu kimliği dışa aktarılır; OTLP kimlik doğrulama belirteçleri ortamlarına ait SSM `SecureString` parametrelerinde tutulur.
+
+Set the Grafana admin password in the environment's SSM SecureString parameter before deployment:
+
+```sh
+read -rsp 'Grafana admin password: ' grafana_password; printf '\n'
+aws ssm put-parameter --name /osa/observability/grafana/admin-password \
+  --type SecureString --value "$grafana_password" --overwrite >/dev/null
+unset grafana_password
+```
+
+Deploy using the pinned config commit and region-specific Amazon Linux 2023 AMI:
+
+```sh
+aws cloudformation deploy --region "$REGION" --stack-name osa-observability \
+  --template-file deploy/cloudformation/osa-observability.yaml \
+  --capabilities CAPABILITY_IAM \
+  --role-arn "$OSA_OBSERVABILITY_EXECUTION_ROLE_ARN" \
+  --parameter-overrides AmiId="$OSA_AMI_ID" InstanceType=t3.small \
+    GrafanaHostname="$OSA_GRAFANA_HOSTNAME" \
+    GrafanaAdminParameterName=/osa/observability/grafana/admin-password \
+    ObservabilityConfigRevision="$OSA_CONFIG_REVISION"
+aws cloudformation describe-stacks --region "$REGION" --stack-name osa-observability \
+  --query 'Stacks[0].Outputs'
+```
