@@ -108,3 +108,24 @@ def test_ci_validator_rejects_unsafe_development_verification_wiring(
         VALIDATOR.validate()
 
     assert message in capsys.readouterr().err
+
+
+def test_ci_validator_rejects_publication_that_runs_when_aws_is_unconfigured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    gate = (
+        " && (vars.OSA_AWS_REGION != '' || vars.OSA_BUILD_ROLE_ARN != '' "
+        "|| vars.OSA_ECR_REPOSITORY_URI != '')"
+    )
+    assert gate in source
+    altered_workflow = tmp_path / "ci.yml"
+    altered_workflow.write_text(source.replace(gate, ""), encoding="utf-8")
+    monkeypatch.setattr(VALIDATOR, "WORKFLOW", altered_workflow)
+
+    with pytest.raises(SystemExit):
+        VALIDATOR.validate()
+
+    assert "publish-ecr is missing required security or ordering marker" in capsys.readouterr().err

@@ -103,6 +103,8 @@ def validate() -> None:
         fail("main-branch immutable ECR publishing job is missing")
     for marker in (
         "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+        "(vars.OSA_AWS_REGION != '' || vars.OSA_BUILD_ROLE_ARN != '' "
+        "|| vars.OSA_ECR_REPOSITORY_URI != '')",
         "needs:",
         "ci-structure",
         "backend-tests",
