@@ -17,6 +17,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
 
 from app.config import Settings
 from app.custom_metrics import CustomMetrics
@@ -163,7 +164,11 @@ def create_telemetry(
     endpoints = _endpoint_configuration(environment)
     resource = create_resource(settings)
 
-    tracer_provider = TracerProvider(resource=resource, shutdown_on_exit=False)
+    tracer_provider = TracerProvider(
+        resource=resource,
+        sampler=ParentBasedTraceIdRatio(settings.osa_trace_sampling_ratio),
+        shutdown_on_exit=False,
+    )
     meter_readers = []
     logger_provider = LoggerProvider(resource=resource, shutdown_on_exit=False)
 

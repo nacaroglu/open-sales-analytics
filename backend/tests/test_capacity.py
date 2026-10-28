@@ -359,7 +359,8 @@ def test_rejection_logs_one_info_record_and_one_503_request_line(
     ]
     assert lines[0]["message"] == "Dataset creation refused because the server is at capacity."
     assert lines[1]["status"] == 503
-    assert lines[1]["dataset_id"] is None
+    assert "dataset_id" not in lines[1]
+    assert lines[1]["route"] == "/api/datasets/sample"
     text = json.dumps(lines)
     assert path.stem not in text
     assert str(tmp_path) not in text

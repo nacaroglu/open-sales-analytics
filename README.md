@@ -575,10 +575,12 @@ the amounts. There is no conversion and no exchange rate. Any other code is refu
 - A missing or expired dataset ID answers 404 and a wrong token for an existing dataset answers 401, so the status shows
   whether an ID exists. This is an accepted risk: IDs are 128-bit random values that cannot be guessed, and a dataset
   stays unreadable without its token.
-- The logs are one JSON line per request with the method, path, status, duration and the dataset ID. The dataset ID is
-  logged on purpose, so a request can be traced; it is not a secret and cannot be used without the token. The logs
-  never contain tokens, file contents, file names, product names or order IDs. Error logs hold exception class names
-  and stack frames, never exception messages.
+- Application logs are one JSON object per line with timestamp, severity, event/message, service name, environment
+  and version. A valid active OpenTelemetry span adds its trace and span IDs. Request records use bounded methods and
+  route templates, status and duration; raw paths, query strings and dataset IDs are omitted. Log fields are
+  allowlisted, and errors include exception class and stack frames without exception messages. Tokens, authorization
+  headers, request or response bodies, CSV contents and customer, order, product or dataset identifiers are never
+  logged. The same JSON formatting and redaction apply when no telemetry exporter is configured.
 - Nothing is sent to other services.
 - When customer IDs are supplied, the per-dataset DuckDB file also contains `customer_facts`: one row per identified
   customer with full-history first/last order dates, acquisition month, distinct lifetime orders, units and gross
