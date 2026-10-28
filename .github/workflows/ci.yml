@@ -39,6 +39,24 @@ jobs:
           python3 scripts/test_grafana_alert.py
           python3 scripts/test_grafana_webhook.py
 
+  phase4-teardown-offline:
+    name: Phase 4 teardown (offline safety checks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install project test dependencies
+        run: uv sync --locked
+      - name: Validate guarded teardown workflow
+        run: python3 scripts/validate_phase4_teardown.py
+      - name: Run teardown tests without AWS credentials
+        run: uv run pytest backend/tests/test_phase4_teardown.py
+
   backend-tests:
     name: Backend (tests, ruff, mypy)
     runs-on: ubuntu-latest
@@ -1029,6 +1047,7 @@ jobs:
       - backend-tests
       - frontend
       - cloudformation-foundation
+      - phase4-teardown-offline
       - pinned-actions
       - dependency-scan
       - compose-integration

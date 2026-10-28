@@ -129,3 +129,25 @@ def test_ci_validator_rejects_publication_that_runs_when_aws_is_unconfigured(
         VALIDATOR.validate()
 
     assert "publish-ecr is missing required security or ordering marker" in capsys.readouterr().err
+
+
+def test_ci_validator_rejects_a_job_defined_twice(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    duplicate = (
+        "  grafana-dashboard-validation:\n    name: Stale duplicate\n    runs-on: ubuntu-latest\n\n"
+    )
+    assert "  backend-tests:\n" in source
+    altered_workflow = tmp_path / "ci.yml"
+    altered_workflow.write_text(
+        source.replace("  backend-tests:\n", duplicate + "  backend-tests:\n", 1), encoding="utf-8"
+    )
+    monkeypatch.setattr(VALIDATOR, "WORKFLOW", altered_workflow)
+
+    with pytest.raises(SystemExit):
+        VALIDATOR.validate()
+
+    assert "job 'grafana-dashboard-validation' is defined more than once" in capsys.readouterr().err

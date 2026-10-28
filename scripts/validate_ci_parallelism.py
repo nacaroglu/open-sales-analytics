@@ -58,6 +58,8 @@ def job_blocks(jobs: str) -> dict[str, str]:
     blocks = {}
     for index, match in enumerate(starts):
         end = starts[index + 1].start() if index + 1 < len(starts) else len(jobs)
+        if match.group(1) in blocks:
+            fail(f"job {match.group(1)!r} is defined more than once")
         blocks[match.group(1)] = jobs[match.end() : end]
     return blocks
 
