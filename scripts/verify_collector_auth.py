@@ -110,7 +110,7 @@ def main() -> None:
                             "AWS Collector did not accept its configured synthetic token"
                         )
                     break
-                except URLError:
+                except (URLError, OSError):
                     if time.monotonic() >= deadline:
                         print_collector_diagnostics(container_name, token_file)
                         raise SystemExit(
@@ -134,6 +134,12 @@ def main() -> None:
                 print(sanitized_diagnostics(detail, token_file), file=sys.stderr)
             print_collector_diagnostics(container_name, token_file)
             raise SystemExit("AWS Collector authentication container failed to start") from None
+        except Exception as error:
+            print_collector_diagnostics(container_name, token_file)
+            detail = sanitized_diagnostics(str(error), token_file)
+            if detail.strip():
+                print(detail, file=sys.stderr)
+            raise SystemExit("AWS Collector authentication check failed unexpectedly") from None
         finally:
             subprocess.run(
                 ["docker", "rm", "--force", container_name],
