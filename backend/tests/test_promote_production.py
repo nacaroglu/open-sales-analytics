@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "promote_production.py"
+REPOSITORY_ROOT = SCRIPT.parents[1]
 SCRIPTS_DIR = SCRIPT.parent
+sys.path.insert(0, str(REPOSITORY_ROOT))
 sys.path.insert(0, str(SCRIPTS_DIR))
 SPEC = importlib.util.spec_from_file_location("promote_production", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None

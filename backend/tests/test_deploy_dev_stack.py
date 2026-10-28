@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 DEPLOY_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "deploy_dev_stack.py"
+REPOSITORY_ROOT = DEPLOY_SCRIPT.parents[1]
 SCRIPTS_DIR = DEPLOY_SCRIPT.parent
+sys.path.insert(0, str(REPOSITORY_ROOT))
 sys.path.insert(0, str(SCRIPTS_DIR))
 DEPLOY_SPEC = importlib.util.spec_from_file_location("deploy_dev_stack", DEPLOY_SCRIPT)
 assert DEPLOY_SPEC is not None and DEPLOY_SPEC.loader is not None
@@ -20,6 +22,7 @@ DeploymentInputs = DEPLOYMENT.DeploymentInputs
 deploy_dev = DEPLOYMENT.deploy_dev
 inputs_from_environment = DEPLOYMENT.inputs_from_environment
 main = DEPLOYMENT.main
+write_summary = DEPLOYMENT.write_summary
 
 REGION = "eu-central-1"
 ROLE_ARN = "arn:aws:iam::123456789012:role/osa-foundation/osa-foundation-osa-dev-deploy"
@@ -121,6 +124,86 @@ def test_development_update_uses_exact_published_digest_and_waits_for_osa_dev(
         REGION,
     ]
     assert not any("osa-prod" in value for cmd in calls for value in cmd)
+
+
+def test_development_deployment_summary_records_safe_release_evidence(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.md"
+
+    write_summary(
+        summary,
+        valid_inputs(),
+        result="PASS",
+        failure_stage=None,
+    )
+
+    content = summary.read_text(encoding="utf-8")
+    assert "Environment: development" in content
+    assert f"Image tag: `{VERSION}`" in content
+    assert f"Release version: `{VERSION}`" in content
+    assert f"Image digest: `sha256:{DIGEST}`" in content
+    assert "CloudFormation deployment: PASS" in content
+    assert "Readiness: PENDING" in content
+    assert "Sample analytics smoke: PENDING" in content
+    assert "Result: PASS" in content
+    for marker in ("123456789012", "dev.example.com", "ami-0123456789abcdef0", ROLE_ARN):
+        assert marker not in content
+
+
+def test_failed_development_deployment_summary_names_stage_and_redacts_inputs(
+    tmp_path: Path,
+) -> None:
+    summary = tmp_path / "summary.md"
+
+    write_summary(
+        summary,
+        valid_inputs(),
+        result="FAIL",
+        failure_stage="CloudFormation update wait",
+    )
+
+    content = summary.read_text(encoding="utf-8")
+    assert "CloudFormation deployment: FAIL" in content
+    assert "Failure stage: CloudFormation update wait" in content
+    assert "CloudFormation rollback: NOT VERIFIED" in content
+    assert "Result: FAIL" in content
+    for marker in ("123456789012", "dev.example.com", ROLE_ARN, "credential-marker"):
+        assert marker not in content
+
+
+def test_deployment_main_writes_failure_summary_without_echoing_error_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    for key, value in {
+        "AWS_REGION": REGION,
+        "DEV_DEPLOY_ROLE_ARN": ROLE_ARN,
+        "DEV_EXECUTION_ROLE_ARN": EXECUTION_ROLE_ARN,
+        "ECR_REPOSITORY_URI": REPOSITORY_URI,
+        "IMAGE_REF": IMAGE_REF,
+        "RELEASE_VERSION": VERSION,
+        "OSA_AMI_ID": "ami-0123456789abcdef0",
+        "OSA_INSTANCE_TYPE": "t3.small",
+        "OSA_DEV_HOSTNAME": "dev.example.com",
+        "GITHUB_STEP_SUMMARY": str(summary),
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def fail_deployment(_inputs: DeploymentInputs) -> None:
+        raise DeploymentError(
+            "osa-dev CloudFormation update wait failed (exit 1); credential-marker"
+        )
+
+    monkeypatch.setattr(DEPLOYMENT, "deploy_dev", fail_deployment)
+
+    assert DEPLOYMENT.main([]) == 1
+    assert "credential-marker" in capsys.readouterr().err
+    content = summary.read_text(encoding="utf-8")
+    assert "CloudFormation deployment: FAIL" in content
+    assert "Failure stage: CloudFormation update wait" in content
+    assert "CloudFormation rollback: NOT VERIFIED" in content
+    assert "credential-marker" not in content
+    assert "123456789012" not in content
+    assert "dev.example.com" not in content
 
 
 @pytest.mark.parametrize(

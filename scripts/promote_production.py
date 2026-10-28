@@ -247,39 +247,43 @@ def update_command(config: Config, release: Release) -> list[str]:
 
 def write_summary(
     source: Release,
-    previous: Release,
+    previous: Release | None,
     env: dict[str, str],
     *,
     verification: str,
     rollback: str,
+    readiness: str = "NOT RUN",
+    smoke: str = "NOT RUN",
+    cleanup: str = "NOT RUN",
     failure_stage: str | None = None,
-    readiness: str | None = None,
-    sample_analytics: str | None = None,
+    rollback_failure_stage: str | None = None,
 ) -> None:
     path = env.get("GITHUB_STEP_SUMMARY")
     if path:
+        previous_version = previous.version if previous is not None else "unavailable"
+        previous_digest = f"sha256:{previous.digest}" if previous is not None else "unavailable"
         try:
             with Path(path).open("a", encoding="utf-8") as stream:
                 stream.write(
-                    "## Production promotion\n\n| Release | Digest | Version |\n|---|---|---|\n"
+                    "## Production promotion evidence\n\n"
+                    "- Environment: production\n"
+                    f"- Image tag: `{source.version}`\n"
+                    f"- Release version: `{source.version}`\n"
+                    f"- Image digest: `sha256:{source.digest}`\n"
+                    f"- Previous production image tag: `{previous_version}`\n"
+                    f"- Previous production version: `{previous_version}`\n"
+                    f"- Previous production digest: `{previous_digest}`\n"
                 )
-                stream.write(f"| Promoted release | {source.digest} | {source.version} |\n")
-                stream.write(f"| Previous production | {previous.digest} | {previous.version} |\n")
-                stream.write("\n- Environment: production\n")
-                stream.write(f"- Image tag: `{source.version}`\n")
-                stream.write(f"- Previous production digest: `{previous.digest}`\n")
+                stream.write(f"- Readiness: {readiness}\n")
+                stream.write(f"- Sample analytics smoke: {smoke}\n")
+                stream.write(f"- Temporary sample cleanup: {cleanup}\n")
                 stream.write(f"\n- Production verification: {verification}\n")
-                stream.write(
-                    f"- Readiness: {readiness or ('PASS' if verification == 'PASS' else 'NOT RUN')}\n"
-                )
-                stream.write(
-                    "- Sample analytics smoke: "
-                    f"{sample_analytics or ('PASS' if verification == 'PASS' else 'NOT RUN')}\n"
-                )
+                stream.write(f"- Rollback: {rollback}\n")
                 if failure_stage is not None:
                     stream.write(f"- Failure stage: {failure_stage}\n")
+                if rollback_failure_stage is not None:
+                    stream.write(f"- Rollback failure stage: {rollback_failure_stage}\n")
                 stream.write(f"- Result: {'PASS' if verification == 'PASS' else 'FAIL'}\n")
-                stream.write(f"- Rollback: {rollback}\n")
         except OSError as exc:
             raise PromotionError(
                 f"Unable to write promotion summary ({type(exc).__name__})."
@@ -458,10 +462,9 @@ def promote(
     try:
         previous = describe(runner, "osa-prod", config)
     except PromotionError:
-        unavailable = Release("unavailable", "unavailable")
         write_summary(
             source,
-            unavailable,
+            None,
             env,
             verification="FAIL",
             rollback="NOT RUN",
@@ -491,7 +494,16 @@ def promote(
         if describe(runner, "osa-prod", config) != source:
             raise PromotionError("osa-prod release metadata does not match the promoted release.")
         verifier(config, source)
-        write_summary(source, previous, env, verification="PASS", rollback="not required")
+        write_summary(
+            source,
+            previous,
+            env,
+            verification="PASS",
+            rollback="not required",
+            readiness="PASS",
+            smoke="PASS",
+            cleanup="PASS",
+        )
     except PromotionError as promotion_error:
         failure_stage, readiness, sample_analytics = verification_summary_state(promotion_error)
         try:
@@ -527,9 +539,15 @@ def promote(
                 rollback="PASS",
                 failure_stage=failure_stage,
                 readiness=readiness,
-                sample_analytics=sample_analytics,
+                smoke=sample_analytics,
             )
         except PromotionError as rollback_error:
+            rollback_stage = "Production rollback verification"
+            rollback_message = str(rollback_error).lower()
+            if "rollback update" in rollback_message:
+                rollback_stage = "Production rollback update"
+            elif "rollback wait" in rollback_message:
+                rollback_stage = "Production rollback readiness wait"
             try:
                 write_summary(
                     source,
@@ -539,7 +557,8 @@ def promote(
                     rollback="FAILED",
                     failure_stage=failure_stage,
                     readiness=readiness,
-                    sample_analytics=sample_analytics,
+                    smoke=sample_analytics,
+                    rollback_failure_stage=rollback_stage,
                 )
             except PromotionError:
                 pass
