@@ -1,0 +1,116 @@
+name: Guarded Phase 4 teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Dry run lists the exact order; execute deletes the four stacks.
+        type: choice
+        required: true
+        options:
+          - dry-run
+          - execute
+      confirmation:
+        description: For execution, enter DELETE-PHASE4-OSA-RESOURCES exactly.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    if: github.ref == 'refs/heads/main' && inputs.mode == 'dry-run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show exact target stacks and deletion order
+        run: python3 scripts/teardown_phase4.py --dry-run
+
+  preflight:
+    if: github.ref == 'refs/heads/main' && inputs.mode == 'execute'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate read-only preflight configuration
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          EXPECTED_ACCOUNT_ID: ${{ vars.OSA_TEARDOWN_AWS_ACCOUNT_ID }}
+          ROLE_ARN: ${{ vars.OSA_TEARDOWN_PREFLIGHT_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          [[ "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
+          [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]
+      - name: Configure read-only preflight role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.OSA_TEARDOWN_PREFLIGHT_ROLE_ARN }}
+          aws-region: ${{ vars.OSA_AWS_REGION }}
+          role-session-name: osa-phase4-check-${{ github.run_id }}
+      - name: Verify target account, stacks, and imports without deletion
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          OSA_AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          OSA_TEARDOWN_AWS_ACCOUNT_ID: ${{ vars.OSA_TEARDOWN_AWS_ACCOUNT_ID }}
+        run: python3 scripts/teardown_phase4.py --preflight-only
+
+  execute:
+    if: github.ref == 'refs/heads/main' && inputs.mode == 'execute'
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: osa-teardown
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate exact confirmation and required configuration
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          EXPECTED_ACCOUNT_ID: ${{ vars.OSA_TEARDOWN_AWS_ACCOUNT_ID }}
+          ROLE_ARN: ${{ vars.OSA_TEARDOWN_ROLE_ARN }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          [[ "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
+          [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]
+          [[ "$CONFIRMATION" == "DELETE-PHASE4-OSA-RESOURCES" ]]
+      - name: Configure approved teardown role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.OSA_TEARDOWN_ROLE_ARN }}
+          aws-region: ${{ vars.OSA_AWS_REGION }}
+          role-session-name: osa-phase4-teardown-${{ github.run_id }}
+      - name: Preflight and delete stacks in dependency order
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          OSA_AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          OSA_TEARDOWN_AWS_ACCOUNT_ID: ${{ vars.OSA_TEARDOWN_AWS_ACCOUNT_ID }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: python3 scripts/teardown_phase4.py --execute --confirm "$CONFIRMATION"
+      - name: Record safe fallback summary if setup stopped before the teardown script
+        if: always()
+        shell: bash
+        run: |
+          if ! grep -q '^## Phase 4 teardown result$' "$GITHUB_STEP_SUMMARY"; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Phase 4 teardown result
+
+          Safe failure stage: `workflow_setup`
+
+          | Stack | Outcome |
+          | --- | --- |
+          | `osa-dev` | not attempted |
+          | `osa-prod` | not attempted |
+          | `osa-observability` | not attempted |
+          | `osa-foundation` | not attempted |
+          SUMMARY
+          fi
