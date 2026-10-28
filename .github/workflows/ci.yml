@@ -199,7 +199,11 @@ jobs:
           trap 'rm -rf "$sink_dir"' EXIT
           mkdir -p "$sink_dir"
           chmod 0777 "$sink_dir"
+          token_file="$sink_dir/otlp-token"
+          openssl rand -hex 32 > "$token_file"
+          chmod 0444 "$token_file"
           OSA_TEST_TELEMETRY_DIR="$sink_dir" \
+            OSA_TEST_OTLP_TOKEN_FILE="$token_file" \
             docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml \
             -f docker-compose.test-telemetry.yaml config --quiet
       - name: Run Compose integration cases
@@ -295,6 +299,10 @@ jobs:
 
           mkdir -p "$sink_dir"
           chmod 0777 "$sink_dir"
+          token_file="$sink_dir/otlp-token"
+          openssl rand -hex 32 > "$token_file"
+          chmod 0444 "$token_file"
+          export OSA_TEST_OTLP_TOKEN_FILE="$token_file"
           "${compose[@]}" config --quiet
           "${compose[@]}" up --build --detach
 
@@ -525,6 +533,10 @@ jobs:
 
           mkdir -p "$sink_dir"
           chmod 0777 "$sink_dir"
+          token_file="$sink_dir/otlp-token"
+          openssl rand -hex 32 > "$token_file"
+          chmod 0444 "$token_file"
+          export OSA_TEST_OTLP_TOKEN_FILE="$token_file"
           test -w "$sink_dir"
           test "$(stat -c '%a' "$sink_dir")" = "777"
 
@@ -538,6 +550,7 @@ jobs:
           app = config["services"]["app"]
           assert app["environment"]["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://telemetry-collector:4318"
           assert app["environment"]["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/protobuf"
+          assert app["environment"]["OSA_OTLP_TOKEN_FILE"] == "/run/osa/otlp-token"
           assert str(app["ports"][0]["published"]) == "8000"
           collector = config["services"]["telemetry-collector"]
           assert collector["image"] == "otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6"
@@ -548,6 +561,7 @@ jobs:
           '
           docker run --rm \
             -v "$PWD/observability/collector-test.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+            -v "$token_file:/run/secrets/otlp-token:ro" \
             otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6 \
             validate --config=/etc/otelcol-contrib/config.yaml
 
@@ -564,6 +578,11 @@ jobs:
           assert sink["Type"] == "bind"
           assert sink["Source"] == os.environ["OSA_TEST_TELEMETRY_DIR"]
           assert sink["RW"] is True
+          token = next(
+              mount for mount in mounts if mount["Destination"] == "/run/secrets/otlp-token"
+          )
+          assert token["Source"] == os.environ["OSA_TEST_OTLP_TOKEN_FILE"]
+          assert token["RW"] is False
           '
           ready=0
           for _ in $(seq 1 30); do
@@ -581,6 +600,7 @@ jobs:
           test "$ready" -eq 1
 
           curl -fsS -X POST http://127.0.0.1:4318/v1/logs \
+            -H "Authorization: Bearer $(<"$token_file")" \
             -H 'Content-Type: application/json' \
             --data '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"osa-ci-synthetic"}},{"key":"deployment.environment.name","value":{"stringValue":"test"}},{"key":"service.version","value":{"stringValue":"ci-synthetic"}}]},"scopeLogs":[{"logRecords":[{"body":{"stringValue":"telemetry-sink-smoke"}}]}]}]}'
           sink_file="$sink_dir/osa-telemetry.json"
