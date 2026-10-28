@@ -25,6 +25,7 @@ VARIABLES = [
 def clean_environment(monkeypatch):
     for name in VARIABLES:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("OSA_OTLP_TOKEN_FILE", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -35,6 +36,7 @@ def test_defaults_with_empty_environment():
 
     assert settings.osa_environment == "development"
     assert settings.osa_version == "local"
+    assert settings.otel_token_file is None
     assert settings.dataset_dir == Path("./tmp_datasets")
     assert settings.dataset_ttl_hours == 24
     assert settings.dataset_ttl_seconds is None
@@ -64,6 +66,12 @@ def test_each_variable_overrides_its_field(monkeypatch, variable, raw, field, ex
     monkeypatch.setenv(variable, raw)
 
     assert getattr(Settings(), field) == expected
+
+
+def test_otlp_token_file_uses_environment_alias(monkeypatch):
+    monkeypatch.setenv("OSA_OTLP_TOKEN_FILE", "/run/osa/otlp-token")
+
+    assert Settings().otel_token_file == "/run/osa/otlp-token"
 
 
 @pytest.mark.parametrize("raw", ["staging", "", "Production"])

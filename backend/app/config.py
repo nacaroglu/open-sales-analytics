@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     otel_exporter_otlp_logs_endpoint: str | None = Field(
         None, validation_alias="OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
     )
+    otel_token_file: str | None = Field(None, validation_alias="OSA_OTLP_TOKEN_FILE")
     dataset_dir: Path = Field(Path("./tmp_datasets"), validation_alias="DATASET_DIR")
     dataset_ttl_hours: int = Field(24, gt=0, validation_alias="DATASET_TTL_HOURS")
     # Test-only override: a lifetime in seconds that wins over DATASET_TTL_HOURS, so a browser

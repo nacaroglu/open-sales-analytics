@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 OTEL_VARIABLES = (
     "OSA_ENVIRONMENT",
     "OSA_VERSION",
+    "OSA_OTLP_TOKEN_FILE",
     "DATASET_DIR",
     "OTEL_EXPORTER_OTLP_ENDPOINT",
     "OTEL_EXPORTER_OTLP_PROTOCOL",
