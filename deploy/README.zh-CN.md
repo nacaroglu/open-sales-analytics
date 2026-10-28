@@ -223,3 +223,27 @@ The update preserves all existing auth-block lines and adds only the dedicated s
 ### 可观测性堆栈
 
 在 foundation 之后、应用堆栈之前部署 `osa-observability`。dev 和 prod 堆栈会导入 Collector 安全组 ID，并分别管理仅以本应用安全组为来源的私有 OTLP 入站规则。删除时先删除应用堆栈，再删除 observability，最后删除 foundation。Collector 私有端点和安全组 ID 会导出；OTLP 认证令牌保存在各自环境的 SSM `SecureString` 参数中。
+
+Set the Grafana admin password in the environment's SSM SecureString parameter before deployment:
+
+```sh
+read -rsp 'Grafana admin password: ' grafana_password; printf '\n'
+aws ssm put-parameter --name /osa/observability/grafana/admin-password \
+  --type SecureString --value "$grafana_password" --overwrite >/dev/null
+unset grafana_password
+```
+
+Deploy using the pinned config commit and region-specific Amazon Linux 2023 AMI:
+
+```sh
+aws cloudformation deploy --region "$REGION" --stack-name osa-observability \
+  --template-file deploy/cloudformation/osa-observability.yaml \
+  --capabilities CAPABILITY_IAM \
+  --role-arn "$OSA_OBSERVABILITY_EXECUTION_ROLE_ARN" \
+  --parameter-overrides AmiId="$OSA_AMI_ID" InstanceType=t3.small \
+    GrafanaHostname="$OSA_GRAFANA_HOSTNAME" \
+    GrafanaAdminParameterName=/osa/observability/grafana/admin-password \
+    ObservabilityConfigRevision="$OSA_CONFIG_REVISION"
+aws cloudformation describe-stacks --region "$REGION" --stack-name osa-observability \
+  --query 'Stacks[0].Outputs'
+```
