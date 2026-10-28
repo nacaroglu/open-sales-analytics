@@ -17,6 +17,7 @@ from app.api.module_common import (
 from app.api.module_models import OverviewResponse
 from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.config import Settings, get_settings
+from app.domain_telemetry import instrument_operation
 from app.importer import dataset_path
 from app.response_cache import ResponseCache, get_response_cache
 from app.schema import open_dataset_readonly
@@ -53,6 +54,7 @@ def _top_body(rows: list[dict]) -> list[dict]:
     ]
 
 
+@instrument_operation("osa.analytics.overview.query", module="overview")
 def build_overview(connection, meta: dict, periods) -> dict:
     granularity = choose_granularity(periods.current.start, periods.current.end)
     current = read_kpis(connection, periods.current.start, periods.current.end)

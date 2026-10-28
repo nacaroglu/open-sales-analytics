@@ -15,8 +15,11 @@ from app.api.overview import router as overview_router
 from app.api.products import router as products_router
 from app.cleanup import prepare_dataset_dir, run_cleanup_loop, run_sweep_safely
 from app.config import Settings, get_settings
+from app.custom_metrics import use_custom_metrics
+from app.domain_telemetry import use_tracer_provider
 from app.errors import register_error_handlers
 from app.health import readiness_checks
+from app.http_instrumentation import RequestTelemetryMiddleware, configure_trace_context_propagation
 from app.logging_config import RequestLogMiddleware, configure_logging
 from app.telemetry import TelemetryProviders, create_telemetry
 
@@ -31,11 +34,16 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
         telemetry = create_telemetry(settings)
         application.state.telemetry = telemetry
-        prepare_dataset_dir(settings)
-        await run_sweep_safely(settings)
-        timer = asyncio.create_task(run_cleanup_loop(settings))
-        application.state.initialized = True
-        yield
+        assert telemetry.custom_metrics is not None
+        with (
+            use_custom_metrics(telemetry.custom_metrics),
+            use_tracer_provider(telemetry.tracer_provider),
+        ):
+            prepare_dataset_dir(settings)
+            await run_sweep_safely(settings)
+            timer = asyncio.create_task(run_cleanup_loop(settings))
+            application.state.initialized = True
+            yield
     finally:
         application.state.initialized = False
         if timer is not None:
@@ -48,9 +56,17 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 configure_logging()
-app = FastAPI(title="Open Sales Analytics", lifespan=lifespan)
+configure_trace_context_propagation()
+# FastAPI's built-in telemetry records raw url.path/query values; use the scoped,
+# privacy-safe middleware below as the single server instrumentation layer.
+app = FastAPI(
+    title="Open Sales Analytics",
+    lifespan=lifespan,
+    telemetry={"tracing": False, "metrics": False, "logs": False, "operation_spans": False},
+)
 app.state.initialized = False
 app.add_middleware(RequestLogMiddleware)
+app.add_middleware(RequestTelemetryMiddleware)
 register_error_handlers(app)
 app.include_router(datasets_router)
 app.include_router(customers_router)

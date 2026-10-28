@@ -19,6 +19,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from app.config import Settings
+from app.custom_metrics import CustomMetrics
 
 _OTLP_PROTOCOL = "http/protobuf"
 _GENERIC_ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT"
@@ -88,6 +89,7 @@ class TelemetryProviders:
     meter_provider: MeterProvider
     logger_provider: LoggerProvider
     export_enabled: bool
+    custom_metrics: CustomMetrics | None = None
 
     def emit_synthetic_resource_identity_signal(self) -> None:
         """Emit one fixed trace, metric, and log record without user-derived values."""
@@ -186,10 +188,12 @@ def create_telemetry(
     meter_provider = MeterProvider(
         resource=resource, metric_readers=meter_readers, shutdown_on_exit=False
     )
+    custom_metrics = CustomMetrics(meter_provider, settings)
     return TelemetryProviders(
         resource=resource,
         tracer_provider=tracer_provider,
         meter_provider=meter_provider,
         logger_provider=logger_provider,
+        custom_metrics=custom_metrics,
         export_enabled=bool(endpoints),
     )

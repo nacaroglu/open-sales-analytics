@@ -34,6 +34,7 @@ from app.api.module_common import (
 from app.api.module_models import ProductDetailResponse, ProductsResponse
 from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.config import Settings, get_settings
+from app.domain_telemetry import instrument_operation
 from app.errors import ApiError
 from app.importer import dataset_path
 from app.response_cache import ResponseCache, get_response_cache
@@ -285,6 +286,7 @@ def get_products(
     first, last = _dates(dataset.meta)
     periods = resolve_periods(start, end, comparison, first, last)
 
+    @instrument_operation("osa.analytics.products.query", module="products")
     def compute() -> dict:
         connection = open_dataset_readonly(dataset_path(settings, dataset.id))
         try:
@@ -345,6 +347,7 @@ def get_product_detail(
     periods = resolve_periods(start, end, comparison, first, last)
     granularity = choose_granularity(periods.current.start, periods.current.end)
 
+    @instrument_operation("osa.analytics.products.query", module="products")
     def compute() -> dict:
         connection = open_dataset_readonly(dataset_path(settings, dataset.id))
         try:

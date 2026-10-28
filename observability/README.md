@@ -1,12 +1,11 @@
 # Local observability stack
 
 This is a standalone Docker Compose project. It does not build, start, stop, or
-remove the application Compose project. The five services share only this
-project's private Docker network and explicitly named data volumes.
+remove the application Compose project. Its five services share this project's
+private Docker network and explicitly named data volumes.
 
 Docker Engine and Docker Compose v2 are required. Grafana requires an admin
-password from the environment; no credential is stored in this directory.
-From the repository root, set it for the current shell before running Compose:
+password from the environment; no credential is stored here:
 
 ```sh
 read -rsp 'Grafana admin password: ' GRAFANA_ADMIN_PASSWORD
@@ -21,56 +20,57 @@ docker compose -f observability/compose.yaml config --quiet
 docker compose -f observability/compose.yaml up --detach
 ```
 
-Inspect the services and logs:
+Inspect services and logs:
 
 ```sh
 docker compose -f observability/compose.yaml ps
 docker compose -f observability/compose.yaml logs --follow
 ```
 
-## Retention and capacity
+Grafana is at <http://127.0.0.1:3000>, using `GRAFANA_ADMIN_PASSWORD`.
+Prometheus, Loki, and Tempo APIs are at `http://127.0.0.1:9090`,
+`http://127.0.0.1:3100`, and `http://127.0.0.1:3200` for local diagnosis. All
+published ports bind only to loopback. Override them with `OSA_GRAFANA_PORT`,
+`OSA_PROMETHEUS_PORT`, `OSA_LOKI_PORT`, `OSA_TEMPO_HTTP_PORT`,
+`OSA_OTLP_GRPC_PORT`, and `OSA_OTLP_HTTP_PORT`.
 
-Prometheus retains samples for at most seven days and also applies a 10 GB TSDB
-size cap. Loki's compactor deletes log data after 168 hours; its ingestion rate
-is limited to 4 MB/s with a 6 MB burst, at most 5,000 streams, and a 256 KB
-maximum line. Tempo 3.x's backend scheduler retains blocks for 168 hours; its
-config does not use the removed ingester or compactor modules. Tempo caps
-compacted blocks at 1 GiB, limits ingestion to 1 MiB/s with a 2 MiB burst, and
-rejects traces over 5 MB.
-All three use local filesystem storage. There are no object-store, snapshot,
-backup, or archive destinations.
+OTLP enters the Collector on host-local ports 4317 (gRPC) and 4318 (HTTP).
+Inside the private network, the Collector routes metrics to Prometheus, logs
+to Loki, and traces to Tempo using their Compose service names. It exports
+application metrics on `collector:8889`; its own detailed telemetry is exposed
+on `collector:8888`. Prometheus scrapes both endpoints.
 
-On the AWS host, `compose.aws.yaml` binds Prometheus, Loki and Tempo data paths
-under `/srv/osa-observability`, which is the attached 100 GB encrypted telemetry
-EBS volume. The fixed volume bounds the combined filesystem footprint. Prometheus
-can remove older blocks when its TSDB cap is reached. Loki and Tempo reject or
-fail telemetry writes when their ingestion limits or available disk are
-exhausted; Collector export failures and backend logs make that visible. The
-application handles requests independently of telemetry export, so backend
-capacity failures do not turn into application request failures. The telemetry
-volume and its contents are deleted with the observability stack; no telemetry
-is preserved for recovery.
+Collector telemetry includes receiver accepted/refused counts, exporter sent
+and failed counts, and sending queue size/capacity. Check the `otelcol-internal`
+and `osa-application` targets at <http://127.0.0.1:9090/targets>, then inspect
+`docker compose -f observability/compose.yaml logs collector` for export
+failures. Logs and traces use bounded queues of 512 batches and finite retries.
+Overflow drops telemetry rather than blocking application requests. Check
+queue pressure and refused/drop metrics when a backend is unavailable.
 
-The CI validator checks the checked-in service configs without contacting a
-backend. When the #263 deployment files are present, the same check verifies the
-`TelemetryVolume` encryption, 100 GB cap, attachment, delete policies, and that
-the AWS bootstrap mounts the telemetry data paths on that volume. To check a
-template revision before it is included in this branch, run:
+CI validates the Collector configuration and sends synthetic OTLP metrics,
+logs, and traces, then confirms each signal in its backend API. This offline
+route check uses synthetic resource identity only.
 
-```sh
-python3 scripts/validate_observability_retention.py \
-  --ebs-template /path/to/osa-observability.yaml \
-  --bootstrap-script /path/to/bootstrap.sh
-```
+Grafana provisions three credential-free data sources from
+`observability/provisioning/datasources/datasources.yaml`: Prometheus (`osa-prometheus`),
+Loki (`osa-loki`), and Tempo (`osa-tempo`). The `OSA Operations` dashboard is
+loaded from `observability/dashboards/osa-operations.json` into the OSA folder.
+Its Environment filter is limited to `development` and `production`; Deployed
+version values are discovered from application telemetry. Application metric
+panels, annotations, and their Loki/Tempo drill-down links use both selections.
 
-The time-window test uses deterministic timestamps: data exactly seven days old
-remains in the window, and data older than seven days is eligible for deletion.
+The dashboard covers release identity and deployment annotations, request
+traffic/reliability, dataset creation and cleanup, analytics/DuckDB operations,
+runtime capacity, observability storage, and Collector exports. Grafana shows
+`No data` when the selected environment/version has no matching samples. Treat
+that as missing telemetry or an unavailable scrape/export path, not as a zero
+measurement. Start with the dashboard filters and Prometheus targets, then use
+the filtered log and trace links to investigate.
 
-Grafana is available at <http://127.0.0.1:3000>. Its password is the value of
-`GRAFANA_ADMIN_PASSWORD`. Host port overrides are available through
-`OSA_GRAFANA_PORT`, `OSA_OTLP_GRPC_PORT`, and `OSA_OTLP_HTTP_PORT`; all published
-ports bind to `127.0.0.1`. Prometheus, Loki, and Tempo have no host-published
-ports and are reachable only on the private Compose network.
+CI runs an offline structural validator for the data-source UIDs/endpoints,
+dashboard rows and panels, filters, links, and no-data guidance. It does not
+require Grafana or an observability backend.
 
 Stop and remove only this project's containers and network:
 
@@ -78,14 +78,12 @@ Stop and remove only this project's containers and network:
 docker compose -f observability/compose.yaml down
 ```
 
-To also delete this project's named data volumes:
+To also delete this project's data:
 
 ```sh
 docker compose -f observability/compose.yaml down --volumes
 ```
 
-The image tags are explicit release versions. Configuration files are mounted
-read-only. Compose fails before startup with an actionable message if
-`GRAFANA_ADMIN_PASSWORD` is missing. Until the signal-routing change, the
-Collector accepts OTLP and discards it through a no-op exporter so telemetry
-does not spill into container logs.
+Images use explicit release versions, configuration files are mounted
+read-only, and Compose gives an actionable error if
+`GRAFANA_ADMIN_PASSWORD` is missing.

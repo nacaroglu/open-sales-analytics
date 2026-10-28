@@ -209,9 +209,9 @@ def test_sample_uses_the_shared_ingest_function(client, monkeypatch):
     calls = []
     real = datasets_module.ingest_csv
 
-    def spy(path, currency, settings, *args):
+    def spy(path, currency, settings, *args, **kwargs):
         calls.append(currency)
-        return real(path, currency, settings, *args)
+        return real(path, currency, settings, *args, **kwargs)
 
     monkeypatch.setattr(datasets_module, "ingest_csv", spy)
 

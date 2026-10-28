@@ -5,6 +5,8 @@ from pathlib import Path
 import duckdb
 
 from app.config import Settings
+from app.custom_metrics import current_metrics
+from app.domain_telemetry import instrument_operation
 from app.schema import create_dataset
 
 # A blank customer_id takes the order's one non-blank ID; validation has already
@@ -33,7 +35,8 @@ SELECT $id, $currency, $created_at, $expires_at, $token_hash,
        (SELECT count(*) FROM ds.line_items), $has_customer_id,
        count(*) FILTER (WHERE identified),
        count(*) FILTER (WHERE NOT identified),
-       count(*)
+       count(*),
+       $source
 FROM order_coverage
 """
 
@@ -100,6 +103,7 @@ def dataset_path(settings: Settings, dataset_id: str) -> Path:
     return settings.dataset_dir / f"{dataset_id}.duckdb"
 
 
+@instrument_operation("osa.duckdb.canonical_import", module="duckdb")
 def import_dataset(
     staging: duckdb.DuckDBPyConnection,
     csv_path: str | os.PathLike[str],
@@ -108,6 +112,7 @@ def import_dataset(
     token_hash: str,
     settings: Settings,
     now: datetime | None = None,
+    source: str = "upload",
 ) -> Path:
     """Turn validated staging tables into ``<DATASET_DIR>/<dataset_id>.duckdb``.
 
@@ -118,6 +123,7 @@ def import_dataset(
     place, so a partial file never appears under its real name.
     """
     try:
+        source = source if source in {"sample", "upload"} else "upload"
         target = dataset_path(settings, dataset_id)
         if target.exists():
             raise FileExistsError(f"dataset {dataset_id} already exists")
@@ -145,11 +151,15 @@ def import_dataset(
                 created_at,
                 created_at + settings.dataset_ttl,
                 bool(customer_flag[0]),
+                source,
             )
             working.rename(target)
         except BaseException:
             _remove_with_wal(working)
             raise
+        metrics = current_metrics()
+        if metrics is not None:
+            metrics.record_dataset_rows(source, "success", row_count)
         return target
     finally:
         staging.close()
@@ -157,7 +167,15 @@ def import_dataset(
 
 
 def _copy_rows(
-    staging, working, dataset_id, currency, token_hash, created_at, expires_at, has_customer_id
+    staging,
+    working,
+    dataset_id,
+    currency,
+    token_hash,
+    created_at,
+    expires_at,
+    has_customer_id,
+    source,
 ) -> None:
     staging.execute(f"ATTACH '{_quote(working)}' AS ds")
     try:
@@ -175,6 +193,7 @@ def _copy_rows(
                 "expires_at": expires_at,
                 "token_hash": token_hash,
                 "has_customer_id": has_customer_id,
+                "source": source,
             },
         )
         staging.execute("COMMIT")

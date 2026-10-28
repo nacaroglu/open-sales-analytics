@@ -49,6 +49,7 @@ from app.api.module_common import (
 from app.api.module_models import CustomersResponse
 from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.config import Settings, get_settings
+from app.domain_telemetry import instrument_operation
 from app.importer import dataset_path
 from app.response_cache import ResponseCache, get_response_cache
 from app.schema import open_dataset_readonly
@@ -549,6 +550,7 @@ def _projection_body(connection, cutoff: date) -> dict:
     }
 
 
+@instrument_operation("osa.analytics.customers.query", module="customers")
 def build_customers(connection, meta: dict, periods) -> dict:
     has_customer_id = _has_customer_id(meta)
     dataset_meta = meta["customer_coverage"]

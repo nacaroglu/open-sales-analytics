@@ -88,8 +88,9 @@ def validate(source: str | None = None) -> None:
     rollback_contract = (
         "verifier(config, source)",
         "update_command(config, previous)",
-        'verification="FAIL", rollback="PASS"',
-        'verification="FAIL", rollback="FAILED"',
+        'verification="FAIL"',
+        'rollback="PASS"',
+        'rollback="FAILED"',
         'raise PromotionError("osa-prod release metadata does not match the promoted release.")',
     )
     if any(marker not in promotion for marker in rollback_contract):

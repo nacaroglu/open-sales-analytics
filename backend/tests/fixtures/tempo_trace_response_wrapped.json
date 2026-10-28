@@ -1,0 +1,18 @@
+{
+  "trace": {
+    "resourceSpans": [
+      {
+        "scopeSpans": [
+          {
+            "spans": [
+              {
+                "traceId": "ASNFZ4mrze8BI0VniavN7w==",
+                "spanId": "ASNFZ4mrze8="
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
