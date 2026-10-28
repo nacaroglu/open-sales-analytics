@@ -227,3 +227,7 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+### Стек наблюдаемости
+
+Разверните стек `osa-observability` после foundation и до стеков приложений. Стеки dev и prod импортируют идентификатор группы безопасности Collector и каждый управляет только своим частным правилом доступа OTLP, источником которого служит локальная группа безопасности приложения. При удалении сначала удалите стеки приложений, затем observability и в конце foundation. Частная конечная точка Collector и идентификатор группы безопасности экспортируются; токены аутентификации OTLP хранятся в параметрах SSM `SecureString` соответствующих сред.
