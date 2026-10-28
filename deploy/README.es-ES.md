@@ -226,3 +226,7 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+### Pila de observabilidad
+
+Despliega la pila `osa-observability` después de foundation y antes de las pilas de la aplicación. Las pilas dev y prod importan el identificador del grupo de seguridad del Collector y cada una administra solo su regla privada de entrada OTLP, cuyo origen es el grupo de seguridad de su aplicación. Para eliminar, borra primero las pilas de aplicaciones, después observability y, por último, foundation. Se exportan el endpoint privado del Collector y el identificador del grupo de seguridad; los tokens de autenticación OTLP se guardan en parámetros SSM `SecureString` de cada entorno.
