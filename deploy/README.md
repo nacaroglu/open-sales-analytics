@@ -299,13 +299,51 @@ To verify authenticated private ingestion, connect to the matching application i
 
 ### Guarded Phase 4 teardown
 
-Run `.github/workflows/teardown-phase4.yml` manually from `main`. Choose `dry-run` to print the exact target list; it makes no AWS calls. Execution runs a read-only preflight, then waits at the protected `osa-teardown` environment so reviewers can inspect the result before approving deletion. Before any execution, configure that environment with required reviewers and restrict deployment branches to `main`; repository changes cannot configure GitHub environment settings. Verify the protection with the GitHub API (requires `gh` authenticated with repository administration read access):
+The teardown deletes the four CloudFormation stacks in this order, waiting for each deletion to finish before starting the next:
+
+1. `osa-dev`
+2. `osa-prod`
+3. `osa-observability`
+4. `osa-foundation`
+
+Run `.github/workflows/teardown-phase4.yml` manually from `main`; it has no push, pull-request or schedule trigger. CloudFormation owns resource deletion, including ECR empty-on-delete behavior. Do not manually delete resources or ECR images.
+
+**Pre-teardown checklist.** Confirm every item before choosing `execute`:
+
+- Retain anything you still need. Deleting `osa-foundation` force-deletes the ECR repository and its images, and the observability data volume is deleted with no snapshot or backup. Export evidence first (#270).
+- Nothing outside the four stacks imports their exports. The preflight refuses to continue otherwise.
+- All four stacks are in a stable state (not `*_IN_PROGRESS` and not a failed state that needs manual repair).
+- The `osa-teardown` environment has required reviewers (see below) and the repository variables `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN` and `OSA_TEARDOWN_ROLE_ARN` are set. The preflight role must only inspect identity, target stack states, exports and importers. The delete role must have the same read access and be allowed to delete only the four target stacks.
+- You are on `main` and the person approving is aware of the account and region being targeted.
+
+**Approval configuration.** Repository changes cannot configure GitHub environment settings, so an administrator must create the `osa-teardown` environment, add required reviewers and restrict deployment branches to `main`. Verify the protection with the GitHub API (requires `gh` authenticated with repository administration read access):
 
 ```sh
 gh api repos/nacaroglu/open-sales-analytics/environments/osa-teardown \
   | python3 scripts/verify_phase4_environment.py
 ```
 
-The checker fails if the API response has no non-empty `required_reviewers` rule. Set repository variables `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN`, and `OSA_TEARDOWN_ROLE_ARN`. The preflight role must only inspect identity, target stack states, exports, and importers. The delete role must have the same read access and be allowed to delete only the four target stacks.
+The checker fails if the API response has no non-empty `required_reviewers` rule.
 
-The workflow prints each stack outcome and safe failure stage in `GITHUB_STEP_SUMMARY`. An absent stack is skipped. A delete or wait failure stops before later stacks; diagnose the stage and rerun after the stack is stable. CloudFormation owns resource deletion, including ECR empty-on-delete behavior. Do not manually delete resources or ECR images. Final absence verification is tracked by #272.
+**Dry run.** The dry run lists the exact targets and order, makes no AWS calls and deletes nothing:
+
+```sh
+gh workflow run teardown-phase4.yml --ref main -f mode=dry-run
+```
+
+**Execution.** Execution requires the exact confirmation value `DELETE-PHASE4-OSA-RESOURCES`. The workflow runs a read-only preflight (account, region, stable stack states, outside importers), then waits at the protected `osa-teardown` environment so a reviewer can inspect the preflight result before approving deletion:
+
+```sh
+gh workflow run teardown-phase4.yml --ref main -f mode=execute -f confirmation=DELETE-PHASE4-OSA-RESOURCES
+```
+
+Approve the pending deployment in the workflow run. An absent stack is skipped. The workflow prints each stack outcome and a safe failure stage in `GITHUB_STEP_SUMMARY`, with no account IDs, ARNs or raw AWS responses.
+
+**Recovery after a failure.** A failed delete or wait stops the run: later stacks are not touched, and the run is never retried automatically. Read the summary table to see which stacks are deleted, absent or not attempted, then use the failure stage:
+
+- `confirmation` or `region_configuration`: nothing was changed. Rerun with the exact confirmation value and the correct `OSA_AWS_REGION`.
+- `aws_identity`, `account_configuration`, `aws_client`, `aws_query`, `aws_response` or `aws_pagination`: the preflight could not verify the account or read AWS. Nothing was deleted. Check the role trust, the account ID variable and the region, then rerun.
+- `stack_query`, `stack_state`, `export_query`, `import_query` or `outside_importer`: the preflight refused. Wait for in-progress stacks to settle, repair a failed stack, or remove the outside importer, then rerun.
+- `delete_request` or `delete_wait`: CloudFormation failed to start or finish a stack deletion. Open the stack's events in the CloudFormation console to find the blocking resource, fix it, wait until the stack is stable (for example `DELETE_FAILED` after you remove the blocker), then rerun the workflow. Already deleted stacks are skipped.
+
+Do not skip stacks or delete resources by hand to work around a failure. Final absence verification is tracked by #272.
