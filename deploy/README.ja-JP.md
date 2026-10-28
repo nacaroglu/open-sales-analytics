@@ -260,3 +260,56 @@ The app reads the private `CollectorPrivateEndpoint` export and sends OTLP/HTTP 
 To rotate a token, set `OTLP_TOKEN_PARAMETER` to the matching dev or prod parameter path. Generate a fresh URL-safe token into a mode-restricted temporary file with `umask 077; TOKEN_FILE=$(mktemp); openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > "$TOKEN_FILE"`, then update the parameter with `aws ssm put-parameter --name "$OTLP_TOKEN_PARAMETER" --type SecureString --value "file://$TOKEN_FILE" --overwrite >/dev/null`. Do not print the token or use `--with-decryption` to inspect it. Through Session Manager, restart `osa-observability.service` on the Collector instance and `osa-compose.service` on the matching application instance; confirm both are active. Each service reloads its token from SSM at startup. Preflight checks verify that the environment parameter exists and has type `SecureString` without decrypting or exposing its value.
 
 To verify authenticated private ingestion, connect to the matching application instance through Session Manager and run `docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development python -m app.telemetry_test_signal`; set `OSA_ENVIRONMENT=production` for prod. This emits a synthetic trace, metric, and log using the app's configured private endpoint and token file, without displaying the token. Confirm the command reports a successful flush, then use Grafana Explore to find `osa.synthetic.resource_identity` in Tempo, Prometheus, and Loki and verify `service.name`, `service.version`, and `deployment.environment.name`. Also confirm the environment's normal authenticated health check still succeeds. If a signal is missing, check the two service states, private endpoint and security-group rules, token parameter type, and service logs; logs must not include token values.
+
+### Guarded Phase 4 teardown
+
+The teardown deletes the four CloudFormation stacks in this order, waiting for each deletion to finish before starting the next:
+
+1. `osa-dev`
+2. `osa-prod`
+3. `osa-observability`
+4. `osa-foundation`
+
+Run `.github/workflows/teardown-phase4.yml` manually from `main`; it has no push, pull-request or schedule trigger. CloudFormation owns resource deletion, including ECR empty-on-delete behavior. Do not manually delete resources or ECR images.
+
+**Pre-teardown checklist.** Confirm every item before choosing `execute`:
+
+- Retain anything you still need. Deleting `osa-foundation` force-deletes the ECR repository and its images, and the observability data volume is deleted with no snapshot or backup. Export evidence first (#270).
+- Nothing outside the four stacks imports their exports. The preflight refuses to continue otherwise.
+- All four stacks are in a stable state (not `*_IN_PROGRESS` and not a failed state that needs manual repair).
+- The `osa-teardown` environment has required reviewers (see below) and the repository variables `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN` and `OSA_TEARDOWN_ROLE_ARN` are set. The preflight role must only inspect identity, target stack states, exports and importers. The delete role must have the same read access and be allowed to delete only the four target stacks.
+- You are on `main` and the person approving is aware of the account and region being targeted.
+
+**Approval configuration.** Repository changes cannot configure GitHub environment settings, so an administrator must create the `osa-teardown` environment, add required reviewers and restrict deployment branches to `main`. Verify the protection with the GitHub API (requires `gh` authenticated with repository administration read access):
+
+```sh
+gh api repos/nacaroglu/open-sales-analytics/environments/osa-teardown \
+  | python3 scripts/verify_phase4_environment.py
+```
+
+The checker fails if the API response has no non-empty `required_reviewers` rule.
+
+**Dry run.** The dry run lists the exact targets and order, makes no AWS calls and deletes nothing:
+
+```sh
+gh workflow run teardown-phase4.yml --ref main -f mode=dry-run
+```
+
+**Execution.** Execution requires the exact confirmation value `DELETE-PHASE4-OSA-RESOURCES`. The workflow runs a read-only preflight (account, region, stable stack states, outside importers), then waits at the protected `osa-teardown` environment so a reviewer can inspect the preflight result before approving deletion:
+
+```sh
+gh workflow run teardown-phase4.yml --ref main -f mode=execute -f confirmation=DELETE-PHASE4-OSA-RESOURCES
+```
+
+Approve the pending deployment in the workflow run. An absent stack is skipped. The workflow prints each stack outcome and a safe failure stage in `GITHUB_STEP_SUMMARY`, with no account IDs, ARNs or raw AWS responses.
+
+**Recovery after a failure.** A failed delete or wait stops the run: later stacks are not touched, and the run is never retried automatically. Read the summary table to see which stacks are deleted, absent or not attempted, then use the failure stage:
+
+- `workflow_setup`, `confirmation` or `region_configuration`: nothing was changed. The workflow or script stopped before AWS was used, for example because the confirmation value was not exact or a repository variable is missing. Rerun with the exact confirmation value and the repository variables set, including the correct `OSA_AWS_REGION`.
+- `aws_identity`, `account_configuration`, `aws_client`, `aws_query`, `aws_response` or `aws_pagination`: the preflight could not verify the account or read AWS. Nothing was deleted. Check the role trust, the account ID variable and the region, then rerun.
+- `stack_query`, `stack_state`, `export_query`, `import_query` or `outside_importer`: the preflight refused. Wait for in-progress stacks to settle, repair a failed stack, or remove the outside importer, then rerun.
+- `delete_request` or `delete_wait`: CloudFormation failed to start or finish a stack deletion. Open the stack's events in the CloudFormation console to find the blocking resource, fix it, wait until the stack is stable (for example `DELETE_FAILED` after you remove the blocker), then rerun the workflow. Already deleted stacks are skipped.
+
+If the summary shows `unknown`, treat it as a failed run of undetermined cause: read the workflow log, confirm the state of all four stacks in the CloudFormation console, and rerun only when they are stable.
+
+Do not skip stacks or delete resources by hand to work around a failure. Final absence verification is tracked by #272.
