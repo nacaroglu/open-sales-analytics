@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -654,11 +655,17 @@ def run_project(*, public_demo: bool) -> None:
     global ACTIVE_COMPOSE, ACTIVE_ENV
     prefix = os.environ.get("OSA_COMPOSE_TEST_PREFIX", "osa-it")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,47}", prefix):
-        raise IntegrationFailure("OSA_COMPOSE_TEST_PREFIX must contain only safe Compose project characters")
+        raise IntegrationFailure(
+            "OSA_COMPOSE_TEST_PREFIX must contain only safe Compose project characters"
+        )
     run_id = os.environ.get("OSA_COMPOSE_TEST_RUN_ID")
     if run_id:
-        if not re.fullmatch(r"[0-9a-f]{8}", run_id) or not prefix.endswith(f"-integration-{run_id}"):
-            raise IntegrationFailure("OSA_COMPOSE_TEST_RUN_ID must match the scoped integration project prefix")
+        if not re.fullmatch(r"[0-9a-f]{8}", run_id) or not prefix.endswith(
+            f"-integration-{run_id}"
+        ):
+            raise IntegrationFailure(
+                "OSA_COMPOSE_TEST_RUN_ID must match the scoped integration project prefix"
+            )
         project = f"{prefix}-{'demo' if public_demo else 'selfhost'}"
     else:
         project = f"{prefix}-{'demo' if public_demo else 'selfhost'}-{uuid.uuid4().hex[:8]}"
@@ -669,6 +676,9 @@ def run_project(*, public_demo: bool) -> None:
         Path(temp_root).mkdir(mode=0o700, parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f"{prefix}-sink-", dir=temp_root) as sink_dir:
         os.chmod(sink_dir, 0o777)
+        token_file = Path(sink_dir) / "otlp-token"
+        token_file.write_text(secrets.token_urlsafe(32).rstrip("="), encoding="utf-8")
+        os.chmod(token_file, 0o444)
         compose = compose_command(project)
         ACTIVE_COMPOSE = compose
         environment = os.environ.copy()
@@ -676,6 +686,7 @@ def run_project(*, public_demo: bool) -> None:
             {
                 "COMPOSE_PROJECT_NAME": project,
                 "OSA_TEST_TELEMETRY_DIR": sink_dir,
+                "OSA_TEST_OTLP_TOKEN_FILE": str(token_file),
                 "OSA_PORT": str(port),
                 "DATASET_DIR": "/data",
                 "OSA_ENVIRONMENT": "development",

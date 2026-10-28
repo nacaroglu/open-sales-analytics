@@ -3,8 +3,12 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
 
 processors:
   batch:
@@ -15,11 +19,18 @@ exporters:
     format: json
 
 extensions:
+  bearertokenauth:
+    filename: /run/secrets/otlp-token
+    retry_on_failure:
+      enabled: true
+      max_retries: 30
+      interval: 1s
+    wait_for_token_file: true
   health_check:
     endpoint: 0.0.0.0:13133
 
 service:
-  extensions: [health_check]
+  extensions: [health_check, bearertokenauth]
   pipelines:
     traces:
       receivers: [otlp]

@@ -199,7 +199,11 @@ jobs:
           trap 'rm -rf "$sink_dir"' EXIT
           mkdir -p "$sink_dir"
           chmod 0777 "$sink_dir"
+          token_file="$sink_dir/otlp-token"
+          openssl rand -hex 32 > "$token_file"
+          chmod 0444 "$token_file"
           OSA_TEST_TELEMETRY_DIR="$sink_dir" \
+            OSA_TEST_OTLP_TOKEN_FILE="$token_file" \
             docker compose -f docker-compose.yaml -f docker-compose.integration-test.yaml \
             -f docker-compose.test-telemetry.yaml config --quiet
       - name: Run Compose integration cases
@@ -295,6 +299,10 @@ jobs:
 
           mkdir -p "$sink_dir"
           chmod 0777 "$sink_dir"
+          token_file="$sink_dir/otlp-token"
+          openssl rand -hex 32 > "$token_file"
+          chmod 0444 "$token_file"
+          export OSA_TEST_OTLP_TOKEN_FILE="$token_file"
           "${compose[@]}" config --quiet
           "${compose[@]}" up --build --detach
 

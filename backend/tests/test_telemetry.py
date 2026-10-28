@@ -331,13 +331,19 @@ def test_cloud_collector_requires_bearer_auth_for_otlp_http():
     root = Path(__file__).resolve().parents[2]
     aws_collector = (root / "observability" / "collector.aws.yaml").read_text(encoding="utf-8")
     local_collector = (root / "observability" / "collector.yaml").read_text(encoding="utf-8")
+    test_collector = (root / "observability" / "collector-test.yaml").read_text(encoding="utf-8")
     aws_compose = (root / "observability" / "compose.aws.yaml").read_text(encoding="utf-8")
     bootstrap = (root / "deploy" / "observability" / "bootstrap.sh").read_text(encoding="utf-8")
+    test_compose = (root / "docker-compose.test-telemetry.yaml").read_text(encoding="utf-8")
 
     assert "authenticator: bearertokenauth" in aws_collector
     assert aws_collector.count("authenticator: bearertokenauth") == 2
     assert "filename: /run/secrets/otlp-token" in aws_collector
     assert "authenticator: bearertokenauth" not in local_collector
+    assert "authenticator: bearertokenauth" in test_collector
+    assert "filename: /run/secrets/otlp-token" in test_collector
+    assert "OSA_OTLP_TOKEN_FILE: /run/osa/otlp-token" in test_compose
+    assert "target: /run/secrets/otlp-token" in test_compose
     assert "otel/opentelemetry-collector-contrib:0.161.0" in aws_compose
     assert "collector.aws.yaml:/etc/otelcol-contrib/config.yaml:ro" in aws_compose
     assert "target: otlp-token" in aws_compose
