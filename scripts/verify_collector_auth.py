@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -29,6 +30,28 @@ def request_status(url: str, token: str | None) -> int:
             return response.status
     except HTTPError as response:
         return response.code
+
+
+def sanitized_diagnostics(value: str, token_file: Path) -> str:
+    for secret in ("ci-dev-token", "ci-prod-token", str(token_file), str(token_file.parent)):
+        value = value.replace(secret, "[REDACTED]")
+    return "\n".join(value.splitlines()[-20:])[-2048:]
+
+
+def print_collector_diagnostics(container_name: str, token_file: Path) -> None:
+    try:
+        result = subprocess.run(
+            ["docker", "logs", "--tail", "40", container_name],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    diagnostics = f"{result.stdout}{result.stderr}"
+    if diagnostics.strip():
+        print(sanitized_diagnostics(diagnostics, token_file), file=sys.stderr)
 
 
 def main() -> None:
@@ -59,7 +82,6 @@ def main() -> None:
                     "docker",
                     "run",
                     "--detach",
-                    "--rm",
                     "--name",
                     container_name,
                     "--publish",
@@ -88,10 +110,14 @@ def main() -> None:
                     break
                 except URLError:
                     if time.monotonic() >= deadline:
+                        print_collector_diagnostics(container_name, token_file)
                         raise SystemExit(
                             "AWS Collector did not become ready for authenticated OTLP"
                         ) from None
                     time.sleep(0.25)
+                except SystemExit:
+                    print_collector_diagnostics(container_name, token_file)
+                    raise
 
             if request_status(endpoint, None) != 401:
                 raise SystemExit("AWS Collector did not reject OTLP without a bearer token")
@@ -100,7 +126,11 @@ def main() -> None:
             if request_status(endpoint, "ci-prod-token") != 200:
                 raise SystemExit("AWS Collector did not accept its second configured token")
             print("AWS Collector accepted configured tokens and rejected missing/invalid tokens")
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as error:
+            detail = error.stderr or error.stdout or ""
+            if detail.strip():
+                print(sanitized_diagnostics(detail, token_file), file=sys.stderr)
+            print_collector_diagnostics(container_name, token_file)
             raise SystemExit("AWS Collector authentication container failed to start") from None
         finally:
             subprocess.run(
