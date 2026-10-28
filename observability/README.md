@@ -50,9 +50,21 @@ that as missing telemetry or an unavailable scrape/export path, not as a zero
 measurement. Start with the dashboard filters and Prometheus targets, then use
 the filtered log and trace links to investigate.
 
-CI runs an offline structural validator for the data-source UIDs/endpoints,
-dashboard rows and panels, filters, links, and no-data guidance. It does not
-require Grafana or an observability backend.
+Grafana also provisions `OSARepeatedDatasetCreationFailures` from
+`observability/provisioning/alerting/osa-repeated-dataset-failures.json` in the
+`osa-reliability` group. It sums ten-minute increases of internal dataset/sample
+creation failures by service, environment, and deployed version. It enters the
+pending state at three failures and fires only when the threshold remains true
+for five minutes. Validation rejections are excluded. When the query returns no
+qualifying series, the rule returns to OK so recovery clears the alert. Offline
+fixtures cover below-threshold behavior, rejected-input exclusion, the pending
+boundary, firing, and resolution; run them with
+`python3 scripts/test_grafana_alert.py`.
+
+CI runs offline checks for data-source UIDs/endpoints, dashboard rows and
+panels, filters, links, no-data guidance, and the alert's metric expression and
+state transitions. These checks do not require Grafana or an observability
+backend.
 
 Stop and remove only this project's containers and network:
 
