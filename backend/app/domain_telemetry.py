@@ -6,10 +6,13 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from functools import wraps
+from time import perf_counter
 from typing import ParamSpec, TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import Span, Status, StatusCode, TracerProvider
+
+from app.custom_metrics import current_metrics
 
 _active_tracer_provider: ContextVar[TracerProvider | None] = ContextVar(
     "osa_active_tracer_provider", default=None
@@ -80,9 +83,41 @@ def instrument_operation(
     def decorate(function: Callable[P, R]) -> Callable[P, R]:
         @wraps(function)
         def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
-            with operation_span(name, module=module, source=source):
-                return function(*args, **kwargs)
+            started = perf_counter()
+            try:
+                with operation_span(name, module=module, source=source):
+                    result = function(*args, **kwargs)
+            except BaseException:
+                metrics = current_metrics()
+                if metrics is not None:
+                    _record_metric_operation(
+                        metrics, name, module, kwargs, "failure", perf_counter() - started
+                    )
+                raise
+            metrics = current_metrics()
+            if metrics is not None:
+                _record_metric_operation(
+                    metrics, name, module, kwargs, "success", perf_counter() - started
+                )
+            return result
 
         return wrapped
 
     return decorate
+
+
+def _record_metric_operation(metrics, name, module, kwargs, outcome, elapsed) -> None:
+    if module == "duckdb":
+        operation = "canonical_import" if name.endswith("canonical_import") else "open_dataset"
+        metrics.record_duckdb(operation, outcome, elapsed)
+        if operation == "canonical_import":
+            failure_class = "none" if outcome == "success" else "internal"
+            metrics.record_dataset_operation(
+                "import",
+                kwargs.get("source", "upload"),
+                outcome,
+                failure_class=failure_class,
+                duration_seconds=elapsed,
+            )
+    elif module in {"overview", "customers", "products"}:
+        metrics.record_duckdb("analytics_query", outcome, elapsed)

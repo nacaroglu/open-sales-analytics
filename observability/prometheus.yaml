@@ -1,7 +1,14 @@
 global:
-  scrape_interval: 15s
+  scrape_interval: 5s
 
 scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: [prometheus:9090]
+  - job_name: otelcol-internal
+    static_configs:
+      - targets: [collector:8888]
+  - job_name: osa-application
+    scrape_interval: 2s
+    static_configs:
+      - targets: [collector:8889]

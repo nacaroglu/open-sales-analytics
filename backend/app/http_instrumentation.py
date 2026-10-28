@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from typing import Any
 
 from opentelemetry.propagate import set_global_textmap
@@ -11,6 +12,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from starlette.datastructures import Headers
 from starlette.routing import Match
 
+from app.custom_metrics import use_custom_metrics
 from app.domain_telemetry import use_tracer_provider
 
 _METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"}
@@ -91,8 +93,16 @@ class RequestTelemetryMiddleware:
             await send(message)
 
         error: BaseException | None = None
+        metric_context = (
+            use_custom_metrics(telemetry.custom_metrics)
+            if telemetry.custom_metrics is not None
+            else nullcontext()
+        )
         try:
-            with use_tracer_provider(telemetry.tracer_provider):
+            with (
+                metric_context,
+                use_tracer_provider(telemetry.tracer_provider),
+            ):
                 with tracer.start_as_current_span(
                     f"{method} {route}",
                     context=parent_context,
@@ -127,6 +137,35 @@ class RequestTelemetryMiddleware:
             counter.add(1, metric_attributes)
             duration.record(elapsed, metric_attributes)
             active.add(-1, {"http.route": route})
+            custom_metrics = telemetry.custom_metrics
+            module = _analytics_module(route)
+            outcome = (
+                "success" if status_code < 400 else "rejected" if status_code < 500 else "failure"
+            )
+            if module is not None and custom_metrics is not None:
+                custom_metrics.record_analytics(module, outcome, elapsed)
+            if (
+                custom_metrics is not None
+                and method == "POST"
+                and route in {"/api/datasets", "/api/datasets/sample"}
+            ):
+                source = "sample" if route.endswith("/sample") else "upload"
+                failure_class = (
+                    "none"
+                    if outcome == "success"
+                    else "validation"
+                    if outcome == "rejected"
+                    else "capacity"
+                    if status_code == 503
+                    else "internal"
+                )
+                custom_metrics.record_dataset_operation(
+                    "create",
+                    source,
+                    outcome,
+                    failure_class=failure_class,
+                    duration_seconds=elapsed,
+                )
 
     def _get_instruments(self, telemetry: Any) -> tuple[Any, Any, Any]:
         provider = telemetry.meter_provider
@@ -145,3 +184,13 @@ class RequestTelemetryMiddleware:
 def configure_trace_context_propagation() -> None:
     """Install W3C trace-context propagation for supported outbound integrations."""
     set_global_textmap(_PROPAGATOR)
+
+
+def _analytics_module(route: str) -> str | None:
+    if route == "/api/datasets/{id}/overview":
+        return "overview"
+    if route == "/api/datasets/{id}/customers":
+        return "customer"
+    if route in {"/api/datasets/{id}/products", "/api/datasets/{id}/products/detail"}:
+        return "product"
+    return None

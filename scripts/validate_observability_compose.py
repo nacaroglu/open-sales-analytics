@@ -57,7 +57,7 @@ require(
 )
 
 expected_images = {
-    "collector": "otel/opentelemetry-collector-contrib:0.163.0",
+    "collector": "otel/opentelemetry-collector-contrib:0.161.0",
     "prometheus": "prom/prometheus:v3.14.0",
     "loki": "grafana/loki:3.7.8",
     "tempo": "grafana/tempo:3.1.1",
@@ -66,9 +66,9 @@ expected_images = {
 allowed_host_targets = {
     "collector": {4317, 4318},
     "grafana": {3000},
-    "prometheus": set(),
-    "loki": set(),
-    "tempo": set(),
+    "prometheus": {9090},
+    "loki": {3100},
+    "tempo": {3200},
 }
 
 used_volumes: set[str] = set()

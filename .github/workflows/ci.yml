@@ -25,6 +25,15 @@ jobs:
       - name: Verify pull request checks can run in parallel
         run: python3 scripts/validate_ci_parallelism.py
 
+  grafana-dashboard-validation:
+    name: Grafana provisioning and dashboard (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate provisioned data sources and OSA Operations dashboard
+        run: python3 scripts/validate_grafana_dashboard.py
+
   backend-tests:
     name: Backend (tests, ruff, mypy)
     runs-on: ubuntu-latest
@@ -185,6 +194,56 @@ jobs:
             -f docker-compose.test-telemetry.yaml config --quiet
       - name: Run Compose integration cases
         run: make integration
+
+  observability-routing:
+    name: Observability routing (offline synthetic OTLP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GRAFANA_ADMIN_PASSWORD: ci-config-only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate standalone observability configuration
+        run: |
+          set -euo pipefail
+          docker compose -f observability/compose.yaml config --quiet
+          docker compose -f observability/compose.yaml config --format json |
+            python3 scripts/validate_observability_compose.py
+      - name: Start stack and verify synthetic signal routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="osa-observability-ci-${GITHUB_RUN_ID}"
+          compose=(docker compose --project-name "$project" -f observability/compose.yaml)
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              "${compose[@]}" logs --no-color --tail=80 collector prometheus loki tempo || true
+            fi
+            "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || status=1
+            if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] || \
+              [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$project")" ]; then
+              echo "Observability Compose resources remain after cleanup"
+              status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          docker run --rm \
+            --volume "$PWD/observability/collector.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+            otel/opentelemetry-collector-contrib:0.161.0 \
+            validate --config=/etc/otelcol-contrib/config.yaml
+          "${compose[@]}" up --detach
+          "${compose[@]}" exec -T prometheus promtool check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            --network "${project}_observability" \
+            --volume "$PWD/scripts/validate_collector_routing.py:/validate_collector_routing.py:ro" \
+            --env OSA_ROUTING_COLLECTOR_URL=http://collector:4318 \
+            --env OSA_ROUTING_PROMETHEUS_URL=http://prometheus:9090 \
+            --env OSA_ROUTING_LOKI_URL=http://loki:3100 \
+            --env OSA_ROUTING_TEMPO_URL=http://tempo:3200 \
+            python:3.12.8-slim python /validate_collector_routing.py
 
   telemetry-resource-identity:
     name: Telemetry resource identity (OTLP test Collector)
@@ -897,12 +956,14 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - ci-structure
+      - grafana-dashboard-validation
       - backend-tests
       - frontend
       - cloudformation-foundation
       - pinned-actions
       - dependency-scan
       - compose-integration
+      - observability-routing
       - telemetry-resource-identity
       - docker-smoke
     runs-on: ubuntu-latest
