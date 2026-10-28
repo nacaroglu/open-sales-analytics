@@ -391,6 +391,7 @@ jobs:
               "DATASET_DIR": "/data",
               "OSA_ENVIRONMENT": "development",
               "OSA_VERSION": "local",
+              "OSA_TRACE_SAMPLING_RATIO": "1.0",
           }
           assert service["ports"][0]["target"] == 8000
           assert str(service["ports"][0]["published"]) == "8000"
