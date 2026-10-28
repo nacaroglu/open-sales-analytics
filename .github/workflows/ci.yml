@@ -231,6 +231,16 @@ jobs:
       GRAFANA_ADMIN_PASSWORD: ci-config-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Provision CI-only alert webhook secret
+        run: |
+          set -euo pipefail
+          webhook_file="$RUNNER_TEMP/osa-alert-webhook-url"
+          printf '%s' 'https://hooks.example.invalid/ci-only' > "$webhook_file"
+          chmod 0400 "$webhook_file"
+          sudo chown 472:0 "$webhook_file"
+          sudo env OSA_ALERT_WEBHOOK_URL_FILE="$webhook_file" \
+            python3 scripts/validate_alert_webhook_config.py
+          echo "OSA_ALERT_WEBHOOK_URL_FILE=$webhook_file" >> "$GITHUB_ENV"
       - name: Validate standalone observability configuration
         run: |
           set -euo pipefail
