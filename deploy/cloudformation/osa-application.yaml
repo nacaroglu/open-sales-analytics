@@ -376,7 +376,7 @@ Resources:
 
               set -eu
 
-              parameter="$(if [ "$${OSA_ENVIRONMENT}" = development ]; then printf %s /osa/dev/observability/otlp-token; else printf %s /osa/prod/observability/otlp-token; fi)"
+              parameter="$(if [ "${!OSA_ENVIRONMENT}" = development ]; then printf %s /osa/dev/observability/otlp-token; else printf %s /osa/prod/observability/otlp-token; fi)"
               if ! parameter_type="$(aws ssm get-parameter --name "$parameter" --query Parameter.Type --output text --cli-connect-timeout 5 --cli-read-timeout 10 2>/dev/null)" || [ "$parameter_type" != SecureString ]; then
                 echo "OTLP authentication parameter must be a SecureString." >&2
                 exit 1

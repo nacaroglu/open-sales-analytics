@@ -252,6 +252,9 @@ def write_summary(
     *,
     verification: str,
     rollback: str,
+    failure_stage: str | None = None,
+    readiness: str | None = None,
+    sample_analytics: str | None = None,
 ) -> None:
     path = env.get("GITHUB_STEP_SUMMARY")
     if path:
@@ -262,12 +265,35 @@ def write_summary(
                 )
                 stream.write(f"| Promoted release | {source.digest} | {source.version} |\n")
                 stream.write(f"| Previous production | {previous.digest} | {previous.version} |\n")
+                stream.write("\n- Environment: production\n")
+                stream.write(f"- Image tag: `{source.version}`\n")
+                stream.write(f"- Previous production digest: `{previous.digest}`\n")
                 stream.write(f"\n- Production verification: {verification}\n")
+                stream.write(
+                    f"- Readiness: {readiness or ('PASS' if verification == 'PASS' else 'NOT RUN')}\n"
+                )
+                stream.write(
+                    "- Sample analytics smoke: "
+                    f"{sample_analytics or ('PASS' if verification == 'PASS' else 'NOT RUN')}\n"
+                )
+                if failure_stage is not None:
+                    stream.write(f"- Failure stage: {failure_stage}\n")
+                stream.write(f"- Result: {'PASS' if verification == 'PASS' else 'FAIL'}\n")
                 stream.write(f"- Rollback: {rollback}\n")
         except OSError as exc:
             raise PromotionError(
                 f"Unable to write promotion summary ({type(exc).__name__})."
             ) from None
+
+
+def verification_summary_state(error: PromotionError) -> tuple[str, str, str]:
+    """Map safe failure categories to summary fields without recording error text."""
+    message = str(error).lower()
+    if "readiness" in message:
+        return "Production readiness", "FAIL", "NOT RUN"
+    if "sample" in message or "analytics" in message:
+        return "Sample analytics smoke", "PASS", "FAIL"
+    return "Production verification", "NOT RUN", "NOT RUN"
 
 
 def _http_request(
@@ -429,7 +455,19 @@ def promote(
         validate_otlp_prerequisites(config.region, "production", runner=runner)
     except OtlpPreflightError as exc:
         raise PromotionError(f"Production OTLP prerequisites failed: {exc}") from None
-    previous = describe(runner, "osa-prod", config)
+    try:
+        previous = describe(runner, "osa-prod", config)
+    except PromotionError:
+        unavailable = Release("unavailable", "unavailable")
+        write_summary(
+            source,
+            unavailable,
+            env,
+            verification="FAIL",
+            rollback="NOT RUN",
+            failure_stage="Prior production metadata lookup",
+        )
+        raise
     try:
         run(runner, update_command(config, source), "osa-prod update")
         try:
@@ -455,6 +493,7 @@ def promote(
         verifier(config, source)
         write_summary(source, previous, env, verification="PASS", rollback="not required")
     except PromotionError as promotion_error:
+        failure_stage, readiness, sample_analytics = verification_summary_state(promotion_error)
         try:
             current = describe(runner, "osa-prod", config)
             if current != previous:
@@ -480,10 +519,28 @@ def promote(
             verifier(config, previous)
             if describe(runner, "osa-prod", config) != previous:
                 raise PromotionError("Production release changed during rollback verification.")
-            write_summary(source, previous, env, verification="FAIL", rollback="PASS")
+            write_summary(
+                source,
+                previous,
+                env,
+                verification="FAIL",
+                rollback="PASS",
+                failure_stage=failure_stage,
+                readiness=readiness,
+                sample_analytics=sample_analytics,
+            )
         except PromotionError as rollback_error:
             try:
-                write_summary(source, previous, env, verification="FAIL", rollback="FAILED")
+                write_summary(
+                    source,
+                    previous,
+                    env,
+                    verification="FAIL",
+                    rollback="FAILED",
+                    failure_stage=failure_stage,
+                    readiness=readiness,
+                    sample_analytics=sample_analytics,
+                )
             except PromotionError:
                 pass
             raise PromotionError(

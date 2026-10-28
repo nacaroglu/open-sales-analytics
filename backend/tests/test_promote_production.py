@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "promote_production.py"
+SCRIPTS_DIR = SCRIPT.parent
+sys.path.insert(0, str(SCRIPTS_DIR))
 SPEC = importlib.util.spec_from_file_location("promote_production", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 PROMOTION = importlib.util.module_from_spec(SPEC)
@@ -62,6 +64,16 @@ def describe_json(stack: str, digest: str, version: str) -> str:
     )
 
 
+def preflight_stdout(args: list[str]) -> str | None:
+    if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
+        stack = args[args.index("--stack-name") + 1]
+        if stack == "osa-observability":
+            return "http://10.40.1.25:4318"
+    if args[:3] == ["aws", "ssm", "get-parameter"]:
+        return "SecureString"
+    return None
+
+
 def test_dev_metadata_is_parsed_and_bound_to_expected_ecr_repository():
     release = PROMOTION.parse_release(
         describe_json("osa-dev", DIGEST, VERSION), "osa-dev", REPOSITORY
@@ -106,6 +118,9 @@ def test_promotion_uses_only_the_dev_digest_and_never_builds_pushes_or_retags(tm
         nonlocal current
         args = list(command)
         commands.append(args)
+        preflight = preflight_stdout(args)
+        if preflight is not None:
+            return subprocess.CompletedProcess(args, 0, stdout=preflight)
         if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
             return subprocess.CompletedProcess(
                 args, 0, stdout=describe_json("osa-prod", current.digest, current.version)
@@ -173,6 +188,9 @@ def test_failed_production_verification_restores_and_verifies_previous_release(t
         nonlocal current
         args = list(command)
         commands.append(args)
+        preflight = preflight_stdout(args)
+        if preflight is not None:
+            return subprocess.CompletedProcess(args, 0, stdout=preflight)
         if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
             return subprocess.CompletedProcess(
                 args, 0, stdout=describe_json("osa-prod", current.digest, current.version)
@@ -234,6 +252,9 @@ def test_failed_rollback_verification_is_reported_as_rollback_failure(tmp_path: 
     def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
         nonlocal current
         args = list(command)
+        preflight = preflight_stdout(args)
+        if preflight is not None:
+            return subprocess.CompletedProcess(args, 0, stdout=preflight)
         if args[:3] == ["aws", "cloudformation", "describe-stacks"]:
             return subprocess.CompletedProcess(
                 args, 0, stdout=describe_json("osa-prod", current.digest, current.version)
@@ -279,6 +300,9 @@ def test_invalid_previous_production_release_stops_before_update():
     def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
         args = list(command)
         commands.append(args)
+        preflight = preflight_stdout(args)
+        if preflight is not None:
+            return subprocess.CompletedProcess(args, 0, stdout=preflight)
         return subprocess.CompletedProcess(args, 0, stdout="{}")
 
     with pytest.raises(PROMOTION.PromotionError, match="osa-prod release metadata"):
@@ -290,8 +314,11 @@ def test_invalid_previous_production_release_stops_before_update():
             env={},
         )
 
-    assert len(commands) == 1
-    assert commands[0][:3] == ["aws", "cloudformation", "describe-stacks"]
+    assert len(commands) == 3
+    assert commands[0][0:3] == ["aws", "cloudformation", "describe-stacks"]
+    assert "osa-observability" in commands[0]
+    assert commands[1][:3] == ["aws", "ssm", "get-parameter"]
+    assert commands[2][:3] == ["aws", "cloudformation", "describe-stacks"]
 
 
 def test_invalid_previous_release_is_reported_without_attempting_an_update(tmp_path: Path):
@@ -300,6 +327,9 @@ def test_invalid_previous_release_is_reported_without_attempting_an_update(tmp_p
     def runner(command: Sequence[str], **_: object) -> subprocess.CompletedProcess[str]:
         args = list(command)
         commands.append(args)
+        preflight = preflight_stdout(args)
+        if preflight is not None:
+            return subprocess.CompletedProcess(args, 0, stdout=preflight)
         return subprocess.CompletedProcess(args, 0, stdout="{}")
 
     summary = tmp_path / "summary.md"
@@ -312,8 +342,11 @@ def test_invalid_previous_release_is_reported_without_attempting_an_update(tmp_p
             verifier=lambda _config, _release: None,
         )
 
-    assert len(commands) == 1
-    assert commands[0][:3] == ["aws", "cloudformation", "describe-stacks"]
+    assert len(commands) == 3
+    assert commands[0][0:3] == ["aws", "cloudformation", "describe-stacks"]
+    assert "osa-observability" in commands[0]
+    assert commands[1][:3] == ["aws", "ssm", "get-parameter"]
+    assert commands[2][:3] == ["aws", "cloudformation", "describe-stacks"]
     content = summary.read_text(encoding="utf-8")
     assert "Previous production digest: `unavailable`" in content
     assert "Failure stage: Prior production metadata lookup" in content

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 DEPLOY_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "deploy_dev_stack.py"
+SCRIPTS_DIR = DEPLOY_SCRIPT.parent
+sys.path.insert(0, str(SCRIPTS_DIR))
 DEPLOY_SPEC = importlib.util.spec_from_file_location("deploy_dev_stack", DEPLOY_SCRIPT)
 assert DEPLOY_SPEC is not None and DEPLOY_SPEC.loader is not None
 DEPLOYMENT = importlib.util.module_from_spec(DEPLOY_SPEC)

@@ -312,6 +312,26 @@ require(
     "exactly one app instance must use supplied runtime parameters and the app-owned profile",
 )
 require(
+    'if [ "${!OSA_ENVIRONMENT}" = development ]' in instance
+    and "$${OSA_ENVIRONMENT}" not in instance,
+    "shell OSA_ENVIRONMENT expansion in Fn::Sub user data must be escaped from CloudFormation",
+)
+unescaped_substitutions = set(re.findall(r"\$\{(?!\!)([^}]+)\}", instance))
+require(
+    unescaped_substitutions
+    <= {
+        "AWS::StackName",
+        "CollectorEndpoint",
+        "Environment",
+        "ImageDigest",
+        "PublicDemoMode",
+        "PublicHostname",
+        "ReleaseVersion",
+        "RepositoryUri",
+    },
+    "Fn::Sub user data must escape shell expansions and use only declared CloudFormation substitutions",
+)
+require(
     "AssociatePublicIpAddress: false" in instance
     and "KeyName:" not in instance
     and "MapPublicIpOnLaunch" not in instance,
