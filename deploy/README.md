@@ -286,3 +286,17 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+
+### Guarded Phase 4 teardown
+
+Run `.github/workflows/teardown-phase4.yml` manually from `main`. Choose `dry-run` to print the exact target list; it makes no AWS calls. Execution runs a read-only preflight, then waits at the protected `osa-teardown` environment so reviewers can inspect the result before approving deletion. Before any execution, configure that environment with required reviewers and restrict deployment branches to `main`; repository changes cannot configure GitHub environment settings. Verify the protection with the GitHub API (requires `gh` authenticated with repository administration read access):
+
+```sh
+gh api repos/nacaroglu/open-sales-analytics/environments/osa-teardown \
+  | python3 scripts/verify_phase4_environment.py
+```
+
+The checker fails if the API response has no non-empty `required_reviewers` rule. Set repository variables `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN`, and `OSA_TEARDOWN_ROLE_ARN`. The preflight role must only inspect identity, target stack states, exports, and importers. The delete role must have the same read access and be allowed to delete only the four target stacks.
+
+The workflow prints each stack outcome and safe failure stage in `GITHUB_STEP_SUMMARY`. An absent stack is skipped. A delete or wait failure stops before later stacks; diagnose the stage and rerun after the stack is stable. CloudFormation owns resource deletion, including ECR empty-on-delete behavior. Do not manually delete resources or ECR images. Final absence verification is tracked by #272.
