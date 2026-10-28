@@ -77,11 +77,6 @@ Resources:
       Path: !Sub "/${AWS::StackName}/"
       Roles:
         - Fn::ImportValue: osa-foundation-ObservabilityEc2InstanceRoleName
-      Tags:
-        - Key: Project
-          Value: open-sales-analytics
-        - Key: OSAStack
-          Value: osa-observability
 
   ObservabilityInstance:
     Type: AWS::EC2::Instance
