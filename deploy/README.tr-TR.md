@@ -313,9 +313,11 @@ Approve the pending deployment in the workflow run. An absent stack is skipped. 
 
 **Recovery after a failure.** A failed delete or wait stops the run: later stacks are not touched, and the run is never retried automatically. Read the summary table to see which stacks are deleted, absent or not attempted, then use the failure stage:
 
-- `confirmation` or `region_configuration`: nothing was changed. Rerun with the exact confirmation value and the correct `OSA_AWS_REGION`.
+- `workflow_setup`, `confirmation` or `region_configuration`: nothing was changed. The workflow or script stopped before AWS was used, for example because the confirmation value was not exact or a repository variable is missing. Rerun with the exact confirmation value and the repository variables set, including the correct `OSA_AWS_REGION`.
 - `aws_identity`, `account_configuration`, `aws_client`, `aws_query`, `aws_response` or `aws_pagination`: the preflight could not verify the account or read AWS. Nothing was deleted. Check the role trust, the account ID variable and the region, then rerun.
 - `stack_query`, `stack_state`, `export_query`, `import_query` or `outside_importer`: the preflight refused. Wait for in-progress stacks to settle, repair a failed stack, or remove the outside importer, then rerun.
 - `delete_request` or `delete_wait`: CloudFormation failed to start or finish a stack deletion. Open the stack's events in the CloudFormation console to find the blocking resource, fix it, wait until the stack is stable (for example `DELETE_FAILED` after you remove the blocker), then rerun the workflow. Already deleted stacks are skipped.
+
+If the summary shows `unknown`, treat it as a failed run of undetermined cause: read the workflow log, confirm the state of all four stacks in the CloudFormation console, and rerun only when they are stable.
 
 Do not skip stacks or delete resources by hand to work around a failure. Final absence verification is tracked by #272.
