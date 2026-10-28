@@ -256,3 +256,5 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+Technische Namen und Parameter bleiben wie in der Quelle unverändert: Stack `osa-foundation`; Ausgabe `osa-foundation-ObservabilityEc2InstanceRoleName`; Parameter `/osa/observability/grafana/admin-password`; KMS-Schlüsselalias `alias/aws/ssm` und Laufzeit-Entschlüsselungsbedingung `alias/aws/ssm`; Stacks `osa-dev` und `osa-prod`; Option `--role-arn`; Parametertyp `SecureString`; Ausgaben `ObservabilityExecutionRoleArn` und `ObservabilityEc2InstanceRoleName`; importierte `CollectorSecurityGroupId` und exportierte `CollectorSecurityGroupId`; `CollectorPrivateEndpoint`; Parameter `GrafanaHostname` und Konfigurationsfeld `GrafanaHostname`; `GrafanaPublicIp`; `GF_SERVER_ROOT_URL`; Geheimnispfad `/run`; sowie die ältere Vorlage `cloudformation-foundation`.

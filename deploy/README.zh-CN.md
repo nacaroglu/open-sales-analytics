@@ -248,3 +248,5 @@ unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_usern
 ```
 
 The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
+
+技术名称和参数保持与源文档完全一致：`osa-foundation` 堆栈；输出 `osa-foundation-ObservabilityEc2InstanceRoleName`；参数 `/osa/observability/grafana/admin-password`；KMS 密钥别名 `alias/aws/ssm` 和运行时解密条件 `alias/aws/ssm`；`osa-dev` 与 `osa-prod` 堆栈；`--role-arn` 选项；`SecureString` 参数类型；输出 `ObservabilityExecutionRoleArn` 和 `ObservabilityEc2InstanceRoleName`；导入的 `CollectorSecurityGroupId` 与导出的 `CollectorSecurityGroupId`；`CollectorPrivateEndpoint`；参数 `GrafanaHostname` 和配置字段 `GrafanaHostname`；`GrafanaPublicIp`；`GF_SERVER_ROOT_URL`；密钥路径 `/run`；以及旧模板 `cloudformation-foundation`。
