@@ -268,3 +268,16 @@ The app reads the private `CollectorPrivateEndpoint` export and sends OTLP/HTTP 
 To rotate a token, set `OTLP_TOKEN_PARAMETER` to the matching dev or prod parameter path. Generate a fresh URL-safe token into a mode-restricted temporary file with `umask 077; TOKEN_FILE=$(mktemp); openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > "$TOKEN_FILE"`, then update the parameter with `aws ssm put-parameter --name "$OTLP_TOKEN_PARAMETER" --type SecureString --value "file://$TOKEN_FILE" --overwrite >/dev/null`. Do not print the token or use `--with-decryption` to inspect it. Through Session Manager, restart `osa-observability.service` on the Collector instance and `osa-compose.service` on the matching application instance; confirm both are active. Each service reloads its token from SSM at startup. Preflight checks verify that the environment parameter exists and has type `SecureString` without decrypting or exposing its value.
 
 To verify authenticated private ingestion, connect to the matching application instance through Session Manager and run `docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development python -m app.telemetry_test_signal`; set `OSA_ENVIRONMENT=production` for prod. This emits a synthetic trace, metric, and log using the app's configured private endpoint and token file, without displaying the token. Confirm the command reports a successful flush, then use Grafana Explore to find `osa.synthetic.resource_identity` in Tempo, Prometheus, and Loki and verify `service.name`, `service.version`, and `deployment.environment.name`. Also confirm the environment's normal authenticated health check still succeeds. If a signal is missing, check the two service states, private endpoint and security-group rules, token parameter type, and service logs; logs must not include token values.
+
+### Korunmalı Phase 4 temizliği
+
+İş akışını `main` dalında elle başlatın. `dry-run` hedefleri AWS çağrısı yapmadan listeler. Çalıştırma salt-okunur ön denetim yapar, ardından silme onayından önce inceleme için korumalı `osa-teardown` ortamında bekler. Çalıştırmadan önce bu ortamda gerekli gözden geçirenleri ayarlayın ve dağıtım dallarını `main` ile kısıtlayın; depo değişiklikleri GitHub ortam ayarlarını yapılandıramaz. GitHub API ile korumayı doğrulayın (depo yönetim ayarlarını okuma izni olan kimliği doğrulanmış `gh` gerekir):
+
+```sh
+gh api repos/nacaroglu/open-sales-analytics/environments/osa-teardown \
+  | python3 scripts/verify_phase4_environment.py
+```
+
+API yanıtında boş olmayan `required_reviewers` kuralı yoksa denetleyici başarısız olur. Depo değişkenleri `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN` ve `OSA_TEARDOWN_ROLE_ARN` olmalıdır. Ön denetim rolü yalnızca kimliği, hedef yığın durumlarını, dışa aktarımları ve içe aktarımları okuyabilir. Silme rolü yalnızca hedef yığınları silebilmelidir.
+
+İş akışı her yığın sonucunu ve güvenli hata aşamasını `GITHUB_STEP_SUMMARY` içine yazar. Olmayan yığın atlanır. Silme veya bekleme hatası sonraki yığınları durdurur; aşamayı inceleyip yığın kararlı olduktan sonra yeniden çalıştırın. Kaynakları, ECR boşaltma davranışı dahil CloudFormation siler. Kaynakları veya ECR imajlarını elle silmeyin. Son yokluk doğrulaması #272 kapsamındadır.
