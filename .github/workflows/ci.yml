@@ -470,6 +470,7 @@ jobs:
               "DATASET_DIR": "/data",
               "OSA_ENVIRONMENT": "development",
               "OSA_VERSION": "local",
+              "OSA_TRACE_SAMPLING_RATIO": "1.0",
           }
           assert service["ports"][0]["target"] == 8000
           assert str(service["ports"][0]["published"]) == "8000"
@@ -625,7 +626,8 @@ jobs:
           rm -rf "$sink_dir"
           test ! -e "$sink_dir"
           trap - EXIT
-          OSA_ENVIRONMENT=production OSA_VERSION=ci-version OSA_PORT=18080 DATASET_DIR=/custom-data \
+          OSA_ENVIRONMENT=production OSA_VERSION=ci-version OSA_TRACE_SAMPLING_RATIO=0.25 \
+            OSA_PORT=18080 DATASET_DIR=/custom-data \
             docker compose -f docker-compose.yaml config --format json | python3 -c '
           import json
           import sys
@@ -634,6 +636,7 @@ jobs:
           service = config["services"]["app"]
           assert service["environment"]["OSA_ENVIRONMENT"] == "production"
           assert service["environment"]["OSA_VERSION"] == "ci-version"
+          assert service["environment"]["OSA_TRACE_SAMPLING_RATIO"] == "0.25"
           assert service["environment"]["DATASET_DIR"] == "/custom-data"
           assert str(service["ports"][0]["published"]) == "18080"
           assert service["volumes"][0]["target"] == "/custom-data"
@@ -728,7 +731,12 @@ jobs:
           if valid_image 'example.invalid/open-sales-analytics@sha256:abc'; then exit 1; fi
           valid_image "$digest"
 
-          common_env=(OSA_IMAGE="$digest" OSA_HOSTNAME=osa.example.invalid OSA_VERSION=ci-version)
+          common_env=(
+            OSA_IMAGE="$digest"
+            OSA_HOSTNAME=osa.example.invalid
+            OSA_VERSION=ci-version
+            OSA_TRACE_SAMPLING_RATIO=0.25
+          )
           env "${common_env[@]}" OSA_ENVIRONMENT=development PUBLIC_DEMO_MODE=false \
             CADDY_AUTH_BLOCK="$auth_block" \
             docker compose -f docker-compose.yaml -f docker-compose.deploy.yaml config --quiet
@@ -748,6 +756,7 @@ jobs:
           assert "/health/ready" in " ".join(app["healthcheck"]["test"])
           assert app["environment"]["OSA_ENVIRONMENT"] == "development"
           assert app["environment"]["OSA_VERSION"] == "ci-version"
+          assert app["environment"]["OSA_TRACE_SAMPLING_RATIO"] == "0.25"
           assert app["environment"]["PUBLIC_DEMO_MODE"] == "false"
           assert app["restart"] == "unless-stopped"
           assert caddy["image"] == "caddy:2.10.2@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb"

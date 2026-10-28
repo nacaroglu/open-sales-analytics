@@ -127,12 +127,12 @@ def test_request_writes_one_request_line_and_nothing_else(client, log):
     client.get(PATH)
     (line,) = log()
     assert line["logger"] == "osa.request"
-    assert (line["method"], line["path"], line["status"], line["dataset_id"]) == (
+    assert (line["method"], line["route"], line["status"]) == (
         "GET",
         PATH,
         200,
-        None,
     )
+    assert "dataset_id" not in line
     assert "duration_ms" in line
     assert "52428800" not in json.dumps(line)
 

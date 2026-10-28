@@ -16,6 +16,13 @@ class Settings(BaseSettings):
         "development", validation_alias="OSA_ENVIRONMENT"
     )
     osa_version: str = Field("local", min_length=1, validation_alias="OSA_VERSION")
+    osa_trace_sampling_ratio: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        validation_alias="OSA_TRACE_SAMPLING_RATIO",
+    )
     otel_exporter_otlp_endpoint: str | None = Field(
         None, validation_alias="OTEL_EXPORTER_OTLP_ENDPOINT"
     )
