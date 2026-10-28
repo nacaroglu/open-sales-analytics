@@ -44,7 +44,7 @@ require("FromPort: 22" not in body and "FromPort: 4317" not in sg_body
         "SSH and public OTLP ingress are prohibited")
 
 require("HttpTokens: required" in body, "instance metadata v2 must be required")
-instance = re.search(r"(?ms)^  ObservabilityInstance:\\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\\n|\\Z)", body)
+instance = re.search(r"(?ms)^  ObservabilityInstance:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)", body)
 require(instance is not None and "ImageId: !Ref AmiId" in instance.group("body"),
         "observability instance AMI must be supplied through the AmiId parameter")
 profile = re.search(r"(?ms)^  ObservabilityInstanceProfile:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)", body)
