@@ -23,6 +23,7 @@ from app.auth import AuthorizedDataset, get_now, require_dataset
 from app.capacity import count_live_datasets
 from app.config import Settings, get_settings
 from app.currencies import CURRENCIES, is_valid_currency
+from app.custom_metrics import current_metrics
 from app.domain_telemetry import instrument_operation
 from app.errors import ApiError
 from app.importer import dataset_path
@@ -128,6 +129,9 @@ class DatasetMetaResponse(BaseModel):
 
 
 def _invalid(message: str) -> ApiError:
+    metrics = current_metrics()
+    if metrics is not None:
+        metrics.record_validation_rejection("invalid_request")
     return ApiError(400, "invalid_request", message)
 
 
@@ -390,6 +394,7 @@ async def create_dataset(
             outcome = await run_in_threadpool(
                 validate_structure, upload.path, settings.max_upload_bytes, settings.max_rows
             )
+            _record_validation_errors(outcome)
         else:
             outcome = await run_in_threadpool(
                 ingest_csv, upload.path, upload.currency, settings, now
@@ -476,6 +481,15 @@ async def create_sample_dataset(
         status_code=201,
         headers={"Cache-Control": "no-store"},
     )
+
+
+def _record_validation_errors(outcome: ValidationResult) -> None:
+    metrics = current_metrics()
+    if metrics is None:
+        return
+    for code in {getattr(error, "code", None) for error in outcome.errors}:
+        if isinstance(code, str):
+            metrics.record_validation_rejection(code)
 
 
 @router.get("/sample.csv")

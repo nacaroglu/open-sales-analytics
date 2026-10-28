@@ -27,6 +27,7 @@ DATASET_META = [
     ("identified_orders", "BIGINT"),
     ("unidentified_orders", "BIGINT"),
     ("total_orders", "BIGINT"),
+    ("source", "VARCHAR"),
 ]
 CUSTOMER_FACTS = [
     ("customer_id", "VARCHAR"),

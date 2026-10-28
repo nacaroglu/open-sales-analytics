@@ -6,12 +6,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 
 import duckdb
 from starlette.concurrency import run_in_threadpool
 
 from app.auth import _EXPIRY_SQL
 from app.config import Settings
+from app.custom_metrics import current_metrics
 from app.domain_telemetry import instrument_operation
 from app.response_cache import ResponseCache, response_cache_for_settings
 from app.schema import DatasetFileError, open_dataset_readonly
@@ -55,6 +57,19 @@ def _id_from(name: str, suffix: str) -> str | None:
     return stem if is_valid_dataset_id(stem) else None
 
 
+def _dataset_source(path: Path) -> str:
+    try:
+        connection = open_dataset_readonly(path)
+        try:
+            row = connection.execute("SELECT source FROM dataset_meta LIMIT 1").fetchone()
+        finally:
+            connection.close()
+    except (DatasetFileError, duckdb.Error, FileNotFoundError):
+        return "upload"
+    source = row[0] if row is not None else "upload"
+    return source if source in {"sample", "upload"} else "upload"
+
+
 def _is_plain_file(entry: os.DirEntry) -> bool:
     return entry.is_file(follow_symlinks=False)
 
@@ -74,6 +89,9 @@ def _remove_file(path: Path) -> bool:
     except FileNotFoundError:
         return False
     except Exception as exc:  # noqa: BLE001 - one bad file must not stop the sweep
+        metrics = current_metrics()
+        if metrics is not None:
+            metrics.record_cleanup_failure("storage")
         logger.warning("could not remove %s (%s)", path.name, type(exc).__name__)
         return False
     return True
@@ -89,6 +107,9 @@ def _remove_tree(path: Path) -> bool:
     except FileNotFoundError:
         return False
     except Exception as exc:  # noqa: BLE001
+        metrics = current_metrics()
+        if metrics is not None:
+            metrics.record_cleanup_failure("storage")
         logger.warning("could not remove %s (%s)", path.name, type(exc).__name__)
         return False
     return True
@@ -124,11 +145,32 @@ def _sweep_datasets_dir(
             continue
         if _id_from(name, _DATASET_SUFFIX):
             verdict = _is_expired_or_broken(path, now)
-            if verdict and _remove_file(path):
-                datasets += 1
-                if cache is not None:
-                    cache.invalidate_dataset(name[: -len(_DATASET_SUFFIX)])
-                _remove_file(path.with_name(name + ".wal"))
+            if verdict:
+                source = _dataset_source(path)
+                started = perf_counter()
+                if _remove_file(path):
+                    datasets += 1
+                    metrics = current_metrics()
+                    if metrics is not None:
+                        metrics.record_dataset_operation(
+                            "cleanup",
+                            source,
+                            "success",
+                            duration_seconds=perf_counter() - started,
+                        )
+                    if cache is not None:
+                        cache.invalidate_dataset(name[: -len(_DATASET_SUFFIX)])
+                    _remove_file(path.with_name(name + ".wal"))
+                elif path.exists():
+                    metrics = current_metrics()
+                    if metrics is not None:
+                        metrics.record_dataset_operation(
+                            "cleanup",
+                            source,
+                            "failure",
+                            failure_class="storage",
+                            duration_seconds=perf_counter() - started,
+                        )
         elif _id_from(name, _WAL_SUFFIX):
             if not os.path.lexists(path.with_name(name[: -len(".wal")])) and _is_old(path, now):
                 temp_files += _remove_file(path)
@@ -176,6 +218,9 @@ async def run_sweep_safely(settings: Settings, now: datetime | None = None) -> N
     try:
         await run_in_threadpool(sweep, settings, now or datetime.now(UTC))
     except Exception as exc:  # noqa: BLE001 - the server and the timer must go on
+        metrics = current_metrics()
+        if metrics is not None:
+            metrics.record_cleanup_failure("storage")
         logger.error("cleanup sweep failed (%s)", type(exc).__name__)
 
 

@@ -3,6 +3,8 @@ from pathlib import Path
 
 import duckdb
 
+from app.domain_telemetry import instrument_operation
+
 LINE_ITEMS_DDL = """
 CREATE TABLE IF NOT EXISTS line_items (
     order_id     VARCHAR       NOT NULL,
@@ -62,7 +64,8 @@ CREATE TABLE IF NOT EXISTS dataset_meta (
     has_customer_id BOOLEAN NOT NULL DEFAULT FALSE,
     identified_orders BIGINT NOT NULL DEFAULT 0,
     unidentified_orders BIGINT NOT NULL DEFAULT 0,
-    total_orders BIGINT NOT NULL DEFAULT 0
+    total_orders BIGINT NOT NULL DEFAULT 0,
+    source VARCHAR NOT NULL DEFAULT 'upload'
 )
 """
 
@@ -91,6 +94,7 @@ def create_dataset(path: str | os.PathLike[str]) -> None:
     path.chmod(0o600)
 
 
+@instrument_operation("osa.duckdb.open_dataset", module="duckdb")
 def open_dataset_readonly(path: str | os.PathLike[str]) -> duckdb.DuckDBPyConnection:
     """Open an existing dataset file read-only."""
     path = Path(path)
