@@ -1,0 +1,76 @@
+name: osa-observability
+
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.163.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks: [observability]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ${OSA_STORAGE_ROOT:?OSA_STORAGE_ROOT is required}/prometheus:/prometheus
+    networks: [observability]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/loki.yaml:/etc/loki/loki.yaml:ro
+      - ${OSA_STORAGE_ROOT:?OSA_STORAGE_ROOT is required}/loki:/loki
+    networks: [observability]
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:3.1.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - ${OSA_STORAGE_ROOT:?OSA_STORAGE_ROOT is required}/tempo:/var/tempo
+    networks: [observability]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      GF_SERVER_ROOT_URL: ${OSA_GRAFANA_ROOT_URL:?OSA_GRAFANA_ROOT_URL is required}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+    secrets: [grafana_admin_password]
+    volumes:
+      - ${OSA_STORAGE_ROOT:?OSA_STORAGE_ROOT is required}/grafana:/var/lib/grafana
+    networks: [observability]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      OSA_GRAFANA_HOSTNAME: ${OSA_GRAFANA_HOSTNAME:?OSA_GRAFANA_HOSTNAME is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${OSA_STORAGE_ROOT:?OSA_STORAGE_ROOT is required}/caddy-data:/data
+      - ${OSA_STORAGE_ROOT:?OSA_STORAGE_ROOT is required}/caddy-config:/config
+    networks: [observability]
+    restart: unless-stopped
+
+networks:
+  observability:
+    name: osa-observability_observability
+
+secrets:
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_SECRET_FILE:?Grafana SecureString is required at runtime}
