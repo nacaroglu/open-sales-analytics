@@ -704,6 +704,10 @@ jobs:
 
           mkdir -p "$sink_dir"
           chmod 0777 "$sink_dir"
+          token_file="$sink_dir/otlp-token"
+          openssl rand -hex 32 > "$token_file"
+          chmod 0444 "$token_file"
+          export OSA_TEST_OTLP_TOKEN_FILE="$token_file"
           printf '%s\n' '{"synthetic":"cleanup-probe"}' > "$sink_dir/osa-telemetry.json"
           printf 'receivers: [\n' > "$invalid_config"
           cat > "$override" <<EOF
