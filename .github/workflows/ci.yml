@@ -195,6 +195,56 @@ jobs:
       - name: Run Compose integration cases
         run: make integration
 
+  observability-routing:
+    name: Observability routing (offline synthetic OTLP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GRAFANA_ADMIN_PASSWORD: ci-config-only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate standalone observability configuration
+        run: |
+          set -euo pipefail
+          docker compose -f observability/compose.yaml config --quiet
+          docker compose -f observability/compose.yaml config --format json |
+            python3 scripts/validate_observability_compose.py
+      - name: Start stack and verify synthetic signal routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="osa-observability-ci-${GITHUB_RUN_ID}"
+          compose=(docker compose --project-name "$project" -f observability/compose.yaml)
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              "${compose[@]}" logs --no-color --tail=80 collector prometheus loki tempo || true
+            fi
+            "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || status=1
+            if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] || \
+              [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$project")" ]; then
+              echo "Observability Compose resources remain after cleanup"
+              status=1
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          docker run --rm \
+            --volume "$PWD/observability/collector.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+            otel/opentelemetry-collector-contrib:0.161.0 \
+            validate --config=/etc/otelcol-contrib/config.yaml
+          "${compose[@]}" up --detach
+          "${compose[@]}" exec -T prometheus promtool check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            --network "${project}_observability" \
+            --volume "$PWD/scripts/validate_collector_routing.py:/validate_collector_routing.py:ro" \
+            --env OSA_ROUTING_COLLECTOR_URL=http://collector:4318 \
+            --env OSA_ROUTING_PROMETHEUS_URL=http://prometheus:9090 \
+            --env OSA_ROUTING_LOKI_URL=http://loki:3100 \
+            --env OSA_ROUTING_TEMPO_URL=http://tempo:3200 \
+            python:3.12.8-slim python /validate_collector_routing.py
+
   telemetry-resource-identity:
     name: Telemetry resource identity (OTLP test Collector)
     runs-on: ubuntu-latest
@@ -309,12 +359,21 @@ jobs:
               "metrics": ("resourceMetrics", "scopeMetrics", "metrics"),
               "logs": ("resourceLogs", "scopeLogs", "logRecords"),
           }
-          def read_signal_identities():
-              records = [
-                  json.loads(line)
-                  for line in sink.read_text().splitlines()
-                  if line.strip()
-              ]
+          def read_signal_identities(strict=False):
+              lines = sink.read_text().splitlines(keepends=True)
+              records = []
+              partial_trailing_record = False
+              for index, line in enumerate(lines):
+                  if not line.strip():
+                      continue
+                  trailing_partial = index == len(lines) - 1 and not line.endswith(("\n", "\r"))
+                  try:
+                      records.append(json.loads(line))
+                  except json.JSONDecodeError:
+                      if trailing_partial and not strict:
+                          partial_trailing_record = True
+                          continue
+                      raise
               observed = {}
               for signal, (resource_key, _, _) in signal_shapes.items():
                   resources = [
@@ -332,17 +391,18 @@ jobs:
                       assert identity in expected_identities, attributes
                       identities.add(identity)
                   observed[signal] = identities
-              return records, observed
+              return records, observed, partial_trailing_record
 
           deadline = time.monotonic() + 30
           while True:
-              records, observed_identities = read_signal_identities()
+              records, observed_identities, partial_trailing_record = read_signal_identities()
               if all(
                   identities == expected_identities
                   for identities in observed_identities.values()
-              ):
+              ) and not partial_trailing_record:
                   break
               if time.monotonic() >= deadline:
+                  records, observed_identities, _ = read_signal_identities(strict=True)
                   raise AssertionError(
                       f"Collector did not capture every resource identity: {observed_identities}"
                   )
@@ -903,6 +963,7 @@ jobs:
       - pinned-actions
       - dependency-scan
       - compose-integration
+      - observability-routing
       - telemetry-resource-identity
       - docker-smoke
     runs-on: ubuntu-latest
