@@ -3,15 +3,25 @@ services:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://telemetry-collector:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OSA_OTLP_TOKEN_FILE: /run/osa/otlp-token
     depends_on:
       telemetry-collector:
         condition: service_healthy
+    volumes:
+      - type: bind
+        source: "${OSA_TEST_OTLP_TOKEN_FILE:?Set OSA_TEST_OTLP_TOKEN_FILE to a synthetic token file}"
+        target: /run/osa/otlp-token
+        read_only: true
 
   telemetry-collector:
     image: otel/opentelemetry-collector-contrib@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ./observability/collector-test.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - type: bind
+        source: "${OSA_TEST_OTLP_TOKEN_FILE:?Set OSA_TEST_OTLP_TOKEN_FILE to a synthetic token file}"
+        target: /run/secrets/otlp-token
+        read_only: true
       - type: bind
         source: "${OSA_TEST_TELEMETRY_DIR:?Set OSA_TEST_TELEMETRY_DIR to a writable local directory}"
         target: /var/lib/otelcol
