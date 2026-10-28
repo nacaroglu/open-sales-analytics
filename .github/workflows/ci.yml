@@ -26,6 +26,7 @@ jobs:
         run: |
           python3 scripts/validate_ci_parallelism.py
           python3 scripts/validate_phase4_release_report.py
+          python3 scripts/validate_alert_demo.py
 
   grafana-dashboard-validation:
     name: Grafana provisioning and dashboard (offline)
