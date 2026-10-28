@@ -5,7 +5,10 @@ services:
     image: otel/opentelemetry-collector-contrib:0.163.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
-      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/collector.aws.yaml:/etc/otelcol-contrib/config.yaml:ro
+    secrets:
+      - source: otlp_token
+        target: otlp-token
     ports:
       - "4317:4317"
       - "4318:4318"
@@ -74,3 +77,5 @@ networks:
 secrets:
   grafana_admin_password:
     file: ${GRAFANA_ADMIN_SECRET_FILE:?Grafana SecureString is required at runtime}
+  otlp_token:
+    file: ${OTLP_TOKEN_FILE:?OTLP SecureString is required at runtime}

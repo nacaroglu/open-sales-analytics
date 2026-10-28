@@ -312,11 +312,19 @@ def test_cloud_collector_requires_bearer_auth_for_otlp_http():
     aws_collector = (root / "observability" / "collector.aws.yaml").read_text(encoding="utf-8")
     local_collector = (root / "observability" / "collector.yaml").read_text(encoding="utf-8")
     aws_compose = (root / "observability" / "compose.aws.yaml").read_text(encoding="utf-8")
+    bootstrap = (root / "deploy" / "observability" / "bootstrap.sh").read_text(encoding="utf-8")
 
     assert "authenticator: bearertokenauth" in aws_collector
+    assert aws_collector.count("authenticator: bearertokenauth") == 2
     assert "filename: /run/secrets/otlp-token" in aws_collector
     assert "authenticator: bearertokenauth" not in local_collector
+    assert "collector.aws.yaml:/etc/otelcol-contrib/config.yaml:ro" in aws_compose
+    assert "target: otlp-token" in aws_compose
     assert "file: ${OTLP_TOKEN_FILE:?OTLP SecureString is required at runtime}" in aws_compose
+    assert 'read_otlp_token /osa/dev/observability/otlp-token > "$otlp_token_temp"' in bootstrap
+    assert 'read_otlp_token /osa/prod/observability/otlp-token >> "$otlp_token_temp"' in bootstrap
+    assert 'export OTLP_TOKEN_FILE="$otlp_token_file"' in bootstrap
+    assert 'chown root:10001 "$otlp_token_temp"' in bootstrap
 
 
 def test_runtime_iam_is_limited_to_environment_token_paths():
