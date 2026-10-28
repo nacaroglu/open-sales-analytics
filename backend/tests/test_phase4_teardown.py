@@ -274,3 +274,10 @@ def test_environment_verifier_requires_a_nonempty_required_reviewers_rule() -> N
 def test_environment_verifier_rejects_missing_protection_rules() -> None:
     with pytest.raises(ValueError, match="protection rules are missing"):
         environment_verifier.validate_environment_protection({})
+
+
+def test_successful_preflight_summary_has_no_failure_stage() -> None:
+    summary = phase4_teardown._summary_text(["Preflight passed"], None)
+
+    assert "Safe failure stage: `none`" in summary
+    assert all(f"| `{name}` | not attempted |" in summary for name in STACK_ORDER)
