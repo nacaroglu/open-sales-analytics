@@ -120,8 +120,9 @@ grafana_environment = services["grafana"].get("environment", {})
 require(
     isinstance(grafana_environment, dict)
     and bool(grafana_environment.get("GF_SECURITY_ADMIN_PASSWORD"))
-    and grafana_environment.get("GF_AUTH_ANONYMOUS_ENABLED") == "false",
-    "Grafana must require an admin password and disable anonymous access",
+    and grafana_environment.get("GF_AUTH_ANONYMOUS_ENABLED") == "false"
+    and grafana_environment.get("GF_SERVER_ROOT_URL"),
+    "Grafana must require an admin password, disable anonymous access, and configure its public root URL",
 )
 
 for service in services.values():

@@ -52,6 +52,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${OSA_GRAFANA_ROOT_URL:-http://127.0.0.1:3000/}
     ports:
       - "127.0.0.1:${OSA_GRAFANA_PORT:-3000}:3000"
     volumes:
