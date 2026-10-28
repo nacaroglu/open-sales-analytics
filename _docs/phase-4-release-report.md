@@ -1,8 +1,8 @@
 # Phase 4 release evidence report
 
-Overall status: Incomplete — live deployment, alert, rollback, stack, and teardown evidence remains pending. This report does not claim a complete Phase 4 demonstration.
+Overall status: Incomplete — live deployment, alert, stack, and teardown evidence remains pending. The live alert demonstration (#269) was cancelled and not run. This report does not claim a complete Phase 4 demonstration.
 
-Report reviewed at (UTC): `2026-10-28T04:41:09Z`
+Report reviewed at (UTC): `2026-10-28T12:52:40Z`
 
 Each entry distinguishes automated checks from live evidence. A Pending entry records why the evidence is absent and the operator action needed to capture it. Replace Pending only after the linked artifact exists and has been reviewed for sensitive information.
 
@@ -20,32 +20,32 @@ The run completed successfully, including backend, frontend, container/browser, 
 
 ## 2. Immutable ECR tag and image digest
 
-Evidence status: Pending — no immutable ECR tag and digest for a Phase 4 release have been captured in an approved artifact.
-Source: [Deployment and image-publishing evidence issue #252](https://github.com/nacaroglu/open-sales-analytics/issues/252)
+Evidence status: Pending — no immutable ECR tag and digest exist. Publication is skipped on `main` because no AWS repository variables are configured.
+Source: [Deployment and image-publishing evidence issue #252](https://github.com/nacaroglu/open-sales-analytics/issues/252) and [publication gating PR #341](https://github.com/nacaroglu/open-sales-analytics/pull/341)
 Evidence captured at (UTC): Pending — capture after the release image is published.
-Status checked at (UTC): `2026-10-28T04:41:09Z`
+Status checked at (UTC): `2026-10-28T12:52:40Z`
 Environment: AWS ECR
 Release/version: Pending — no release digest is recorded.
 Evidence type: Automated
-Operator action: After #252's publishing workflow runs for the release, link its successful run and record the immutable tag and digest in an approved artifact.
+Operator action: Deploy the foundation stack, set `OSA_AWS_REGION`, `OSA_BUILD_ROLE_ARN`, and `OSA_ECR_REPOSITORY_URI` from its outputs, push to `main`, then link the successful publish run and record the immutable tag and digest in an approved artifact.
 
 ## 3. Development deployment readiness and smoke results
 
-Evidence status: Pending — no live development deployment readiness or sample-workflow smoke result is attached.
+Evidence status: Pending — no live development deployment readiness or sample-workflow smoke result is attached. The deploy and verify jobs are skipped on `main` until publication is configured.
 Source: [Development deployment evidence issue #252](https://github.com/nacaroglu/open-sales-analytics/issues/252)
 Evidence captured at (UTC): Pending — capture after development deployment verification.
-Status checked at (UTC): `2026-10-28T04:41:09Z`
+Status checked at (UTC): `2026-10-28T12:52:40Z`
 Environment: Development
 Release/version: Pending — record the deployed image digest and release version.
 Evidence type: Live
-Operator action: After the candidate digest is deployed, link the readiness and smoke workflow results and record the release identity.
+Operator action: After entry 2 is complete, also set the development deployment variables (`OSA_DEV_DEPLOY_ROLE_ARN`, `OSA_DEV_EXECUTION_ROLE_ARN`, `OSA_AMI_ID`, `OSA_INSTANCE_TYPE`, `OSA_DEV_HOSTNAME`), let the deploy and verify jobs run on `main`, then link the readiness and smoke workflow results and record the release identity.
 
 ## 4. Production promotion using the same digest
 
-Evidence status: Pending — a protected production promotion using the development digest has not been captured.
+Evidence status: Pending — a protected production promotion using the development digest has not been captured; it depends on the development digest from entries 2 and 3.
 Source: [Promotion evidence issue #252](https://github.com/nacaroglu/open-sales-analytics/issues/252)
 Evidence captured at (UTC): Pending — capture after the protected promotion and production verification.
-Status checked at (UTC): `2026-10-28T04:41:09Z`
+Status checked at (UTC): `2026-10-28T12:52:40Z`
 Environment: Production
 Release/version: Pending — confirm it is the same digest recorded in entries 2 and 3.
 Evidence type: Live
@@ -86,14 +86,14 @@ Operator action: Select a safe representative request, capture its trace and mat
 
 ## 8. Controlled failures and firing/resolved alert
 
-Evidence status: Pending — the development-only demonstration and firing/resolved alert evidence have not been run or captured.
-Source: [Alert demonstration issue #269](https://github.com/nacaroglu/open-sales-analytics/issues/269)
+Evidence status: Pending — the development-only demonstration was cancelled (issue #269 closed as not planned on 2026-10-28) and was not run; no firing/resolved alert evidence exists.
+Source: [Alert demonstration issue #269](https://github.com/nacaroglu/open-sales-analytics/issues/269), [repeated-failure alert rule PR #339](https://github.com/nacaroglu/open-sales-analytics/pull/339), and [controlled failure utility PR #331](https://github.com/nacaroglu/open-sales-analytics/pull/331)
 Evidence captured at (UTC): Pending — capture only after an authorized development demonstration.
-Status checked at (UTC): `2026-10-28T04:41:09Z`
+Status checked at (UTC): `2026-10-28T12:52:40Z`
 Environment: Development only
 Release/version: Pending — record the development release version and image digest before the demonstration.
 Evidence type: Live
-Operator action: When the #269 manual procedure is available and the development demonstration is authorized, run it, capture sanitized firing/resolved alert and webhook/dashboard/log/trace evidence, and confirm the normal sample workflow recovers.
+Operator action: Reopen #269 once a development environment is deployed (entries 2 and 3). Its runbook, evidence template, and offline validator are on the unmerged branch `feature/issue-269-alert-demo`. Then run the procedure, capture sanitized firing/resolved alert and webhook/dashboard/log/trace evidence, and confirm the normal sample workflow recovers. The alert rule, test webhook, and controlled failure utility are already on `main`; only the live run is missing.
 
 ## 9. Rollback demonstration or automated rollback test
 
@@ -119,14 +119,14 @@ Operator action: Capture an approved CloudFormation summary and redact account I
 
 ## 11. Final cleanup commands and deletion verification
 
-Evidence status: Pending — the guarded teardown and read-only deletion verification are not complete.
-Source: [Guarded teardown issue #271](https://github.com/nacaroglu/open-sales-analytics/issues/271) and [resource-removal verification issue #272](https://github.com/nacaroglu/open-sales-analytics/issues/272)
+Evidence status: Pending — the guarded teardown (#271) and the read-only absence verifier (#272) are implemented and merged, and tested offline, but no live teardown or deletion verification has been run.
+Source: [Guarded teardown PR #342](https://github.com/nacaroglu/open-sales-analytics/pull/342) and [resource-removal verifier PR #335](https://github.com/nacaroglu/open-sales-analytics/pull/335)
 Evidence captured at (UTC): Pending — capture after the approved teardown and verification finish.
-Status checked at (UTC): `2026-10-28T04:41:09Z`
+Status checked at (UTC): `2026-10-28T12:52:40Z`
 Environment: AWS temporary Phase 4 environment
 Release/version: Pending — record the final deployed release identifier before teardown.
 Evidence type: Live
-Operator action: After #271 and #272 are implemented and reviewed, run the approval-gated teardown and read-only verifier; link sanitized commands and successful deletion results.
+Operator action: Set `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN`, and `OSA_TEARDOWN_ROLE_ARN`; run the teardown workflow in dry-run mode, then in execute mode through the `osa-teardown` approval; run the read-only verifier; and link sanitized commands and successful deletion results.
 
 ### Updating this report
 
