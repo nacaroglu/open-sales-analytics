@@ -1,0 +1,38 @@
+[
+  {
+    "name": "below_threshold",
+    "internal_failures": 2,
+    "validation_rejections": 0,
+    "sustained_for_seconds": 600,
+    "expected_state": "Normal"
+  },
+  {
+    "name": "validation_rejections_excluded",
+    "internal_failures": 0,
+    "validation_rejections": 12,
+    "sustained_for_seconds": 600,
+    "expected_state": "Normal"
+  },
+  {
+    "name": "pending_before_five_minutes",
+    "internal_failures": 3,
+    "validation_rejections": 0,
+    "sustained_for_seconds": 299,
+    "expected_state": "Pending"
+  },
+  {
+    "name": "fires_after_five_minutes",
+    "internal_failures": 3,
+    "validation_rejections": 0,
+    "sustained_for_seconds": 300,
+    "expected_state": "Firing"
+  },
+  {
+    "name": "resolves_below_threshold",
+    "previous_state": "Firing",
+    "internal_failures": 0,
+    "validation_rejections": 0,
+    "sustained_for_seconds": 600,
+    "expected_state": "Normal"
+  }
+]

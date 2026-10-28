@@ -1,0 +1,39 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "osa-reliability",
+      "folder": "OSA",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "osa-repeated-create-failures",
+          "title": "OSARepeatedDatasetCreationFailures",
+          "condition": "A",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {"from": 600, "to": 0},
+              "datasourceUid": "osa-prometheus",
+              "model": {
+                "datasource": {"type": "prometheus", "uid": "osa-prometheus"},
+                "editorMode": "code",
+                "expr": "sum by (service_name, deployment_environment_name, service_version) (increase(osa_dataset_operations_total{operation=\"create\",outcome=\"failure\",failure_class=\"internal\"}[10m])) >= 3",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "A",
+                "range": false
+              }
+            }
+          ],
+          "for": "5m",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "isPaused": false
+        }
+      ]
+    }
+  ]
+}
