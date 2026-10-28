@@ -231,3 +231,17 @@ The update preserves all existing auth-block lines and adds only the dedicated s
 ### Gözlemlenebilirlik yığını
 
 `osa-observability` yığınını foundation'dan sonra ve uygulama yığınlarından önce dağıtın. Dev ve prod uygulama yığınları Collector güvenlik grubu kimliğini içe aktarır ve yalnızca kendi uygulama güvenlik gruplarından özel OTLP erişim kuralını yönetir. Silme sırasında önce uygulama yığınlarını, sonra observability yığınını, en son foundation'ı kaldırın. Collector özel uç noktası ve güvenlik grubu kimliği dışa aktarılır; OTLP kimlik doğrulama belirteçleri ortamlarına ait SSM `SecureString` parametrelerinde tutulur.
+
+
+### Korunmalı Phase 4 temizliği
+
+İş akışını `main` dalında elle başlatın. `dry-run` hedefleri AWS çağrısı yapmadan listeler. Çalıştırma salt-okunur ön denetim yapar, ardından silme onayından önce inceleme için korumalı `osa-teardown` ortamında bekler. Çalıştırmadan önce bu ortamda gerekli gözden geçirenleri ayarlayın ve dağıtım dallarını `main` ile kısıtlayın; depo değişiklikleri GitHub ortam ayarlarını yapılandıramaz. GitHub API ile korumayı doğrulayın (depo yönetim ayarlarını okuma izni olan kimliği doğrulanmış `gh` gerekir):
+
+```sh
+gh api repos/nacaroglu/open-sales-analytics/environments/osa-teardown \
+  | python3 scripts/verify_phase4_environment.py
+```
+
+API yanıtında boş olmayan `required_reviewers` kuralı yoksa denetleyici başarısız olur. Depo değişkenleri `OSA_AWS_REGION`, `OSA_TEARDOWN_AWS_ACCOUNT_ID`, `OSA_TEARDOWN_PREFLIGHT_ROLE_ARN` ve `OSA_TEARDOWN_ROLE_ARN` olmalıdır. Ön denetim rolü yalnızca kimliği, hedef yığın durumlarını, dışa aktarımları ve içe aktarımları okuyabilir. Silme rolü yalnızca hedef yığınları silebilmelidir.
+
+İş akışı her yığın sonucunu ve güvenli hata aşamasını `GITHUB_STEP_SUMMARY` içine yazar. Olmayan yığın atlanır. Silme veya bekleme hatası sonraki yığınları durdurur; aşamayı inceleyip yığın kararlı olduktan sonra yeniden çalıştırın. Kaynakları, ECR boşaltma davranışı dahil CloudFormation siler. Kaynakları veya ECR imajlarını elle silmeyin. Son yokluk doğrulaması #272 kapsamındadır.
