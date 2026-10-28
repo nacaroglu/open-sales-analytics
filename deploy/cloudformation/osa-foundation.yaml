@@ -517,6 +517,14 @@ Resources:
                   - cloudformation:DescribeStacks
                   - cloudformation:GetTemplate
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-dev/*"
+              - Sid: ReadOsaObservabilityEndpoint
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-observability/*"
+              - Sid: ReadDevOtlpTokenType
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/observability/otlp-token"
               - Sid: PassOnlyOsaDevExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -660,6 +668,14 @@ Resources:
                   - cloudformation:DescribeStacks
                   - cloudformation:GetTemplate
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-prod/*"
+              - Sid: ReadOsaObservabilityEndpoint
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/osa-observability/*"
+              - Sid: ReadProdOtlpTokenType
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/observability/otlp-token"
               - Sid: PassOnlyOsaProdExecutionRole
                 Effect: Allow
                 Action: iam:PassRole
@@ -789,6 +805,15 @@ Resources:
                 Condition:
                   StringEquals:
                     ec2:ResourceTag/OSAStack: osa-dev
+              - Sid: ManageOsaDevCollectorIngress
+                Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
               - Sid: CreateTagsForOsaDevInstances
                 Effect: Allow
                 Action: ec2:CreateTags
@@ -962,6 +987,15 @@ Resources:
                 Condition:
                   StringEquals:
                     ec2:ResourceTag/OSAStack: osa-prod
+              - Sid: ManageOsaProdCollectorIngress
+                Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/OSAStack: osa-observability
               - Sid: CreateTagsForOsaProdInstances
                 Effect: Allow
                 Action: ec2:CreateTags
@@ -1224,7 +1258,7 @@ Resources:
     Properties:
       RoleName: !Sub "${AWS::StackName}-ec2-dev-instance"
       Path: !Sub "/${AWS::StackName}/"
-      Description: Development EC2 may pull the OSA image, use Session Manager, and read its Caddy auth parameter.
+      Description: Development EC2 may pull the OSA image, use Session Manager, and read dev-only app credentials.
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1263,6 +1297,20 @@ Resources:
                     kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/caddy/auth"
                   ForAnyValue:StringEquals:
                     kms:ResourceAliases: alias/aws/ssm
+              - Sid: ReadDevelopmentOtlpToken
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/observability/otlp-token"
+              - Sid: DecryptDevelopmentOtlpTokenThroughSsm
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
+                    kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/observability/otlp-token"
+                  ForAnyValue:StringEquals:
+                    kms:ResourceAliases: alias/aws/ssm
               - Sid: SessionManagerInstanceRegistration
                 Effect: Allow
                 Action: ssm:UpdateInstanceInformation
@@ -1286,7 +1334,7 @@ Resources:
     Properties:
       RoleName: !Sub "${AWS::StackName}-ec2-instance"
       Path: !Sub "/${AWS::StackName}/"
-      Description: Production EC2 may pull only the foundation image and use Session Manager.
+      Description: Production EC2 may pull the foundation image, use Session Manager, and read prod-only app credentials.
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1311,6 +1359,20 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
                 Resource: !GetAtt Repository.Arn
+              - Sid: ReadProductionOtlpToken
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/observability/otlp-token"
+              - Sid: DecryptProductionOtlpTokenThroughSsm
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
+                    kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/observability/otlp-token"
+                  ForAnyValue:StringEquals:
+                    kms:ResourceAliases: alias/aws/ssm
               - Sid: SessionManagerInstanceRegistration
                 Effect: Allow
                 Action: ssm:UpdateInstanceInformation
@@ -1334,7 +1396,7 @@ Resources:
     Properties:
       RoleName: !Sub "${AWS::StackName}-ec2-observability"
       Path: !Sub "/${AWS::StackName}/"
-      Description: Observability EC2 may use Session Manager and read its Grafana admin SecureString.
+      Description: Observability EC2 may use Session Manager and read Grafana and app OTLP SecureStrings.
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -1360,6 +1422,24 @@ Resources:
                   StringEquals:
                     kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
                     kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/observability/grafana/admin-password"
+                  ForAnyValue:StringEquals:
+                    kms:ResourceAliases: alias/aws/ssm
+              - Sid: ReadDevelopmentAndProductionOtlpTokens
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/observability/otlp-token"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/observability/otlp-token"
+              - Sid: DecryptOtlpTokensThroughSsm
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.${AWS::URLSuffix}"
+                    kms:EncryptionContext:PARAMETER_ARN:
+                      - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/dev/observability/otlp-token"
+                      - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/osa/prod/observability/otlp-token"
                   ForAnyValue:StringEquals:
                     kms:ResourceAliases: alias/aws/ssm
               - Sid: SessionManagerInstanceRegistration

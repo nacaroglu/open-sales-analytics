@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from opentelemetry._logs import LogRecord, SeverityNumber
@@ -162,6 +163,25 @@ def create_telemetry(
         }
     )
     endpoints = _endpoint_configuration(environment)
+    token_file = environment.get("OSA_OTLP_TOKEN_FILE") or settings.otel_token_file
+    headers: dict[str, str] = {}
+    if endpoints:
+        if not token_file:
+            raise ValueError("OSA_OTLP_TOKEN_FILE is required when an OTLP endpoint is set")
+        try:
+            token = Path(token_file).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            raise ValueError(
+                "Unable to read the configured OTLP authentication token file"
+            ) from None
+        token_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+        if (
+            not token
+            or not token.isascii()
+            or any(character not in token_characters for character in token)
+        ):
+            raise ValueError("The configured OTLP authentication token file is empty or invalid")
+        headers = {"Authorization": f"Bearer {token}"}
     resource = create_resource(settings)
 
     tracer_provider = TracerProvider(
@@ -175,19 +195,21 @@ def create_telemetry(
     trace_endpoint = endpoints.get("traces")
     if trace_endpoint:
         tracer_provider.add_span_processor(
-            BatchSpanProcessor(OTLPSpanExporter(endpoint=trace_endpoint))
+            BatchSpanProcessor(OTLPSpanExporter(endpoint=trace_endpoint, headers=headers))
         )
 
     metric_endpoint = endpoints.get("metrics")
     if metric_endpoint:
         meter_readers.append(
-            PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=metric_endpoint))
+            PeriodicExportingMetricReader(
+                OTLPMetricExporter(endpoint=metric_endpoint, headers=headers)
+            )
         )
 
     log_endpoint = endpoints.get("logs")
     if log_endpoint:
         logger_provider.add_log_record_processor(
-            BatchLogRecordProcessor(OTLPLogExporter(endpoint=log_endpoint))
+            BatchLogRecordProcessor(OTLPLogExporter(endpoint=log_endpoint, headers=headers))
         )
 
     meter_provider = MeterProvider(

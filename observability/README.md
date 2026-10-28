@@ -48,6 +48,16 @@ failures. Logs and traces use bounded queues of 512 batches and finite retries.
 Overflow drops telemetry rather than blocking application requests. Check
 queue pressure and refused/drop metrics when a backend is unavailable.
 
+The AWS Collector uses a separate authenticated configuration. Its OTLP receivers
+require a bearer token and read the development and production tokens from a
+root-owned runtime secret file. Store each token as an SSM `SecureString` at
+`/osa/dev/observability/otlp-token` and `/osa/prod/observability/otlp-token`;
+the application roles can read only their own environment's parameter. Do not
+put either value in CloudFormation parameters, user data, GitHub variables,
+Compose environment values, or logs. The deployed app stack fetches its token at
+startup into a read-only file mount. Local app Compose has no OTLP endpoint by
+default, creates no exporter, and needs no AWS credentials.
+
 CI validates the Collector configuration and sends synthetic OTLP metrics,
 logs, and traces, then confirms each signal in its backend API. This offline
 route check uses synthetic resource identity only.
@@ -87,3 +97,11 @@ docker compose -f observability/compose.yaml down --volumes
 Images use explicit release versions, configuration files are mounted
 read-only, and Compose gives an actionable error if
 `GRAFANA_ADMIN_PASSWORD` is missing.
+
+## Authenticated application OTLP rotation and verification
+
+Application OTLP uses the private `CollectorPrivateEndpoint` on TCP 4318. The app security group permits egress only to `CollectorSecurityGroupId`, and Collector ingress is restricted to the matching app security group. There is no public OTLP listener. Keep separate SSM `SecureString` tokens at `/osa/dev/observability/otlp-token` and `/osa/prod/observability/otlp-token`.
+
+For rotation, generate a new URL-safe value into a mode-restricted temporary file, set `OTLP_TOKEN_PARAMETER` to the environment's parameter path, and use `aws ssm put-parameter --name "$OTLP_TOKEN_PARAMETER" --type SecureString --value "file://$TOKEN_FILE" --overwrite >/dev/null`. Do not print or decrypt the value. Use Session Manager to restart `osa-observability.service` on the Collector instance and `osa-compose.service` on that environment's app instance so each reloads the parameter. Confirm both units are active.
+
+To verify ingestion, run `docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml exec -T app env PYTHONPATH=/app/backend OSA_ENVIRONMENT=development python -m app.telemetry_test_signal` from the dev app instance; use `OSA_ENVIRONMENT=production` on prod. The command emits a synthetic trace, metric, and log using the configured private endpoint and token file. Confirm it reports a successful flush, then use Grafana Explore to find `osa.synthetic.resource_identity` in Tempo, Prometheus, and Loki and check the service and environment resource attributes. Preflight checks verify only that the parameter exists as a `SecureString`; they never decrypt or display its value.

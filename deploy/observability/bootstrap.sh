@@ -58,7 +58,7 @@ if ! git -C "$config_root/repository" rev-parse --verify HEAD >/dev/null 2>&1 \
   git -C "$config_root/repository" checkout --quiet --detach FETCH_HEAD
 fi
 repo="$config_root/repository"
-for file in compose.aws.yaml Caddyfile; do
+for file in compose.aws.yaml collector.aws.yaml Caddyfile; do
   if [ ! -s "$repo/observability/$file" ]; then
     log "Pinned observability configuration is missing a required file."
     exit 1
@@ -84,11 +84,44 @@ unset grafana_admin_password
 chmod 0400 "$runtime_root/grafana-admin-password"
 chown 472:472 "$runtime_root/grafana-admin-password"
 
+read_otlp_token() {
+  local parameter="$1" parameter_type token
+  if ! parameter_type="$(aws ssm get-parameter --name "$parameter" --query 'Parameter.Type' \
+    --output text --region "$AWS_REGION" 2>/dev/null)" || [ "$parameter_type" != SecureString ]; then
+    printf '%s\n' "OTLP authentication parameters must be SecureStrings." >&2
+    return 1
+  fi
+  if ! token="$(aws ssm get-parameter --name "$parameter" --with-decryption \
+    --query 'Parameter.Value' --output text --region "$AWS_REGION" 2>/dev/null)"; then
+    printf '%s\n' "OTLP authentication configuration could not be retrieved from Parameter Store." >&2
+    return 1
+  fi
+  if [ -z "$token" ] || [[ ! "$token" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    unset token
+    printf '%s\n' "OTLP authentication configuration is empty or invalid." >&2
+    return 1
+  fi
+  printf '%s' "$token"
+  unset token
+}
+
+otlp_token_file="$runtime_root/otlp-tokens"
+otlp_token_temp="$runtime_root/otlp-tokens.tmp"
+trap 'rm -f "$otlp_token_temp"' EXIT
+umask 077
+read_otlp_token /osa/dev/observability/otlp-token > "$otlp_token_temp"
+printf '\n' >> "$otlp_token_temp"
+read_otlp_token /osa/prod/observability/otlp-token >> "$otlp_token_temp"
+chown root:10001 "$otlp_token_temp"
+chmod 0440 "$otlp_token_temp"
+mv -f "$otlp_token_temp" "$otlp_token_file"
+
 export OSA_GRAFANA_HOSTNAME
 export OSA_GRAFANA_ROOT_URL
 export OSA_CONFIG_DIR="$repo/observability"
 export OSA_STORAGE_ROOT="$storage_root"
 export GRAFANA_ADMIN_SECRET_FILE="$runtime_root/grafana-admin-password"
+export OTLP_TOKEN_FILE="$otlp_token_file"
 docker compose --project-name osa-observability \
   -f "$repo/observability/compose.aws.yaml" config --quiet
 docker compose --project-name osa-observability \
