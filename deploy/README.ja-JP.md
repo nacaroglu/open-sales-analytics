@@ -113,6 +113,8 @@ CI derives each readable release version once from the UTC build time and the so
 
 After all required CI jobs succeed for a push to `main`, the workflow publishes the exact validated image artifact to the immutable ECR repository using the release version as its tag. It then resolves and validates the ECR SHA-256 digest and exposes the repository URI, version, digest, and `repository@sha256:digest` reference as job outputs for the development deploy job. A collision with an existing immutable version fails the publish job; CI never overwrites that tag. Pull-request CI remains read-only and does not request AWS credentials.
 
+If none of the three variables below is set, the publication job and the development deploy and verification jobs that depend on it are skipped. If any one is set, the job runs and fails when another is missing, so a partial configuration is never ignored.
+
 Configure these non-secret GitHub Actions repository variables from the `osa-foundation` stack outputs before enabling main-branch publication:
 
 - `OSA_AWS_REGION`: the foundation stack's AWS region.
