@@ -246,9 +246,12 @@ def _summary_text(lines: list[str], failure_stage: str | None) -> str:
 
     if active is not None and outcomes[active] == "deletion started":
         outcomes[active] = "failed"
-    stage = failure_stage or (
-        "none" if any("Teardown completed" in line for line in lines) else "unknown"
+    successful = any(
+        marker in line
+        for marker in ("Dry run:", "Preflight passed", "Teardown completed")
+        for line in lines
     )
+    stage = failure_stage or ("none" if successful else "unknown")
     table = ["| Stack | Outcome |", "| --- | --- |"]
     table.extend(f"| `{name}` | {outcomes[name]} |" for name in STACK_ORDER)
     return "\n".join(
