@@ -189,6 +189,81 @@ def test_request_middleware_logs_route_template_without_raw_path_or_query(log):
     assert line["route"] == "/api/datasets/{id}/analytics"
 
 
+def test_adversarial_request_values_never_reach_structured_logs(log, monkeypatch):
+    from app import logging_config
+    from app.logging_config import RequestLogMiddleware
+
+    deployed_version = "20261027-173000-83242da"
+    monkeypatch.setattr(
+        logging_config,
+        "get_settings",
+        lambda: Settings(OSA_VERSION=deployed_version),
+    )
+
+    markers = (
+        "DATASET_MARKER_258",
+        "ORDER_MARKER_258",
+        "PRODUCT_MARKER_258",
+        "CUSTOMER_MARKER_258",
+        "TOKEN_MARKER_258",
+        "FILENAME_MARKER_258",
+        "PATH_MARKER_258",
+        "URL_MARKER_258",
+        "QUERY_MARKER_258",
+        "EXCEPTION_MARKER_258",
+        "VALIDATION_MARKER_258",
+        "COMMIT_MARKER_258",
+        "RAW_INPUT_MARKER_258",
+    )
+    path = f"/api/datasets/{markers[0]}/analytics/{markers[5]}/{markers[6]}"
+    query = (
+        f"next=https%3A%2F%2Fexample.invalid%2F{markers[7]}&search={markers[8]}&token={markers[4]}"
+    )
+
+    async def receive():
+        return {"type": "http.request", "body": markers[-1].encode(), "more_body": False}
+
+    async def app(scope, receive, send):
+        request = await receive()
+        details = " ".join(markers) + request["body"].decode()
+        raise ValueError(details)
+
+    async def exercise():
+        messages = []
+
+        async def send(message):
+            messages.append(message)
+
+        await RequestLogMiddleware(app)(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": path,
+                "query_string": query.encode(),
+                "headers": [(b"authorization", f"Bearer {markers[4]}".encode())],
+                "route": type(
+                    "Route", (), {"path": "/api/datasets/{id}/analytics/{filename:path}"}
+                )(),
+            },
+            receive,
+            send,
+        )
+        return messages
+
+    messages = anyio.run(exercise)
+    assert messages[0]["status"] == 500
+    text = log.read()
+    assert len(text.splitlines()) == 2
+    assert all(marker not in text for marker in markers)
+    entries = [json.loads(line) for line in text.splitlines()]
+    request_entry = next(entry for entry in entries if entry["logger"] == "osa.request")
+    exception_entry = next(entry for entry in entries if entry["logger"] == "osa.error")
+    assert request_entry["route"] == "/api/datasets/{id}/analytics/{filename:path}"
+    assert exception_entry["exception"] == "ValueError"
+    assert request_entry["version"] == deployed_version
+    assert exception_entry["version"] == deployed_version
+
+
 def test_logged_exception_keeps_class_and_frames_but_not_message(log):
     from app.logging_config import log_exception
 

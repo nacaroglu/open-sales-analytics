@@ -105,7 +105,15 @@ def _remove_file(path: Path) -> bool:
         metrics = current_metrics()
         if metrics is not None:
             metrics.record_cleanup_failure("storage")
-        logger.warning("could not remove %s (%s)", path.name, type(exc).__name__)
+        logger.warning(
+            "cleanup file removal failed",
+            extra={
+                "fields": {
+                    "event": "cleanup.file_removal_failed",
+                    "exception_class": _cleanup_exception_class(exc),
+                }
+            },
+        )
         return False
     return True
 
@@ -123,7 +131,15 @@ def _remove_tree(path: Path) -> bool:
         metrics = current_metrics()
         if metrics is not None:
             metrics.record_cleanup_failure("storage")
-        logger.warning("could not remove %s (%s)", path.name, type(exc).__name__)
+        logger.warning(
+            "cleanup directory removal failed",
+            extra={
+                "fields": {
+                    "event": "cleanup.directory_removal_failed",
+                    "exception_class": _cleanup_exception_class(exc),
+                }
+            },
+        )
         return False
     return True
 
@@ -241,7 +257,15 @@ async def run_sweep_safely(settings: Settings, now: datetime | None = None) -> N
         metrics = current_metrics()
         if metrics is not None:
             metrics.record_cleanup_failure("storage")
-        logger.error("cleanup sweep failed (%s)", type(exc).__name__)
+        logger.error(
+            "cleanup sweep failed",
+            extra={
+                "fields": {
+                    "event": "cleanup.sweep_failed",
+                    "exception_class": _cleanup_exception_class(exc),
+                }
+            },
+        )
 
 
 async def run_cleanup_loop(

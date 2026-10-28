@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  OSA observability host, encrypted ephemeral telemetry storage, HTTPS Grafana ingress,
+  and private OTLP ingress. Deploy as osa-observability in the shared foundation VPC.
+
+Parameters:
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Amazon Linux 2023 AMI ID in the selected deployment region.
+    AllowedPattern: "^ami-[a-f0-9]{8,17}$"
+    ConstraintDescription: Specify an AMI ID such as ami-0123456789abcdef0.
+    MinLength: 12
+    MaxLength: 21
+  InstanceType:
+    Type: String
+    Description: EC2 instance type compatible with the supplied AMI architecture.
+    AllowedPattern: "^[a-z][0-9][a-z0-9]*\\.[a-z0-9]+$"
+    ConstraintDescription: Specify a valid EC2 instance type such as t3.small.
+    MinLength: 4
+    MaxLength: 32
+  GrafanaHostname:
+    Type: String
+    Description: Public DNS name that resolves to GrafanaPublicIp before certificate issuance.
+    AllowedPattern: "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+    ConstraintDescription: Specify a dotted DNS hostname with valid labels.
+    MinLength: 3
+    MaxLength: 253
+  GrafanaAdminParameterName:
+    Type: AWS::SSM::Parameter::Name
+    Description: Existing SecureString parameter holding the Grafana admin password.
+    AllowedPattern: "^/osa/observability/grafana/admin-password$"
+    ConstraintDescription: Create the SecureString /osa/observability/grafana/admin-password before stack creation.
+  ObservabilityConfigRevision:
+    Type: String
+    Description: Full 40-character Git commit SHA whose observability bootstrap/configuration is deployed.
+    AllowedPattern: "^[a-f0-9]{40}$"
+    ConstraintDescription: Specify a full lowercase 40-character Git commit SHA.
+    MinLength: 40
+    MaxLength: 40
+
+Resources:
+  ObservabilitySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public Caddy web ingress and private Collector security group for osa-observability.
+      VpcId:
+        Fn::ImportValue: osa-foundation-VpcId
+      SecurityGroupIngress:
+        - Description: HTTP for ACME challenges and HTTPS redirects only.
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: Public HTTPS for authenticated Grafana.
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: HTTPS for package/image downloads, certificates, and Systems Manager.
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-observability"
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: osa-observability
+
+  ObservabilityInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${AWS::StackName}-instance-profile"
+      Path: !Sub "/${AWS::StackName}/"
+      Roles:
+        - Fn::ImportValue: osa-foundation-ObservabilityEc2InstanceRoleName
+
+  ObservabilityInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT20M
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref ObservabilityInstanceProfile
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          SubnetId:
+            Fn::ImportValue: osa-foundation-PublicSubnetAz1Id
+          GroupSet:
+            - !GetAtt ObservabilitySecurityGroup.GroupId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: true
+            DeleteOnTermination: true
+            VolumeSize: 40
+            VolumeType: gp3
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euo pipefail
+              exec > >(tee -a /var/log/osa-observability-bootstrap.log) 2>&1
+
+              dnf install -y aws-cfn-bootstrap
+              signal_stack() {
+                /opt/aws/bin/cfn-signal --exit-code "$1" \
+                  --stack "${AWS::StackName}" --resource ObservabilityInstance \
+                  --region "${AWS::Region}" >/dev/null 2>&1 || true
+              }
+              signal_failure() {
+                status=$?
+                trap - ERR
+                signal_stack "$status"
+                exit "$status"
+              }
+              fail_preflight() {
+                printf '%s\n' "$1" >&2
+                signal_stack 1
+                exit 1
+              }
+              trap signal_failure ERR
+
+              dnf install -y docker awscli-2 curl git xfsprogs
+              systemctl enable --now docker
+              install -d -m 0755 /usr/local/lib/docker/cli-plugins /usr/local/sbin /etc/osa-observability
+              grafana_parameter_type="$(aws ssm get-parameter \
+                --name "${GrafanaParameter}" \
+                --with-decryption \
+                --query 'Parameter.Type' \
+                --output text \
+                --region "${AWS::Region}" 2>/dev/null)" || \
+                fail_preflight "Required Grafana SecureString parameter is missing or inaccessible."
+              [ "$grafana_parameter_type" = SecureString ] || \
+                fail_preflight "Grafana admin parameter must be an SSM SecureString."
+              compose_arch="$(uname -m)"
+              case "$compose_arch" in
+                x86_64) compose_arch=x86_64 ;;
+                aarch64) compose_arch=aarch64 ;;
+                *) echo "Unsupported architecture" >&2; exit 1 ;;
+              esac
+              curl --fail --silent --show-error --location \
+                "https://github.com/docker/compose/releases/download/v5.6.1/docker-compose-linux-$compose_arch" \
+                --output /usr/local/lib/docker/cli-plugins/docker-compose
+              chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+
+              curl --fail --silent --show-error --location \
+                "https://raw.githubusercontent.com/nacaroglu/open-sales-analytics/${ConfigRevision}/deploy/observability/bootstrap.sh" \
+                --output /usr/local/sbin/osa-observability-bootstrap
+              chmod 0750 /usr/local/sbin/osa-observability-bootstrap
+              cat > /etc/osa-observability/runtime.env <<'RUNTIME'
+              OSA_CONFIG_REVISION=${ConfigRevision}
+              OSA_GRAFANA_HOSTNAME=${GrafanaHostname}
+              OSA_GRAFANA_ROOT_URL=https://${GrafanaHostname}/
+              GRAFANA_ADMIN_PARAMETER_NAME=${GrafanaParameter}
+              AWS_REGION=${AWS::Region}
+              RUNTIME
+              chmod 0600 /etc/osa-observability/runtime.env
+
+              cat > /etc/systemd/system/osa-observability.service <<'UNIT'
+              [Unit]
+              Description=OSA observability services
+              Wants=network-online.target
+              After=network-online.target docker.service
+              Requires=docker.service
+
+              [Service]
+              Type=oneshot
+              RemainAfterExit=yes
+              EnvironmentFile=/etc/osa-observability/runtime.env
+              ExecStart=/usr/local/sbin/osa-observability-bootstrap
+              ExecStop=/usr/bin/docker compose --project-name osa-observability -f /opt/osa/observability/repository/observability/compose.aws.yaml down
+              TimeoutStartSec=0
+
+              [Install]
+              WantedBy=multi-user.target
+              UNIT
+              systemctl daemon-reload
+              systemctl enable osa-observability.service
+              systemctl start --no-block osa-observability.service
+              signal_stack 0
+              trap - ERR
+            - ConfigRevision: !Ref ObservabilityConfigRevision
+              GrafanaHostname: !Ref GrafanaHostname
+              GrafanaParameter: !Ref GrafanaAdminParameterName
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-host"
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: osa-observability
+
+  TelemetryVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      AvailabilityZone: !GetAtt ObservabilityInstance.AvailabilityZone
+      Encrypted: true
+      Size: 100
+      VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-telemetry"
+        - Key: Project
+          Value: open-sales-analytics
+        - Key: OSAStack
+          Value: osa-observability
+
+  TelemetryVolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      Device: /dev/sdf
+      InstanceId: !Ref ObservabilityInstance
+      VolumeId: !Ref TelemetryVolume
+
+Outputs:
+  GrafanaPublicIp:
+    Description: Public IPv4 address to which GrafanaHostname must resolve.
+    Value: !GetAtt ObservabilityInstance.PublicIp
+  GrafanaUrl:
+    Description: HTTPS Grafana URL served through Caddy after DNS points to GrafanaPublicIp.
+    Value: !Sub "https://${GrafanaHostname}"
+  CollectorPrivateEndpoint:
+    Description: Private OTLP/HTTP endpoint used by dev and prod application stacks.
+    Value: !Sub "http://${ObservabilityInstance.PrivateIp}:4318"
+    Export:
+      Name: !Sub '${AWS::StackName}-CollectorPrivateEndpoint'
+  CollectorSecurityGroupId:
+    Description: Security group ID that application stacks reference for private OTLP ingress.
+    Value: !GetAtt ObservabilitySecurityGroup.GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}-CollectorSecurityGroupId"

@@ -13,6 +13,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.otlp_preflight import OtlpPreflightError, validate_otlp_prerequisites
+
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "deploy/cloudformation/environments/osa-dev.json"
@@ -176,6 +178,18 @@ def _run(runner: CommandRunner, command: Sequence[str], *, step: str) -> None:
         raise DeploymentError(f"{step} failed (exit {result.returncode}); deployment stopped.")
 
 
+def validate_aws_prerequisites(
+    inputs: DeploymentInputs,
+    *,
+    runner: CommandRunner | None = None,
+) -> None:
+    """Fail before UpdateStack unless the private Collector and dev token are ready."""
+    try:
+        validate_otlp_prerequisites(inputs.region, "development", runner=runner or subprocess.run)
+    except OtlpPreflightError as exc:
+        raise DeploymentError(str(exc)) from None
+
+
 def deploy_dev(
     inputs: DeploymentInputs,
     *,
@@ -185,6 +199,7 @@ def deploy_dev(
 ) -> None:
     digest = validate_inputs(inputs, stack_name=stack_name)
     template_path = validate_manifest(manifest_path)
+    validate_aws_prerequisites(inputs, runner=runner)
     _run(
         runner,
         update_stack_command(inputs, digest, template_path),
@@ -269,30 +284,44 @@ def inputs_from_environment(environment: dict[str, str] | None = None) -> Deploy
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--validate-only", action="store_true", help="validate configuration without calling AWS"
+    validation = parser.add_mutually_exclusive_group()
+    validation.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="validate static configuration and read-only AWS prerequisites without mutation",
+    )
+    validation.add_argument(
+        "--validate-static-only",
+        action="store_true",
+        help="validate static configuration without calling AWS",
     )
     args = parser.parse_args(argv)
     env = dict(os.environ)
-    inputs = inputs_from_environment(env)
     summary_value = env.get("GITHUB_STEP_SUMMARY")
     summary_path = Path(summary_value) if summary_value else None
     try:
+        inputs = inputs_from_environment()
         validate_inputs(inputs)
         validate_manifest()
+        if args.validate_static_only:
+            print("osa-dev static deployment configuration is valid.")
+            return 0
         if args.validate_only:
-            print("osa-dev deployment configuration is valid.")
+            validate_aws_prerequisites(inputs, runner=subprocess.run)
+            print("osa-dev deployment preflight is valid.")
             return 0
         deploy_dev(inputs)
         if summary_path is not None:
             write_summary(summary_path, inputs, result="PASS", failure_stage=None)
     except DeploymentError as exc:
-        if summary_path is not None and not args.validate_only:
+        if summary_path is not None and not (args.validate_only or args.validate_static_only):
             message = str(exc).lower()
             if "update wait" in message:
                 failure_stage = "CloudFormation update wait"
             elif "cloudformation update" in message:
                 failure_stage = "CloudFormation update"
+            elif "preflight" in message or "collector" in message or "token" in message:
+                failure_stage = "OTLP deployment preflight"
             else:
                 failure_stage = "Deployment configuration validation"
             try:

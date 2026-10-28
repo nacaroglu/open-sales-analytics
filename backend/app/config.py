@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -16,6 +17,13 @@ class Settings(BaseSettings):
         "development", validation_alias="OSA_ENVIRONMENT"
     )
     osa_version: str = Field("local", min_length=1, validation_alias="OSA_VERSION")
+    osa_trace_sampling_ratio: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        validation_alias="OSA_TRACE_SAMPLING_RATIO",
+    )
     otel_exporter_otlp_endpoint: str | None = Field(
         None, validation_alias="OTEL_EXPORTER_OTLP_ENDPOINT"
     )
@@ -31,6 +39,7 @@ class Settings(BaseSettings):
     otel_exporter_otlp_logs_endpoint: str | None = Field(
         None, validation_alias="OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
     )
+    otel_token_file: str | None = Field(None, validation_alias="OSA_OTLP_TOKEN_FILE")
     dataset_dir: Path = Field(Path("./tmp_datasets"), validation_alias="DATASET_DIR")
     dataset_ttl_hours: int = Field(24, gt=0, validation_alias="DATASET_TTL_HOURS")
     # Test-only override: a lifetime in seconds that wins over DATASET_TTL_HOURS, so a browser
@@ -61,6 +70,11 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             raise ValueError("must not be empty")
         return value
+
+
+def configured_osa_environment() -> str | None:
+    """Return the raw deployment environment, preserving whether it was explicitly set."""
+    return os.environ.get("OSA_ENVIRONMENT")
 
 
 @lru_cache

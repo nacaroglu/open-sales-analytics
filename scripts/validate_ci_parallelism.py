@@ -105,7 +105,6 @@ def validate() -> None:
         "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
         "needs:",
         "ci-structure",
-        "grafana-dashboard-validation",
         "backend-tests",
         "frontend",
         "cloudformation-foundation",
@@ -148,6 +147,7 @@ def validate() -> None:
         "role-to-assume: ${{ vars.OSA_DEV_DEPLOY_ROLE_ARN }}",
         "needs.publish-ecr.outputs.image-ref",
         "needs.publish-ecr.outputs.release-version",
+        "python3 scripts/deploy_dev_stack.py --validate-static-only",
         "python3 scripts/deploy_dev_stack.py --validate-only",
         "run: python3 scripts/deploy_dev_stack.py",
         "DEV_EXECUTION_ROLE_ARN: ${{ vars.OSA_DEV_EXECUTION_ROLE_ARN }}",
@@ -162,7 +162,6 @@ def validate() -> None:
         "aws-secret-access-key:",
         "secrets.",
         "osa-prod",
-        "osa-observability",
         "productionpromotionrolearn",
         "aws ecr",
         "docker ",
@@ -190,11 +189,20 @@ def validate() -> None:
     ):
         if marker not in verifier:
             fail(f"verify-dev is missing required ordering, identity, or release marker {marker!r}")
-    for forbidden in ("aws-access-key-id:", "aws-secret-access-key:", "secrets.", "osa-prod", "cloudformation:update-stack", "cloudformation:delete-stack"):
+    for forbidden in (
+        "aws-access-key-id:",
+        "aws-secret-access-key:",
+        "secrets.",
+        "osa-prod",
+        "cloudformation:update-stack",
+        "cloudformation:delete-stack",
+    ):
         if forbidden in verifier.lower():
             fail(f"verify-dev must remain read-only and secret-free: {forbidden!r}")
     if oidc_jobs != {"publish-ecr", "deploy-dev", "verify-dev"}:
-        fail("only the main-branch publisher, dev deploy, and read-only verifier may configure AWS credentials")
+        fail(
+            "only the main-branch publisher, dev deploy, and read-only verifier may configure AWS credentials"
+        )
     for name in oidc_jobs:
         block = jobs[name]
         if "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" not in block:

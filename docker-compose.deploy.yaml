@@ -6,6 +6,7 @@ services:
     environment:
       OSA_ENVIRONMENT: ${OSA_ENVIRONMENT:?Set OSA_ENVIRONMENT to development or production}
       OSA_VERSION: ${OSA_VERSION:?Set OSA_VERSION to the release version}
+      OSA_TRACE_SAMPLING_RATIO: ${OSA_TRACE_SAMPLING_RATIO:-1.0}
       PUBLIC_DEMO_MODE: ${PUBLIC_DEMO_MODE:-false}
     restart: unless-stopped
 

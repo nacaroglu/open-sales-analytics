@@ -1,0 +1,21 @@
+{
+  "apiVersion": 1,
+  "contactPoints": [
+    {
+      "orgId": 1,
+      "name": "OSA Test Webhook",
+      "receivers": [
+        {
+          "uid": "osa-test-webhook",
+          "type": "webhook",
+          "disableResolveMessage": false,
+          "settings": {
+            "url": "$OSA_ALERT_WEBHOOK_URL",
+            "httpMethod": "POST",
+            "maxAlerts": "10"
+          }
+        }
+      ]
+    }
+  ]
+}
