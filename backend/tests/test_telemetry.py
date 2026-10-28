@@ -338,6 +338,7 @@ def test_cloud_collector_requires_bearer_auth_for_otlp_http():
     assert aws_collector.count("authenticator: bearertokenauth") == 2
     assert "filename: /run/secrets/otlp-token" in aws_collector
     assert "authenticator: bearertokenauth" not in local_collector
+    assert "otel/opentelemetry-collector-contrib:0.161.0" in aws_compose
     assert "collector.aws.yaml:/etc/otelcol-contrib/config.yaml:ro" in aws_compose
     assert "target: otlp-token" in aws_compose
     assert "file: ${OTLP_TOKEN_FILE:?OTLP SecureString is required at runtime}" in aws_compose

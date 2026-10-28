@@ -49,6 +49,8 @@ def print_collector_diagnostics(container_name: str, token_file: Path) -> None:
         )
     except (OSError, subprocess.SubprocessError):
         return
+    if result.returncode != 0:
+        return
     diagnostics = f"{result.stdout}{result.stderr}"
     if diagnostics.strip():
         print(sanitized_diagnostics(diagnostics, token_file), file=sys.stderr)

@@ -2,7 +2,7 @@ name: osa-observability
 
 services:
   collector:
-    image: otel/opentelemetry-collector-contrib:0.163.0
+    image: otel/opentelemetry-collector-contrib:0.161.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ${OSA_CONFIG_DIR:?OSA_CONFIG_DIR is required}/collector.aws.yaml:/etc/otelcol-contrib/config.yaml:ro
