@@ -170,10 +170,10 @@ def create_telemetry(
             raise ValueError("OSA_OTLP_TOKEN_FILE is required when an OTLP endpoint is set")
         try:
             token = Path(token_file).read_text(encoding="utf-8").strip()
-        except OSError as exc:
+        except (OSError, UnicodeError):
             raise ValueError(
                 "Unable to read the configured OTLP authentication token file"
-            ) from exc
+            ) from None
         token_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
         if (
             not token

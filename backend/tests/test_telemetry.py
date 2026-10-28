@@ -222,6 +222,25 @@ def test_otlp_token_file_read_error_does_not_disclose_token(tmp_path):
         )
 
 
+def test_otlp_token_file_invalid_encoding_does_not_disclose_contents(tmp_path):
+    token_file = tmp_path / "otlp-token"
+    token_file.write_bytes(b"private-token\xff")
+
+    with pytest.raises(
+        ValueError, match="Unable to read the configured OTLP authentication token file"
+    ) as raised:
+        create_telemetry(
+            Settings(),
+            environ={
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318",
+                "OSA_OTLP_TOKEN_FILE": str(token_file),
+            },
+        )
+
+    assert raised.value.__suppress_context__
+    assert "private-token" not in str(raised.value)
+
+
 def test_request_succeeds_when_span_export_fails(monkeypatch, tmp_path):
     import asyncio
 
