@@ -1,0 +1,62 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "osa-reliability",
+      "folder": "OSA",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "osa-repeated-create-failures",
+          "title": "OSARepeatedDatasetCreationFailures",
+          "condition": "A",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {"from": 600, "to": 0},
+              "datasourceUid": "osa-prometheus",
+              "model": {
+                "datasource": {"type": "prometheus", "uid": "osa-prometheus"},
+                "editorMode": "code",
+                "expr": "sum by (service_name, deployment_environment_name, service_version) (increase(osa_dataset_operations_total{operation=\"create\",outcome=\"failure\",failure_class=\"internal\"}[10m])) >= 3",
+                "instant": true,
+                "intervalMs": 1000,
+                "maxDataPoints": 43200,
+                "refId": "A",
+                "range": false
+              }
+            }
+          ],
+          "for": "5m",
+          "noDataState": "OK",
+          "execErrState": "Error",
+          "isPaused": false,
+          "notification_settings": {
+            "receiver": "OSA Test Webhook",
+            "group_by": [
+              "alertname",
+              "service",
+              "environment",
+              "deployed_version"
+            ]
+          },
+          "labels": {
+            "service": "{{- $value := index $labels \"service_name\" -}}{{- if and $value (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
+            "environment": "{{- $value := index $labels \"deployment_environment_name\" -}}{{- if and $value (match \"^(development|production)$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
+            "deployed_version": "{{- $value := index $labels \"service_version\" -}}{{- if and $value (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $value) -}}{{ $value }}{{- else -}}unknown{{- end -}}",
+            "severity": "critical",
+            "owner": "osa-maintainer"
+          },
+          "annotations": {
+            "summary": "At least three internal dataset creation failures occurred within ten minutes.",
+            "description": "The threshold remained true for five minutes. Invalid user CSVs and documented validation rejections are excluded.",
+            "dashboard_url": "{{- $environment := index $labels \"deployment_environment_name\" -}}{{- $version := index $labels \"service_version\" -}}{{ reReplaceAll \"/+$\" \"\" (externalURL) }}/d/osa-operations/osa-operations?var-environment={{ if and $environment (match \"^(development|production)$\" $environment) }}{{ $environment }}{{ else }}unknown{{ end }}&var-deployed_version={{ if and $version (match \"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$\" $version) }}{{ $version }}{{ else }}unknown{{ end }}",
+            "runbook_url": "https://github.com/nacaroglu/open-sales-analytics/blob/main/observability/runbooks/osa-repeated-dataset-creation-failures.md",
+            "logs_and_traces": "In the OSA Operations dashboard, use the service, environment, and deployed_version labels to filter Loki, then follow the trace_id from a privacy-safe log entry into Tempo. Do not search by dataset identifiers or request bodies."
+          }
+        }
+      ]
+    }
+  ]
+}

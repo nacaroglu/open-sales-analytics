@@ -32,6 +32,7 @@ def test_tempo_3x_config_rejects_removed_ingester_and_compactor_sections(tmp_pat
         "ingester",
         "ingester_client",
         "compactor",
+        "compaction",
         "metrics_generator_client",
     ):
         tempo.write_text(

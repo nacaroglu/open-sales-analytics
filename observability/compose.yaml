@@ -51,24 +51,34 @@ services:
 
   grafana:
     image: grafana/grafana:13.2.4
+    entrypoint: ["/bin/sh", "/usr/local/bin/osa-grafana-entrypoint.sh"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${OSA_GRAFANA_ROOT_URL:-http://127.0.0.1:3000/}
+    secrets: [osa_alert_webhook_url]
     ports:
       - "127.0.0.1:${OSA_GRAFANA_PORT:-3000}:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./provisioning:/etc/grafana/provisioning:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro
-    networks: [observability]
+      - ./grafana-entrypoint.sh:/usr/local/bin/osa-grafana-entrypoint.sh:ro
+    networks: [observability, webhook-egress]
     restart: unless-stopped
 
 networks:
   observability:
     internal: true
+  webhook-egress:
+    name: osa-observability_webhook-egress
 
 volumes:
   prometheus-data:
   loki-data:
   tempo-data:
   grafana-data:
+
+secrets:
+  osa_alert_webhook_url:
+    file: ${OSA_ALERT_WEBHOOK_URL_FILE:?Set OSA_ALERT_WEBHOOK_URL_FILE to a protected external file}

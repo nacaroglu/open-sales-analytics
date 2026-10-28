@@ -108,6 +108,12 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+        - Description: Private OTLP/HTTP to the shared Collector only.
+          IpProtocol: tcp
+          FromPort: 4318
+          ToPort: 4318
+          DestinationSecurityGroupId:
+            Fn::ImportValue: osa-observability-CollectorSecurityGroupId
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-application"
@@ -115,6 +121,17 @@ Resources:
           Value: open-sales-analytics
         - Key: OSAStack
           Value: !If [IsDevelopment, osa-dev, osa-prod]
+
+  CollectorOtlpIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: !Sub "${AWS::StackName} authenticated OTLP/HTTP traffic to the private Collector"
+      GroupId:
+        Fn::ImportValue: osa-observability-CollectorSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 4318
+      ToPort: 4318
+      SourceSecurityGroupId: !GetAtt AppSecurityGroup.GroupId
 
   AppInstance:
     Type: AWS::EC2::Instance
@@ -170,7 +187,12 @@ Resources:
                   environment:
                     OSA_ENVIRONMENT: ${!OSA_ENVIRONMENT}
                     OSA_VERSION: ${!OSA_VERSION}
+                    OSA_TRACE_SAMPLING_RATIO: ${!OSA_TRACE_SAMPLING_RATIO}
                     PUBLIC_DEMO_MODE: ${!PUBLIC_DEMO_MODE}
+                    OTEL_EXPORTER_OTLP_ENDPOINT: ${!OTEL_EXPORTER_OTLP_ENDPOINT}
+                    OSA_OTLP_TOKEN_FILE: /run/osa/otlp-token
+                  volumes:
+                    - /run/osa/otlp-token:/run/osa/otlp-token:ro
                   expose:
                     - "8000"
                   healthcheck:
@@ -238,7 +260,9 @@ Resources:
               cat > /opt/osa/.env <<'ENVVARS'
               OSA_IMAGE=${RepositoryUri}@sha256:${ImageDigest}
               OSA_ENVIRONMENT=${Environment}
+              OTEL_EXPORTER_OTLP_ENDPOINT=${CollectorEndpoint}
               OSA_VERSION=${ReleaseVersion}
+              OSA_TRACE_SAMPLING_RATIO=1.0
               PUBLIC_HOSTNAME=${PublicHostname}
               PUBLIC_DEMO_MODE=${PublicDemoMode}
               CADDY_AUTH_BLOCK=
@@ -341,10 +365,36 @@ Resources:
                   ;;
               esac
 
+              /opt/osa/load_otlp_token.sh
+
               export CADDY_AUTH_BLOCK="$auth_block"
               exec docker compose --env-file /opt/osa/.env -f /opt/osa/compose.yaml up --remove-orphans
               STARTCOMPOSE
               chmod 0755 /opt/osa/start_osa_compose.sh
+              cat > /opt/osa/load_otlp_token.sh <<'OTLP'
+              #!/bin/sh
+
+              set -eu
+
+              parameter="$(if [ "${!OSA_ENVIRONMENT}" = development ]; then printf %s /osa/dev/observability/otlp-token; else printf %s /osa/prod/observability/otlp-token; fi)"
+              if ! parameter_type="$(aws ssm get-parameter --name "$parameter" --query Parameter.Type --output text --cli-connect-timeout 5 --cli-read-timeout 10 2>/dev/null)" || [ "$parameter_type" != SecureString ]; then
+                echo "OTLP authentication parameter must be a SecureString." >&2
+                exit 1
+              fi
+              if ! token="$(aws ssm get-parameter --name "$parameter" --with-decryption --query Parameter.Value --output text --cli-connect-timeout 5 --cli-read-timeout 10 2>/dev/null)"; then
+                echo "Unable to load OTLP authentication configuration from SSM." >&2
+                exit 1
+              fi
+              case "$token" in
+                ""|*[!A-Za-z0-9_-]*) echo "OTLP authentication configuration is empty or invalid." >&2; exit 1 ;;
+              esac
+              install -d -m 0755 -o root -g 10001 /run/osa
+              printf '%s' "$token" > /run/osa/otlp-token
+              chown root:10001 /run/osa/otlp-token
+              chmod 0440 /run/osa/otlp-token
+              unset token
+              OTLP
+              chmod 0700 /opt/osa/load_otlp_token.sh
               cat > /etc/systemd/system/osa-compose.service <<'UNIT'
               [Unit]
               Description=OSA digest-pinned application and Caddy deployment
@@ -371,6 +421,8 @@ Resources:
               systemctl enable --now osa-compose.service
             - RepositoryUri:
                 Fn::ImportValue: osa-foundation-RepositoryUri
+              CollectorEndpoint:
+                Fn::ImportValue: osa-observability-CollectorPrivateEndpoint
               PublicDemoMode: !If [IsDevelopment, "false", "true"]
       Tags:
         - Key: Name
