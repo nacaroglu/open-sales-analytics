@@ -34,6 +34,26 @@ Grafana is available at <http://127.0.0.1:3000>. Its password is the value of
 ports bind to `127.0.0.1`. Prometheus, Loki, and Tempo have no host-published
 ports and are reachable only on the private Compose network.
 
+Grafana provisions three credential-free data sources from
+`observability/provisioning/datasources/datasources.yaml`: Prometheus (`osa-prometheus`),
+Loki (`osa-loki`), and Tempo (`osa-tempo`). The `OSA Operations` dashboard is
+loaded from `observability/dashboards/osa-operations.json` into the OSA folder.
+Its Environment filter is limited to `development` and `production`; Deployed
+version values are discovered from application telemetry. Application metric
+panels, annotations, and their Loki/Tempo drill-down links use both selections.
+
+The dashboard covers release identity and deployment annotations, request
+traffic/reliability, dataset creation and cleanup, analytics/DuckDB operations,
+runtime capacity, observability storage, and Collector exports. Grafana shows
+`No data` when the selected environment/version has no matching samples. Treat
+that as missing telemetry or an unavailable scrape/export path, not as a zero
+measurement. Start with the dashboard filters and Prometheus targets, then use
+the filtered log and trace links to investigate.
+
+CI runs an offline structural validator for the data-source UIDs/endpoints,
+dashboard rows and panels, filters, links, and no-data guidance. It does not
+require Grafana or an observability backend.
+
 Stop and remove only this project's containers and network:
 
 ```sh

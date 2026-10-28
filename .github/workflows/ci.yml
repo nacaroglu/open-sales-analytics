@@ -25,6 +25,15 @@ jobs:
       - name: Verify pull request checks can run in parallel
         run: python3 scripts/validate_ci_parallelism.py
 
+  grafana-dashboard-validation:
+    name: Grafana provisioning and dashboard (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate provisioned data sources and OSA Operations dashboard
+        run: python3 scripts/validate_grafana_dashboard.py
+
   backend-tests:
     name: Backend (tests, ruff, mypy)
     runs-on: ubuntu-latest
@@ -887,6 +896,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - ci-structure
+      - grafana-dashboard-validation
       - backend-tests
       - frontend
       - cloudformation-foundation

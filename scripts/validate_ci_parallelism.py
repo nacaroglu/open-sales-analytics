@@ -105,6 +105,7 @@ def validate() -> None:
         "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
         "needs:",
         "ci-structure",
+        "grafana-dashboard-validation",
         "backend-tests",
         "frontend",
         "cloudformation-foundation",
