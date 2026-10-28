@@ -203,30 +203,6 @@ The Caddy Basic Auth exception applies only to `/api/datasets/` paths with a 22-
 
 To add or rotate the dedicated smoke user without replacing the existing human user, run this in a private terminal with shell tracing disabled. It retrieves the existing auth block into a shell variable without printing it, appends one bcrypt entry, and writes both SecureStrings from mode-restricted temporary files. Choose a username not already in the block. The password is entered silently; use the same username and password for both parameters.
 
-```sh
-set +x
-umask 077
-read -rp 'Smoke username: ' smoke_username
-case "$smoke_username" in (*[!A-Za-z0-9_-]*|'') echo 'Invalid username' >&2; exit 1;; esac
-read -rsp 'Smoke password: ' smoke_password; printf '\n'
-smoke_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$smoke_password")"
-existing_auth="$(aws ssm get-parameter --name /osa/dev/caddy/auth --with-decryption --query Parameter.Value --output text)"
-if printf '%s\n' "$existing_auth" | grep -Eq "^[[:space:]]+$smoke_username[[:space:]]"; then
-  echo 'Smoke username already exists; choose another username' >&2; exit 1
-fi
-case "$existing_auth" in ('basic_auth {'*'}') ;; (*) echo 'Existing auth block is not the expected basic_auth form' >&2; exit 1;; esac
-auth_body="${existing_auth%?}"
-updated_auth="$(printf '%s\n  %s %s\n}' "$auth_body" "$smoke_username" "$smoke_hash")"
-auth_file="$(mktemp)"; credential_file="$(mktemp)"
-trap 'rm -f "$auth_file" "$credential_file"' EXIT
-printf '%s' "$updated_auth" > "$auth_file"
-printf '%s:%s' "$smoke_username" "$smoke_password" > "$credential_file"
-aws ssm put-parameter --name /osa/dev/caddy/auth --type SecureString --value "file://$auth_file" --overwrite >/dev/null
-aws ssm put-parameter --name /osa/dev/caddy/smoke-credential --type SecureString --value "file://$credential_file" --overwrite >/dev/null
-unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_username
-```
-
-The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
 
 ### Observability-Stack
 
@@ -255,3 +231,28 @@ aws cloudformation deploy --region "$REGION" --stack-name osa-observability \
 aws cloudformation describe-stacks --region "$REGION" --stack-name osa-observability \
   --query 'Stacks[0].Outputs'
 ```
+
+```sh
+set +x
+umask 077
+read -rp 'Smoke username: ' smoke_username
+case "$smoke_username" in (*[!A-Za-z0-9_-]*|'') echo 'Invalid username' >&2; exit 1;; esac
+read -rsp 'Smoke password: ' smoke_password; printf '\n'
+smoke_hash="$(docker run --rm --entrypoint caddy caddy:2.10.2 hash-password --plaintext "$smoke_password")"
+existing_auth="$(aws ssm get-parameter --name /osa/dev/caddy/auth --with-decryption --query Parameter.Value --output text)"
+if printf '%s\n' "$existing_auth" | grep -Eq "^[[:space:]]+$smoke_username[[:space:]]"; then
+  echo 'Smoke username already exists; choose another username' >&2; exit 1
+fi
+case "$existing_auth" in ('basic_auth {'*'}') ;; (*) echo 'Existing auth block is not the expected basic_auth form' >&2; exit 1;; esac
+auth_body="${existing_auth%?}"
+updated_auth="$(printf '%s\n  %s %s\n}' "$auth_body" "$smoke_username" "$smoke_hash")"
+auth_file="$(mktemp)"; credential_file="$(mktemp)"
+trap 'rm -f "$auth_file" "$credential_file"' EXIT
+printf '%s' "$updated_auth" > "$auth_file"
+printf '%s:%s' "$smoke_username" "$smoke_password" > "$credential_file"
+aws ssm put-parameter --name /osa/dev/caddy/auth --type SecureString --value "file://$auth_file" --overwrite >/dev/null
+aws ssm put-parameter --name /osa/dev/caddy/smoke-credential --type SecureString --value "file://$credential_file" --overwrite >/dev/null
+unset smoke_password smoke_hash existing_auth auth_body updated_auth smoke_username
+```
+
+The update preserves all existing auth-block lines and adds only the dedicated smoke user. Do not print parameter values or enable shell tracing. The verifier reads the credential at runtime; it is never stored in GitHub configuration.
