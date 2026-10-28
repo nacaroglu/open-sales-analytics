@@ -219,6 +219,8 @@ jobs:
           docker compose -f observability/compose.yaml config --quiet
           docker compose -f observability/compose.yaml config --format json |
             python3 scripts/validate_observability_compose.py
+      - name: Verify AWS Collector token acceptance and rejection
+        run: python3 scripts/verify_collector_auth.py
       - name: Start stack and verify synthetic signal routes
         shell: bash
         run: |
