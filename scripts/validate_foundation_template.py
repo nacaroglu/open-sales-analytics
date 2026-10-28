@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Static security assertions for the offline-validated OSA foundation template."""
+
 import json
 import re
 import sys
@@ -15,24 +16,48 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(1)
 
 
-require("EnableDnsSupport: true" in text and "EnableDnsHostnames: true" in text, "VPC DNS must be enabled")
+require(
+    "EnableDnsSupport: true" in text and "EnableDnsHostnames: true" in text,
+    "VPC DNS must be enabled",
+)
 for name in ("PublicSubnetAz1", "PublicSubnetAz2", "PrivateSubnetAz1", "PrivateSubnetAz2"):
-    require(re.search(rf"^  {name}:\n    Type: AWS::EC2::Subnet$", text, re.MULTILINE) is not None,
-            f"missing subnet resource {name}")
+    require(
+        re.search(rf"^  {name}:\n    Type: AWS::EC2::Subnet$", text, re.MULTILINE) is not None,
+        f"missing subnet resource {name}",
+    )
 require("AvailabilityZonesMustDiffer:" in text, "AZ inequality must be asserted")
-require("DestinationCidrBlock: 0.0.0.0/0\n      GatewayId: !Ref InternetGateway" in text,
-        "public default route must use the attached internet gateway")
-require("PrivateRouteTableAz1:" in text and "PrivateRouteTableAz2:" in text, "private route tables required")
-require("Type: AWS::EC2::SecurityGroup" not in text and "AWS::EC2::SecurityGroupIngress" not in text,
-        "foundation template must not create security groups or ingress rules")
-require("ImageTagMutability: IMMUTABLE" in text and "ScanOnPush: true" in text,
-        "ECR must use immutable tags and scan on push")
-require("Url: https://token.actions.githubusercontent.com" in text and "- sts.amazonaws.com" in text,
-        "GitHub OIDC provider URL and audience must be exact")
-require("token.actions.githubusercontent.com:sub: !Sub \"repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}\"" in text,
-        "OIDC subject must be exact owner/repository/branch without wildcard")
-require("Resource: !GetAtt Repository.Arn" in text, "build/push ECR actions must be repository scoped")
-require("FoundationExecutionRole:" in text and "BuildRole:" in text, "separate baseline roles are required")
+require(
+    "DestinationCidrBlock: 0.0.0.0/0\n      GatewayId: !Ref InternetGateway" in text,
+    "public default route must use the attached internet gateway",
+)
+require(
+    "PrivateRouteTableAz1:" in text and "PrivateRouteTableAz2:" in text,
+    "private route tables required",
+)
+require(
+    "Type: AWS::EC2::SecurityGroup" not in text and "AWS::EC2::SecurityGroupIngress" not in text,
+    "foundation template must not create security groups or ingress rules",
+)
+require(
+    "ImageTagMutability: IMMUTABLE" in text and "ScanOnPush: true" in text,
+    "ECR must use immutable tags and scan on push",
+)
+require(
+    "Url: https://token.actions.githubusercontent.com" in text and "- sts.amazonaws.com" in text,
+    "GitHub OIDC provider URL and audience must be exact",
+)
+require(
+    'token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubMainBranch}"'
+    in text,
+    "OIDC subject must be exact owner/repository/branch without wildcard",
+)
+require(
+    "Resource: !GetAtt Repository.Arn" in text, "build/push ECR actions must be repository scoped"
+)
+require(
+    "FoundationExecutionRole:" in text and "BuildRole:" in text,
+    "separate baseline roles are required",
+)
 
 role_match = re.search(r"(?ms)^  FoundationExecutionRole:\n(?P<body>.*?)(?=^Outputs:)", text)
 require(role_match is not None, "foundation execution role policy is required")
@@ -63,12 +88,19 @@ for resource_name, resource_body in resource_blocks:
             and "PrivateRouteTableAz2" not in resource_body,
             f"{resource_name} must not target a private route table",
         )
-require("${AWS::StackName}-VpcId" in text and "${AWS::StackName}-PrivateSubnetIds" in text
-        and "${AWS::StackName}-PublicSubnetIds" in text and "${AWS::StackName}-RepositoryUri" in text,
-        "shared outputs must have stack-qualified exports")
-require("Password:" not in text and "SecretAccessKey" not in text
-        and re.search(r"(?<!\d)\d{12}(?!\d)", text) is None,
-        "template must not include credentials or hardcoded account IDs")
+require(
+    "${AWS::StackName}-VpcId" in text
+    and "${AWS::StackName}-PrivateSubnetIds" in text
+    and "${AWS::StackName}-PublicSubnetIds" in text
+    and "${AWS::StackName}-RepositoryUri" in text,
+    "shared outputs must have stack-qualified exports",
+)
+require(
+    "Password:" not in text
+    and "SecretAccessKey" not in text
+    and re.search(r"(?<!\d)\d{12}(?!\d)", text) is None,
+    "template must not include credentials or hardcoded account IDs",
+)
 README = Path("deploy/README.md")
 readme = README.read_text(encoding="utf-8")
 
@@ -80,7 +112,7 @@ def foundation_resources(source: str) -> dict[str, tuple[str, str]]:
     resources: dict[str, tuple[str, str]] = {}
     for index, match in enumerate(starts):
         end = starts[index + 1].start() if index + 1 < len(starts) else len(section.group("body"))
-        body = section.group("body")[match.end():end]
+        body = section.group("body")[match.end() : end]
         type_match = re.search(r"(?m)^    Type: ([^\n]+)$", body)
         require(type_match is not None, f"{match.group(1)} is missing a CloudFormation Type")
         resources[match.group(1)] = (type_match.group(1), body)
@@ -115,14 +147,15 @@ require(
     "Repository must force-empty image contents only when CloudFormation deletes it",
 )
 require(
-    re.search(r"(?m)^    (?:DeletionPolicy|UpdateReplacePolicy):\s*Retain$", repository_body) is None,
+    re.search(r"(?m)^    (?:DeletionPolicy|UpdateReplacePolicy):\s*Retain$", repository_body)
+    is None,
     "Repository must not retain itself on deletion or replacement",
 )
 
 policy_marker = re.search(r"(?m)^        LifecyclePolicyText: \|\s*$", repository_body)
 require(policy_marker is not None, "Repository lifecycle policy text is required")
 policy_lines: list[str] = []
-for line in repository_body[policy_marker.end():].splitlines():
+for line in repository_body[policy_marker.end() :].splitlines():
     if not line.strip():
         if policy_lines:
             break
@@ -135,8 +168,10 @@ try:
 except json.JSONDecodeError as exc:
     require(False, f"Repository lifecycle policy must be valid JSON: {exc}")
 rules = lifecycle_policy.get("rules") if isinstance(lifecycle_policy, dict) else None
-require(isinstance(rules, list) and len(rules) == 1,
-        "Repository must have exactly one lifecycle rule covering all images")
+require(
+    isinstance(rules, list) and len(rules) == 1,
+    "Repository must have exactly one lifecycle rule covering all images",
+)
 rule = rules[0] if rules else {}
 selection = rule.get("selection") if isinstance(rule, dict) else {}
 require(
@@ -196,13 +231,7 @@ for output_name, attribute, export_suffix in (
         rf"(?ms)^  {output_name}:\n(?P<body>.*?)(?=^  [A-Za-z][A-Za-z0-9]*:\n|\Z)",
         outputs_section.group("body"),
     )
-    expected_export = (
-        'Name: !Sub "'
-        + chr(36)
-        + "{AWS::StackName}-"
-        + export_suffix
-        + '"'
-    )
+    expected_export = 'Name: !Sub "' + chr(36) + "{AWS::StackName}-" + export_suffix + '"'
     require(
         output is not None
         and f"Value: !GetAtt Repository.{attribute}" in output.group("body")
@@ -232,7 +261,8 @@ expected_associations = {
     "PrivateRouteAssociationAz2": ("PrivateRouteTableAz2", "PrivateSubnetAz2"),
 }
 associations: dict[str, tuple[str, str]] = {}
-for name, (resource_type, body) in resources.items():
+for name, (resource_type, _body) in resources.items():
+    body = _body
     if resource_type != "AWS::EC2::SubnetRouteTableAssociation":
         continue
     route_table = re.search(r"(?m)^      RouteTableId: !Ref (\w+)$", body)
@@ -264,9 +294,10 @@ require(
     "PublicDefaultRoute must send 0.0.0.0/0 through InternetGateway on PublicRouteTable",
 )
 
-for name, (resource_type, body) in resources.items():
+for name, (resource_type, _body) in resources.items():
     require(
-        resource_type not in {
+        resource_type
+        not in {
             "AWS::EC2::SecurityGroup",
             "AWS::EC2::SecurityGroupIngress",
             "AWS::EC2::SecurityGroupEgress",
@@ -326,22 +357,49 @@ for url in (
 
 for phrase, message in (
     ("ten most recently pushed images", "README must document ten-image ECR retention"),
-    ("any image, tagged or untagged", "README must document lifecycle coverage for tagged and untagged images"),
+    (
+        "any image, tagged or untagged",
+        "README must document lifecycle coverage for tagged and untagged images",
+    ),
     ("expires the oldest", "README must explain lifecycle expiration order"),
     ("within 24 hours", "README must state lifecycle expiry timing"),
     ("immutable release tags", "README must document immutable release tags"),
-    ("force-deletes remaining image contents", "README must warn that repository deletion force-deletes images"),
+    (
+        "force-deletes remaining image contents",
+        "README must warn that repository deletion force-deletes images",
+    ),
     ("including images not yet expired", "README must warn deletion removes unexpired images too"),
     ("emptyondelete", "README must document EmptyOnDelete destructive behavior"),
-    ("ordinary pr/ci validation and deployment workflows do not delete the repository", "README must distinguish routine CI/deploy from teardown"),
+    (
+        "ordinary pr/ci validation and deployment workflows do not delete the repository",
+        "README must distinguish routine CI/deploy from teardown",
+    ),
     ("guarded teardown process in #271", "README must assign final teardown to issue #271"),
     ("removal verification in #272", "README must assign deletion verification to issue #272"),
-    ("former cleanup instruction to run `aws cloudformation delete-stack` and empty ecr manually does not apply", "README must supersede legacy manual cleanup guidance for the foundation repository"),
-    ("do not manually empty or delete that repository", "README must prohibit manual foundation repository cleanup"),
-    ("any foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for all foundation repository deletion"),
-    ("force-deletes all remaining images", "README must explain guarded teardown force-empty behavior"),
-    ("foundation repository deletion must happen only through the guarded teardown process in #271", "README must require guarded teardown for foundation repository deletion"),
-    ("do not manually empty the ecr repository or delete the foundation stack as a repository cleanup shortcut", "README must prohibit manual foundation ECR cleanup"),
+    (
+        "former cleanup instruction to run `aws cloudformation delete-stack` and empty ecr manually does not apply",
+        "README must supersede legacy manual cleanup guidance for the foundation repository",
+    ),
+    (
+        "do not manually empty or delete that repository",
+        "README must prohibit manual foundation repository cleanup",
+    ),
+    (
+        "any foundation repository deletion must happen only through the guarded teardown process in #271",
+        "README must require guarded teardown for all foundation repository deletion",
+    ),
+    (
+        "force-deletes all remaining images",
+        "README must explain guarded teardown force-empty behavior",
+    ),
+    (
+        "foundation repository deletion must happen only through the guarded teardown process in #271",
+        "README must require guarded teardown for foundation repository deletion",
+    ),
+    (
+        "do not manually empty the ecr repository or delete the foundation stack as a repository cleanup shortcut",
+        "README must prohibit manual foundation ECR cleanup",
+    ),
 ):
     require(phrase in doc, message)
 for url in (
@@ -398,11 +456,11 @@ def statement_actions(statement: str) -> set[str]:
         stripped = line.strip()
         if not stripped.startswith("Action:"):
             continue
-        inline = stripped[len("Action:"):].strip()
+        inline = stripped[len("Action:") :].strip()
         if inline:
             return {inline}
         actions: set[str] = set()
-        for candidate in lines[index + 1:]:
+        for candidate in lines[index + 1 :]:
             candidate_indent = len(candidate) - len(candidate.lstrip())
             if candidate.strip() and candidate_indent <= indent:
                 break
@@ -421,7 +479,7 @@ def exact_trust(role_name: str, principal: str, subject: str | None = None) -> N
         else (
             "Principal:\n              Federated: !Ref GitHubOidcProvider" in body
             and "token.actions.githubusercontent.com:aud: sts.amazonaws.com" in body
-            and f"token.actions.githubusercontent.com:sub: !Sub \"{subject}\"" in body
+            and f'token.actions.githubusercontent.com:sub: !Sub "{subject}"' in body
             and "StringLike:" not in body
         ),
         f"{role_name} trust must be limited to {principal if subject is None else subject}",
@@ -430,7 +488,9 @@ def exact_trust(role_name: str, principal: str, subject: str | None = None) -> N
 
 dollar = chr(36)
 branch_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref:refs/heads/{dollar}{{GitHubMainBranch}}"
-production_subject = f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"
+production_subject = (
+    f"repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"
+)
 exact_trust("BuildRole", "github", branch_subject)
 exact_trust("DevDeployRole", "github", branch_subject)
 exact_trust("DevVerificationRole", "github", branch_subject)
@@ -442,8 +502,10 @@ source_read_trust_match = re.search(
 source_read_trust = source_read_trust_match.group("body") if source_read_trust_match else ""
 require(
     source_read_trust.count("Sid: ") == 2
-    and f'token.actions.githubusercontent.com:sub: !Sub "repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref:refs/heads/{dollar}{{GitHubMainBranch}}"' in source_read_trust
-    and f'token.actions.githubusercontent.com:sub: !Sub "repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"' in source_read_trust
+    and f'token.actions.githubusercontent.com:sub: !Sub "repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:ref:refs/heads/{dollar}{{GitHubMainBranch}}"'
+    in source_read_trust
+    and f'token.actions.githubusercontent.com:sub: !Sub "repo:{dollar}{{GitHubOwner}}/{dollar}{{GitHubRepository}}:environment:production"'
+    in source_read_trust
     and "StringLike:" not in source_read_trust,
     "ProductionSourceReadRole must trust only main or the protected production environment",
 )
@@ -462,7 +524,8 @@ build_statements = policy_statements("BuildRole")
 require(
     set(build_statements)
     == {"EcrAuthorizationToken", "PushImagesToFoundationRepository", "ReadPublishedImageDigest"}
-    and statement_actions(build_statements["EcrAuthorizationToken"]) == {"ecr:GetAuthorizationToken"}
+    and statement_actions(build_statements["EcrAuthorizationToken"])
+    == {"ecr:GetAuthorizationToken"}
     and statement_actions(build_statements["PushImagesToFoundationRepository"])
     == {
         "ecr:BatchCheckLayerAvailability",
@@ -494,7 +557,11 @@ for deploy_role, stack_name, exec_role, prefix in (
     expected_manage_actions = (
         {"cloudformation:UpdateStack"}
         if deploy_role == "DevDeployRole"
-        else {"cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"}
+        else {
+            "cloudformation:CreateStack",
+            "cloudformation:UpdateStack",
+            "cloudformation:DeleteStack",
+        }
     )
     require(
         statement_actions(manage) == expected_manage_actions
@@ -511,7 +578,7 @@ for deploy_role, stack_name, exec_role, prefix in (
             "cloudformation:GetTemplate",
         }
         and expected_stack_arn in read
-        and "Resource: \"*\"" not in read,
+        and 'Resource: "*"' not in read,
         f"{deploy_role} read permissions must stay limited to {stack_name}",
     )
     require(
@@ -522,7 +589,7 @@ for deploy_role, stack_name, exec_role, prefix in (
         f"{deploy_role} may pass only {exec_role} to CloudFormation",
     )
     require(
-        not any("Resource: \"*\"" in item for item in statements.values()),
+        not any('Resource: "*"' in item for item in statements.values()),
         f"{deploy_role} must not have wildcard-resource permissions",
     )
 
@@ -534,31 +601,39 @@ environment_roles = (
 for role_name, environment, sid_prefix in environment_roles:
     statements = policy_statements(role_name)
     require(
-        f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"RunTagged{sid_prefix}Instances", "")
+        f"aws:RequestTag/OSAStack: {environment}"
+        in statements.get(f"RunTagged{sid_prefix}Instances", "")
         and "ArnEqualsIfExists:" in statements.get(f"RunTagged{sid_prefix}Instances", "")
         and f"vpc/{dollar}{{Vpc}}" in statements.get(f"RunTagged{sid_prefix}Instances", ""),
         f"{role_name} instance creation must require its environment tag and foundation VPC",
     )
     require(
-        f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Instances", ""),
+        f"ec2:ResourceTag/OSAStack: {environment}"
+        in statements.get(f"ManageTagged{sid_prefix}Instances", ""),
         f"{role_name} instance management must require its environment resource tag",
     )
     require(
         f"vpc/{dollar}{{Vpc}}" in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", "")
-        and f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", ""),
+        and f"aws:RequestTag/OSAStack: {environment}"
+        in statements.get(f"CreateTagged{sid_prefix}SecurityGroups", ""),
         f"{role_name} security groups must be created only in the foundation VPC with the environment tag",
     )
     require(
-        f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}SecurityGroups", ""),
+        f"ec2:ResourceTag/OSAStack: {environment}"
+        in statements.get(f"ManageTagged{sid_prefix}SecurityGroups", ""),
         f"{role_name} security-group changes must require its environment resource tag",
     )
     require(
-        f"aws:RequestTag/OSAStack: {environment}" in statements.get(f"AllocateTagged{sid_prefix}Addresses", "")
-        and f"ec2:ResourceTag/OSAStack: {environment}" in statements.get(f"ManageTagged{sid_prefix}Addresses", ""),
+        f"aws:RequestTag/OSAStack: {environment}"
+        in statements.get(f"AllocateTagged{sid_prefix}Addresses", "")
+        and f"ec2:ResourceTag/OSAStack: {environment}"
+        in statements.get(f"ManageTagged{sid_prefix}Addresses", ""),
         f"{role_name} address operations must be environment tagged",
     )
     if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
-        parameter_path = f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod'}/release/image"
+        parameter_path = (
+            f"parameter/osa/{'dev' if environment == 'osa-dev' else 'prod'}/release/image"
+        )
         parameter_statement = statements.get(
             f"ManageOsa{'Dev' if environment == 'osa-dev' else 'Prod'}ReleaseImageParameter", ""
         )
@@ -570,8 +645,10 @@ for role_name, environment, sid_prefix in environment_roles:
             f"{role_name} SSM access must be limited to its exact release metadata parameter ARN",
         )
     instance_role_name = (
-        "DevCaddyAuthEc2InstanceRole" if environment == "osa-dev"
-        else "ObservabilityEc2InstanceRole" if environment == "osa-observability"
+        "DevCaddyAuthEc2InstanceRole"
+        if environment == "osa-dev"
+        else "ObservabilityEc2InstanceRole"
+        if environment == "osa-observability"
         else "Ec2InstanceRole"
     )
     require(
@@ -581,21 +658,33 @@ for role_name, environment, sid_prefix in environment_roles:
         and role_body(role_name).count("iam:PassRole") == 1,
         f"{role_name} may pass only {instance_role_name} to EC2",
     )
+    scope_body = role_body(role_name)
+    if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        collector_ingress_sid = (
+            "ManageOsaDevCollectorIngress"
+            if role_name == "DevApplicationExecutionRole"
+            else "ManageOsaProdCollectorIngress"
+        )
+        scope_body = scope_body.replace(statements.get(collector_ingress_sid, ""), "")
     require(
-        not any(other in role_body(role_name) for other in {"osa-prod", "osa-dev", "osa-observability"} - {environment}),
+        not any(
+            other in scope_body
+            for other in {"osa-prod", "osa-dev", "osa-observability"} - {environment}
+        ),
         f"{role_name} must not include another environment's resource scope",
     )
     tag_statement = statements.get(f"Manage{sid_prefix}Tags", "")
     require(
-        "ForAllValues:StringEquals:" in tag_statement
-        and "- OSAStack" not in tag_statement,
+        "ForAllValues:StringEquals:" in tag_statement and "- OSAStack" not in tag_statement,
         f"{role_name} must not be able to change or remove its OSAStack boundary tag",
     )
 
 obs_statements = policy_statements("ObservabilityExecutionRole")
 require(
-    "aws:RequestTag/OSAStack: osa-observability" in obs_statements.get("CreateTaggedOsaObservabilityVolumes", "")
-    and "ec2:ResourceTag/OSAStack: osa-observability" in obs_statements.get("ManageTaggedOsaObservabilityVolumes", ""),
+    "aws:RequestTag/OSAStack: osa-observability"
+    in obs_statements.get("CreateTaggedOsaObservabilityVolumes", "")
+    and "ec2:ResourceTag/OSAStack: osa-observability"
+    in obs_statements.get("ManageTaggedOsaObservabilityVolumes", ""),
     "observability EBS volume operations must stay tagged to osa-observability",
 )
 
@@ -604,11 +693,17 @@ ec2_statements = policy_statements("Ec2InstanceRole")
 require(
     "Service: ec2.amazonaws.com" in ec2_role_body
     and "ManagedPolicyArns:" not in ec2_role_body
-    and set(ec2_statements) == {
-        "EcrAuthorizationToken", "PullImagesFromFoundationRepository",
-        "SessionManagerInstanceRegistration", "SessionManagerChannels",
+    and set(ec2_statements)
+    == {
+        "EcrAuthorizationToken",
+        "PullImagesFromFoundationRepository",
+        "ReadProductionOtlpToken",
+        "DecryptProductionOtlpTokenThroughSsm",
+        "SessionManagerInstanceRegistration",
+        "SessionManagerChannels",
     }
-    and "Resource: !GetAtt Repository.Arn" in ec2_statements.get("PullImagesFromFoundationRepository", "")
+    and "Resource: !GetAtt Repository.Arn"
+    in ec2_statements.get("PullImagesFromFoundationRepository", "")
     and "cloudformation:" not in ec2_role_body
     and "iam:PassRole" not in ec2_role_body,
     "Ec2InstanceRole must trust only EC2, grant minimal Session Manager actions, and pull only from Repository",
@@ -666,10 +761,12 @@ for output_name, role_name in (
     )
     require(
         output is not None
-        and (f"Value: !GetAtt {role_name}.Arn" in output.group("body")
-             if output_name.endswith("Arn")
-             else f"Value: !Ref {role_name}" in output.group("body"))
-        and f'{dollar}{{AWS::StackName}}-{output_name}' in output.group("body"),
+        and (
+            f"Value: !GetAtt {role_name}.Arn" in output.group("body")
+            if output_name.endswith("Arn")
+            else f"Value: !Ref {role_name}" in output.group("body")
+        )
+        and f"{dollar}{{AWS::StackName}}-{output_name}" in output.group("body"),
         f"{output_name} must expose a stable stack-qualified export for {role_name}",
     )
 
@@ -740,11 +837,11 @@ def statement_resources(statement: str) -> list[str]:
         stripped = line.strip()
         if not stripped.startswith("Resource:"):
             continue
-        inline = stripped[len("Resource:"):].strip()
+        inline = stripped[len("Resource:") :].strip()
         if inline:
             resources.append(inline)
             continue
-        for candidate in lines[index + 1:]:
+        for candidate in lines[index + 1 :]:
             candidate_indent = len(candidate) - len(candidate.lstrip())
             if candidate.strip() and candidate_indent <= indent:
                 break
@@ -761,7 +858,7 @@ def statement_conditions(statement: str) -> list[str]:
         if line.strip() != "Condition:":
             continue
         conditions: list[str] = []
-        for candidate in lines[index + 1:]:
+        for candidate in lines[index + 1 :]:
             candidate_indent = len(candidate) - len(candidate.lstrip())
             if candidate.strip() and candidate_indent <= indent:
                 break
@@ -830,9 +927,11 @@ def exact_assume_role_statement(
         r"(?ms)^            Principal:\n(?P<body>.*?)(?=^            Action:|^            Condition:|\Z)",
         statement,
     )
-    principal_values = [] if principal is None else [
-        line.strip() for line in principal.group("body").splitlines() if line.strip()
-    ]
+    principal_values = (
+        []
+        if principal is None
+        else [line.strip() for line in principal.group("body").splitlines() if line.strip()]
+    )
     require(
         principal_values == principal_lines
         and statement_actions(statement) == actions
@@ -848,6 +947,8 @@ ecr_repo_arn = (
     f'!Sub "arn:{dollar}{{AWS::Partition}}:ecr:{dollar}{{AWS::Region}}:'
     f'{dollar}{{AWS::AccountId}}:repository/{dollar}{{RepositoryName}}"'
 )
+
+
 def ec2_arn(resource: str) -> str:
     return (
         f'!Sub "arn:{dollar}{{AWS::Partition}}:ec2:{dollar}{{AWS::Region}}:'
@@ -856,9 +957,7 @@ def ec2_arn(resource: str) -> str:
 
 
 def iam_arn(resource: str) -> str:
-    return (
-        f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::{dollar}{{AWS::AccountId}}:{resource}"'
-    )
+    return f'!Sub "arn:{dollar}{{AWS::Partition}}:iam::{dollar}{{AWS::AccountId}}:{resource}"'
 
 
 def cfn_stack_arn(name: str) -> str:
@@ -896,7 +995,7 @@ for role_name, sid in (
         {"sts:AssumeRoleWithWebIdentity"},
         equals(
             "token.actions.githubusercontent.com:aud: sts.amazonaws.com",
-            f"token.actions.githubusercontent.com:sub: !Sub \"{branch_subject}\"",
+            f'token.actions.githubusercontent.com:sub: !Sub "{branch_subject}"',
         ),
     )
 exact_assume_role_statement(
@@ -906,7 +1005,7 @@ exact_assume_role_statement(
     {"sts:AssumeRoleWithWebIdentity"},
     equals(
         "token.actions.githubusercontent.com:aud: sts.amazonaws.com",
-        f"token.actions.githubusercontent.com:sub: !Sub \"{production_subject}\"",
+        f'token.actions.githubusercontent.com:sub: !Sub "{production_subject}"',
     ),
 )
 require(
@@ -1145,6 +1244,24 @@ for deploy_role, stack_name, exec_role, prefix in (
                 [cfn_stack_arn(stack_name)],
                 [],
             ),
+            "ReadOsaObservabilityEndpoint": (
+                {"cloudformation:DescribeStacks"},
+                [cfn_stack_arn("osa-observability")],
+                [],
+            ),
+            (
+                "ReadDevOtlpTokenType"
+                if deploy_role == "DevDeployRole"
+                else "ReadProdOtlpTokenType"
+            ): (
+                {"ssm:GetParameter"},
+                [
+                    ssm_parameter_arn(
+                        f"osa/{'dev' if deploy_role == 'DevDeployRole' else 'prod'}/observability/otlp-token"
+                    )
+                ],
+                [],
+            ),
             f"PassOnly{prefix}ExecutionRole": (
                 {"iam:PassRole"},
                 [f"!GetAtt {exec_role}.Arn"],
@@ -1154,7 +1271,9 @@ for deploy_role, stack_name, exec_role, prefix in (
     )
 
 
-def env_policy(environment: str, sid_prefix: str, parameter_env: str) -> dict[str, tuple[set[str], list[str], list[str]]]:
+def env_policy(
+    environment: str, sid_prefix: str, parameter_env: str
+) -> dict[str, tuple[set[str], list[str], list[str]]]:
     sg_arn = ec2_arn("security-group/*")
     instance_arn = ec2_arn("instance/*")
     volume_arn = ec2_arn("volume/*")
@@ -1289,6 +1408,16 @@ for role_name, environment, prefix, parameter_env in (
 ):
     expected = env_policy(environment, prefix, parameter_env)
     if role_name in {"DevApplicationExecutionRole", "ProdApplicationExecutionRole"}:
+        collector_ingress_sid = (
+            "ManageOsaDevCollectorIngress"
+            if parameter_env == "dev"
+            else "ManageOsaProdCollectorIngress"
+        )
+        expected[collector_ingress_sid] = (
+            {"ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress"},
+            [ec2_arn("security-group/*")],
+            equals("ec2:ResourceTag/OSAStack: osa-observability"),
+        )
         expected[f"ManageOsa{'Dev' if parameter_env == 'dev' else 'Prod'}InstanceProfile"] = (
             {
                 "iam:AddRoleToInstanceProfile",
@@ -1381,6 +1510,24 @@ assert_exact_policy(
             ["!GetAtt Repository.Arn"],
             [],
         ),
+        "ReadProductionOtlpToken": (
+            {"ssm:GetParameter"},
+            [ssm_parameter_arn("osa/prod/observability/otlp-token")],
+            [],
+        ),
+        "DecryptProductionOtlpTokenThroughSsm": (
+            {"kms:Decrypt"},
+            [
+                f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'
+            ],
+            [
+                "StringEquals:",
+                f'kms:ViaService: !Sub "ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}"',
+                f'kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/prod/observability/otlp-token"',
+                "ForAnyValue:StringEquals:",
+                "kms:ResourceAliases: alias/aws/ssm",
+            ],
+        ),
         "SessionManagerInstanceRegistration": ({"ssm:UpdateInstanceInformation"}, ['"*"'], []),
         "SessionManagerChannels": (
             {
@@ -1404,11 +1551,36 @@ assert_exact_policy(
         ),
         "DecryptGrafanaAdminSecretThroughSsm": (
             {"kms:Decrypt"},
-            [f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'],
+            [
+                f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'
+            ],
             [
                 "StringEquals:",
-                f"kms:ViaService: !Sub \"ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}\"",
-                f"kms:EncryptionContext:PARAMETER_ARN: !Sub \"arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/observability/grafana/admin-password\"",
+                f'kms:ViaService: !Sub "ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}"',
+                f'kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/observability/grafana/admin-password"',
+                "ForAnyValue:StringEquals:",
+                "kms:ResourceAliases: alias/aws/ssm",
+            ],
+        ),
+        "ReadDevelopmentAndProductionOtlpTokens": (
+            {"ssm:GetParameter"},
+            [
+                ssm_parameter_arn("osa/dev/observability/otlp-token"),
+                ssm_parameter_arn("osa/prod/observability/otlp-token"),
+            ],
+            [],
+        ),
+        "DecryptOtlpTokensThroughSsm": (
+            {"kms:Decrypt"},
+            [
+                f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'
+            ],
+            [
+                "StringEquals:",
+                f'kms:ViaService: !Sub "ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}"',
+                "kms:EncryptionContext:PARAMETER_ARN:",
+                f'- !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/dev/observability/otlp-token"',
+                f'- !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/prod/observability/otlp-token"',
                 "ForAnyValue:StringEquals:",
                 "kms:ResourceAliases: alias/aws/ssm",
             ],
@@ -1432,17 +1604,43 @@ assert_exact_policy(
         "EcrAuthorizationToken": ({"ecr:GetAuthorizationToken"}, ['"*"'], []),
         "PullImagesFromFoundationRepository": (
             {"ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"},
-            ["!GetAtt Repository.Arn"], [],
+            ["!GetAtt Repository.Arn"],
+            [],
         ),
         "ReadOnlyDevCaddyAuthParameter": (
-            {"ssm:GetParameter"}, [ssm_parameter_arn("osa/dev/caddy/auth")], [],
+            {"ssm:GetParameter"},
+            [ssm_parameter_arn("osa/dev/caddy/auth")],
+            [],
         ),
         "DecryptOnlyDevCaddyAuthParameterThroughSsm": (
-            {"kms:Decrypt"}, [f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'],
+            {"kms:Decrypt"},
             [
-                "StringEquals:", f"kms:ViaService: !Sub \"ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}\"",
-                f"kms:EncryptionContext:PARAMETER_ARN: !Sub \"arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/dev/caddy/auth\"",
-                "ForAnyValue:StringEquals:", "kms:ResourceAliases: alias/aws/ssm",
+                f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'
+            ],
+            [
+                "StringEquals:",
+                f'kms:ViaService: !Sub "ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}"',
+                f'kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/dev/caddy/auth"',
+                "ForAnyValue:StringEquals:",
+                "kms:ResourceAliases: alias/aws/ssm",
+            ],
+        ),
+        "ReadDevelopmentOtlpToken": (
+            {"ssm:GetParameter"},
+            [ssm_parameter_arn("osa/dev/observability/otlp-token")],
+            [],
+        ),
+        "DecryptDevelopmentOtlpTokenThroughSsm": (
+            {"kms:Decrypt"},
+            [
+                f'!Sub "arn:{dollar}{{AWS::Partition}}:kms:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:key/*"'
+            ],
+            [
+                "StringEquals:",
+                f'kms:ViaService: !Sub "ssm.{dollar}{{AWS::Region}}.{dollar}{{AWS::URLSuffix}}"',
+                f'kms:EncryptionContext:PARAMETER_ARN: !Sub "arn:{dollar}{{AWS::Partition}}:ssm:{dollar}{{AWS::Region}}:{dollar}{{AWS::AccountId}}:parameter/osa/dev/observability/otlp-token"',
+                "ForAnyValue:StringEquals:",
+                "kms:ResourceAliases: alias/aws/ssm",
             ],
         ),
         "SessionManagerInstanceRegistration": ({"ssm:UpdateInstanceInformation"}, ['"*"'], []),
@@ -1461,5 +1659,7 @@ assert_exact_policy(
 
 print("Foundation static security, network-boundary, and ECR lifecycle assertions passed.")
 
-require("bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
-        "README must not defer the implemented lifecycle and force-empty behavior")
+require(
+    "bounded lifecycle and empty-on-delete behavior are deferred to issue #236" not in doc,
+    "README must not defer the implemented lifecycle and force-empty behavior",
+)

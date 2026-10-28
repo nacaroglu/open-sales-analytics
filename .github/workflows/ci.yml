@@ -1051,13 +1051,25 @@ jobs:
           OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
           OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
           OSA_DEV_HOSTNAME: ${{ vars.OSA_DEV_HOSTNAME }}
-        run: python3 scripts/deploy_dev_stack.py --validate-only
+        run: python3 scripts/deploy_dev_stack.py --validate-static-only
       - name: Configure development deployment credentials through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.OSA_DEV_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.OSA_AWS_REGION }}
           role-session-name: osa-dev-deploy-${{ github.run_id }}
+      - name: Validate development AWS prerequisites
+        env:
+          AWS_REGION: ${{ vars.OSA_AWS_REGION }}
+          DEV_DEPLOY_ROLE_ARN: ${{ vars.OSA_DEV_DEPLOY_ROLE_ARN }}
+          DEV_EXECUTION_ROLE_ARN: ${{ vars.OSA_DEV_EXECUTION_ROLE_ARN }}
+          ECR_REPOSITORY_URI: ${{ vars.OSA_ECR_REPOSITORY_URI }}
+          IMAGE_REF: ${{ needs.publish-ecr.outputs.image-ref }}
+          RELEASE_VERSION: ${{ needs.publish-ecr.outputs.release-version }}
+          OSA_AMI_ID: ${{ vars.OSA_AMI_ID }}
+          OSA_INSTANCE_TYPE: ${{ vars.OSA_INSTANCE_TYPE }}
+          OSA_DEV_HOSTNAME: ${{ vars.OSA_DEV_HOSTNAME }}
+        run: python3 scripts/deploy_dev_stack.py --validate-only
       - name: Update osa-dev from the published digest
         env:
           AWS_REGION: ${{ vars.OSA_AWS_REGION }}

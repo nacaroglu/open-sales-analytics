@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from otlp_preflight import OtlpPreflightError, validate_otlp_prerequisites
+
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "deploy/cloudformation/osa-application.yaml"
 REPO_RE = re.compile(
@@ -42,17 +44,6 @@ ROLE_RE = re.compile(
 
 class PromotionError(RuntimeError):
     """Safe promotion failure without AWS response data."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        stage: str | None = None,
-        cleanup: str | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.stage = stage
-        self.cleanup = cleanup
 
 
 @dataclass(frozen=True)
@@ -256,43 +247,23 @@ def update_command(config: Config, release: Release) -> list[str]:
 
 def write_summary(
     source: Release,
-    previous: Release | None,
+    previous: Release,
     env: dict[str, str],
     *,
     verification: str,
     rollback: str,
-    readiness: str = "NOT RUN",
-    smoke: str = "NOT RUN",
-    cleanup: str = "NOT RUN",
-    failure_stage: str | None = None,
-    rollback_failure_stage: str | None = None,
 ) -> None:
     path = env.get("GITHUB_STEP_SUMMARY")
     if path:
-        previous_version = previous.version if previous is not None else "unavailable"
-        previous_digest = f"sha256:{previous.digest}" if previous is not None else "unavailable"
         try:
             with Path(path).open("a", encoding="utf-8") as stream:
                 stream.write(
-                    "## Production promotion evidence\n\n"
-                    "- Environment: production\n"
-                    f"- Image tag: `{source.version}`\n"
-                    f"- Release version: `{source.version}`\n"
-                    f"- Image digest: `sha256:{source.digest}`\n"
-                    f"- Previous production image tag: `{previous_version}`\n"
-                    f"- Previous production version: `{previous_version}`\n"
-                    f"- Previous production digest: `{previous_digest}`\n"
+                    "## Production promotion\n\n| Release | Digest | Version |\n|---|---|---|\n"
                 )
-                stream.write(f"- Readiness: {readiness}\n")
-                stream.write(f"- Sample analytics smoke: {smoke}\n")
-                stream.write(f"- Temporary sample cleanup: {cleanup}\n")
+                stream.write(f"| Promoted release | {source.digest} | {source.version} |\n")
+                stream.write(f"| Previous production | {previous.digest} | {previous.version} |\n")
                 stream.write(f"\n- Production verification: {verification}\n")
                 stream.write(f"- Rollback: {rollback}\n")
-                if failure_stage is not None:
-                    stream.write(f"- Failure stage: {failure_stage}\n")
-                if rollback_failure_stage is not None:
-                    stream.write(f"- Rollback failure stage: {rollback_failure_stage}\n")
-                stream.write(f"- Result: {'PASS' if verification == 'PASS' else 'FAIL'}\n")
         except OSError as exc:
             raise PromotionError(
                 f"Unable to write promotion summary ({type(exc).__name__})."
@@ -330,19 +301,6 @@ def _json_body(status: int, body: bytes, expected_status: int, label: str) -> di
     return value
 
 
-def _verification_stage(error: PromotionError) -> str:
-    if error.stage in {"Production readiness", "Sample analytics smoke", "Sample cleanup"}:
-        return error.stage
-    message = str(error).lower()
-    if "readiness" in message:
-        return "Production readiness"
-    if "cleanup" in message:
-        return "Sample cleanup"
-    if "sample" in message or "analytics" in message:
-        return "Sample analytics smoke"
-    return "Production verification"
-
-
 def verify_production(
     config: Config,
     release: Release,
@@ -360,7 +318,7 @@ def verify_production(
     while True:
         remaining = deadline - monotonic()
         if remaining <= 0:
-            raise PromotionError("Production readiness timed out.", stage="Production readiness")
+            raise PromotionError("Production readiness timed out.")
         try:
             status, body = _http_request(
                 f"{base_url}/health/ready",
@@ -382,31 +340,24 @@ def verify_production(
             pass
         remaining = deadline - monotonic()
         if remaining <= 0:
-            raise PromotionError("Production readiness timed out.", stage="Production readiness")
+            raise PromotionError("Production readiness timed out.")
         sleep(min(2.0, remaining))
 
-    try:
-        status, body = _http_request(
-            f"{base_url}/api/datasets/sample",
-            "POST",
-            {},
-            b"",
-            HTTP_TIMEOUT_SECONDS,
-            opener=opener,
-        )
-        created = _json_body(status, body, 201, "Production sample creation")
-    except PromotionError as exc:
-        raise PromotionError(str(exc), stage="Sample analytics smoke") from None
+    status, body = _http_request(
+        f"{base_url}/api/datasets/sample",
+        "POST",
+        {},
+        b"",
+        HTTP_TIMEOUT_SECONDS,
+        opener=opener,
+    )
+    created = _json_body(status, body, 201, "Production sample creation")
     dataset_id = created.get("dataset_id")
     token = created.get("token")
     if not isinstance(dataset_id, str) or not DATASET_ID_RE.fullmatch(dataset_id):
-        raise PromotionError(
-            "Production sample response omitted a valid dataset ID.", stage="Sample analytics smoke"
-        )
+        raise PromotionError("Production sample response omitted a valid dataset ID.")
     if not isinstance(token, str) or not token:
-        raise PromotionError(
-            "Production sample response omitted its access token.", stage="Sample analytics smoke"
-        )
+        raise PromotionError("Production sample response omitted its access token.")
     print(f"::add-mask::{token}", flush=True)
     print(f"::add-mask::Bearer {token}", flush=True)
 
@@ -441,7 +392,7 @@ def verify_production(
         ):
             raise PromotionError("Production sample analytics do not match the bundled sample.")
     except PromotionError as exc:
-        operation_error = PromotionError(str(exc), stage="Sample analytics smoke", cleanup="PASS")
+        operation_error = exc
 
     try:
         status, _ = _http_request(
@@ -453,19 +404,13 @@ def verify_production(
             opener=opener,
         )
         if status != 204:
-            raise PromotionError(
-                f"Production temporary sample cleanup returned HTTP {status}.",
-                stage="Sample cleanup",
-                cleanup="FAIL",
-            )
+            raise PromotionError(f"Production temporary sample cleanup returned HTTP {status}.")
     except PromotionError as cleanup_error:
         if operation_error is not None:
             raise PromotionError(
-                f"{operation_error}; production temporary sample cleanup also failed.",
-                stage="Sample cleanup",
-                cleanup="FAIL",
+                f"{operation_error}; production temporary sample cleanup also failed."
             ) from None
-        raise PromotionError(str(cleanup_error), stage="Sample cleanup", cleanup="FAIL") from None
+        raise cleanup_error
     if operation_error is not None:
         raise operation_error
 
@@ -481,27 +426,12 @@ def promote(
     if not DIGEST_RE.fullmatch(source.digest) or not VERSION_RE.fullmatch(source.version):
         raise PromotionError("Development release metadata failed validation.")
     try:
-        previous = describe(runner, "osa-prod", config)
-    except PromotionError:
-        try:
-            write_summary(
-                source,
-                None,
-                env,
-                verification="FAIL",
-                rollback="NOT RUN",
-                failure_stage="Prior production metadata lookup",
-            )
-        except PromotionError:
-            pass
-        raise
-    readiness = "NOT RUN"
-    smoke = "NOT RUN"
-    cleanup = "NOT RUN"
-    stage = "Production stack update"
+        validate_otlp_prerequisites(config.region, "production", runner=runner)
+    except OtlpPreflightError as exc:
+        raise PromotionError(f"Production OTLP prerequisites failed: {exc}") from None
+    previous = describe(runner, "osa-prod", config)
     try:
         run(runner, update_command(config, source), "osa-prod update")
-        stage = "Production stack readiness wait"
         try:
             run(
                 runner,
@@ -520,37 +450,11 @@ def promote(
         except PromotionError:
             wait_for_stack_settlement(runner, config)
             raise
-        stage = "Production release metadata verification"
         if describe(runner, "osa-prod", config) != source:
             raise PromotionError("osa-prod release metadata does not match the promoted release.")
-        stage = "Production verification"
-        try:
-            verifier(config, source)
-        except PromotionError as exc:
-            stage = _verification_stage(exc)
-            if stage == "Production readiness":
-                readiness = "FAIL"
-            else:
-                readiness = "PASS"
-                smoke = "FAIL"
-            cleanup = exc.cleanup or "NOT RUN"
-            raise
-        readiness = "PASS"
-        smoke = "PASS"
-        cleanup = "PASS"
-        stage = "Production evidence summary"
-        write_summary(
-            source,
-            previous,
-            env,
-            verification="PASS",
-            rollback="not required",
-            readiness=readiness,
-            smoke=smoke,
-            cleanup=cleanup,
-        )
+        verifier(config, source)
+        write_summary(source, previous, env, verification="PASS", rollback="not required")
     except PromotionError as promotion_error:
-        failure_stage = stage
         try:
             current = describe(runner, "osa-prod", config)
             if current != previous:
@@ -576,36 +480,10 @@ def promote(
             verifier(config, previous)
             if describe(runner, "osa-prod", config) != previous:
                 raise PromotionError("Production release changed during rollback verification.")
-            write_summary(
-                source,
-                previous,
-                env,
-                verification="FAIL",
-                rollback="PASS",
-                readiness=readiness,
-                smoke=smoke,
-                cleanup=cleanup,
-                failure_stage=failure_stage,
-            )
+            write_summary(source, previous, env, verification="FAIL", rollback="PASS")
         except PromotionError as rollback_error:
-            rollback_stage = "Production rollback verification"
-            if "rollback update" in str(rollback_error).lower():
-                rollback_stage = "Production rollback update"
-            elif "rollback wait" in str(rollback_error).lower():
-                rollback_stage = "Production rollback readiness wait"
             try:
-                write_summary(
-                    source,
-                    previous,
-                    env,
-                    verification="FAIL",
-                    rollback="FAILED",
-                    readiness=readiness,
-                    smoke=smoke,
-                    cleanup=cleanup,
-                    failure_stage=failure_stage,
-                    rollback_failure_stage=rollback_stage,
-                )
+                write_summary(source, previous, env, verification="FAIL", rollback="FAILED")
             except PromotionError:
                 pass
             raise PromotionError(
